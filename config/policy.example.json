@@ -1,0 +1,39 @@
+{
+  "approval": {
+    "control_file": "/tmp/seal-approvals.ndjson",
+    "ttl_seconds": 120
+  },
+  "tools": [
+    {
+      "name": "db.execute",
+      "mode": "guarded",
+      "match": {
+        "type": "contains_any_ci",
+        "arg": "sql",
+        "needles": ["drop", "delete", "truncate"]
+      },
+      "target": [
+        { "literal": "db" },
+        { "arg": "database" },
+        { "literal": "write" },
+        { "arg": "sql" }
+      ]
+    },
+    {
+      "name": "payments.send",
+      "mode": "guarded",
+      "match": { "type": "always" },
+      "target": [
+        { "literal": "payment" },
+        { "arg": "to" },
+        { "arg": "amount" }
+      ]
+    },
+    {
+      "name": "shell.run",
+      "mode": "deny",
+      "match": { "type": "always" },
+      "target": []
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+/- SPDX-License-Identifier: Apache-2.0 -/
+
+import Lean.Data.Json
+import Std.Sync.Mutex
+import SealCore
+import Seal.Policy
+import Seal.Classify
+import Seal.Channel
+import Seal.Block
+
+namespace Seal
+
+open Lean
+open SealCore
+
+structure Args where
+  policy : System.FilePath
+  cmd : String
+  cmdArgs : Array String
+
+def parseArgs (args : List String) : Except String Args :=
+  match args with
+  | "--policy" :: policy :: "--" :: cmd :: rest =>
+      .ok { policy := System.FilePath.mk policy, cmd, cmdArgs := rest.toArray }
+  | _ => .error "usage: seal --policy <policy.json> -- <server-cmd> <args...>"
+
+def writeLocked (lock : Std.Mutex Unit) (out : IO.FS.Stream) (line : String) : IO Unit := do
+  lock.atomically do
+    out.putStr line
+    out.flush
+
+partial def relayChildStdout (lock : Std.Mutex Unit) (childOut : IO.FS.Handle) (hostOut : IO.FS.Stream) : IO Unit := do
+  let line ← childOut.getLine
+  if line.isEmpty then
+    pure ()
+  else
+    writeLocked lock hostOut line
+    relayChildStdout lock childOut hostOut
+
+private def jsonId (json : Json) : Json :=
+  (json.getObjVal? "id").toOption.getD Json.null
+
+private def processHostLine
+    (policy : Policy)
+    (stateRef : IO.Ref State)
+    (approvalSeenRef : IO.Ref Nat)
+    (hostLine : String)
+    (childIn : IO.FS.Handle)
+    (hostOut : IO.FS.Stream)
+    (stdoutLock : Std.Mutex Unit) : IO Unit := do
+  let parsed := Json.parse hostLine.trimAscii.toString
+  match parsed with
+  | .error _ =>
+      childIn.putStr hostLine
+      childIn.flush
+  | .ok json =>
+      match toolsCall? json with
+      | none =>
+          childIn.putStr hostLine
+          childIn.flush
+      | some (toolName, toolArgs) =>
+          let seen ← approvalSeenRef.get
+          let (newSeen, approvals) ← readApprovalsFrom policy.approvalFile seen
+          approvalSeenRef.set newSeen
+          let st0 ← stateRef.get
+          let st1 := approvals.foldl (fun st e => (step policy.approvalTtl st e).2) st0
+          let hostEvent := classifyToolCall policy toolName toolArgs
+          let (decision, st2) := step policy.approvalTtl st1 hostEvent.toEvent
+          stateRef.set st2
+          match decision with
+          | .allow =>
+              childIn.putStr hostLine
+              childIn.flush
+          | .block =>
+              writeLocked stdoutLock hostOut (blockResponseLine (jsonId json) hostEvent.targetText)
+
+partial def hostLoop
+    (policy : Policy)
+    (stateRef : IO.Ref State)
+    (approvalSeenRef : IO.Ref Nat)
+    (hostIn hostOut : IO.FS.Stream)
+    (childIn : IO.FS.Handle)
+    (stdoutLock : Std.Mutex Unit) : IO Unit := do
+  let line ← hostIn.getLine
+  if line.isEmpty then
+    pure ()
+  else
+    processHostLine policy stateRef approvalSeenRef line childIn hostOut stdoutLock
+    hostLoop policy stateRef approvalSeenRef hostIn hostOut childIn stdoutLock
+
+def main (rawArgs : List String) : IO UInt32 := do
+  let parsed ←
+    match parseArgs rawArgs with
+    | .ok parsed => pure parsed
+    | .error msg =>
+        IO.eprintln msg
+        return 2
+  let policy ← loadPolicy parsed.policy
+  ensureApprovalFile policy.approvalFile
+  let child ← IO.Process.spawn {
+    cmd := parsed.cmd,
+    args := parsed.cmdArgs,
+    stdin := .piped,
+    stdout := .piped,
+    stderr := .inherit
+  }
+  let hostIn ← IO.getStdin
+  let hostOut ← IO.getStdout
+  let stateRef ← IO.mkRef State.empty
+  let approvalSeenRef ← IO.mkRef 0
+  let stdoutLock ← Std.Mutex.new ()
+  let relayTask ← IO.asTask (relayChildStdout stdoutLock child.stdout hostOut) Task.Priority.dedicated
+  hostLoop policy stateRef approvalSeenRef hostIn hostOut child.stdin stdoutLock
+  child.kill
+  let exitCode ← child.wait
+  match relayTask.get with
+  | .ok _ => pure ()
+  | .error err => throw err
+  pure exitCode
+
+end Seal
+
+def main (args : List String) : IO UInt32 :=
+  Seal.main args
