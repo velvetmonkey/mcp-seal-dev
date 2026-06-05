@@ -1,10 +1,10 @@
 # Aristotle handoff: M3 serialize scaffold
 
-This branch is `feat/v2-m3-serialize`. The theorem bodies below are intentionally `sorry` on this WIP branch only.
+This branch is `feat/v2-m3-serialize`. Group A was discharged during M3 parser tightening. Groups B-D remain intentionally `sorry` on this WIP branch only.
 
 ## IsCanonical definition
 
-File: `SealV2/Canonical.lean:7`
+File: `SealV2/Parser.lean:23`
 
 ```lean
 def isPrintableAsciiStringChar (c : Char) : Bool :=
@@ -40,10 +40,6 @@ def isCanonicalDecimal (decimal : Decimal) : Bool :=
 def hasDuplicateKey (key : String) (fields : List (String × AST)) : Bool :=
   fields.any fun field => field.fst == key
 
-def objectKeysUnique : List (String × AST) → Bool
-  | [] => true
-  | (key, _) :: rest => !hasDuplicateKey key rest && objectKeysUnique rest
-
 mutual
 
 def isCanonicalAst : AST → Bool
@@ -73,6 +69,24 @@ def IsCanonical (ast : AST) : Prop :=
 
 instance (ast : AST) : Decidable (IsCanonical ast) :=
   inferInstanceAs (Decidable (isCanonicalAst ast = true))
+
+def guardCanonicalResult (result : Option (AST × List Char)) : Option (AST × List Char) :=
+  match result with
+  | some (ast, rest) =>
+      if IsCanonical ast then
+        some (ast, rest)
+      else
+        none
+  | none => none
+
+def guardCanonicalStringResult (result : Option (String × List Char)) : Option (String × List Char) :=
+  match result with
+  | some (value, rest) =>
+      if isCanonicalString value then
+        some (value, rest)
+      else
+        none
+  | none => none
 ```
 
 ## AST type and parser worker signatures
@@ -96,27 +110,27 @@ inductive AST where
   deriving Repr, BEq
 ```
 
-File: `SealV2/Parser.lean:57`
+File: `SealV2/Parser.lean:149`
 
 ```lean
 def parseStringChars (acc : String) (chars : List Char) :
     Option (String × List Char) :=
 ```
 
-File: `SealV2/Parser.lean:97`
+File: `SealV2/Parser.lean:203`
 
 ```lean
 def parseNumber (chars : List Char) : Option (AST × List Char) :=
 ```
 
-File: `SealV2/Parser.lean:136`
+File: `SealV2/Parser.lean:309`
 
 ```lean
 def parseArrayFuel (fuel : Nat) (acc : List AST) (chars : List Char) :
     Option (AST × List Char) :=
 ```
 
-File: `SealV2/Parser.lean:155`
+File: `SealV2/Parser.lean:313`
 
 ```lean
 def parseObjectFuel (fuel : Nat) (acc : List (String × AST)) (chars : List Char) :
@@ -165,7 +179,9 @@ def serializeAst (ast : {ast // IsCanonical ast}) : CanonicalBytes :=
 
 ## Group A: parser canonicality, worker induction
 
-File: `SealV2/SerializationTheorems.lean:9`
+Status: proved after parser tightening.
+
+File: `SealV2/SerializationTheorems.lean:35`
 
 ```lean
 theorem parseStringChars_preserves_canonical
@@ -175,7 +191,7 @@ theorem parseStringChars_preserves_canonical
         isCanonicalString value = true := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:16`
+File: `SealV2/SerializationTheorems.lean:43`
 
 ```lean
 theorem parseNumber_returns_canonical
@@ -184,7 +200,7 @@ theorem parseNumber_returns_canonical
       IsCanonical ast := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:22`
+File: `SealV2/SerializationTheorems.lean:49`
 
 ```lean
 theorem parseArrayFuel_returns_canonical
@@ -194,7 +210,7 @@ theorem parseArrayFuel_returns_canonical
         IsCanonical ast := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:29`
+File: `SealV2/SerializationTheorems.lean:57`
 
 ```lean
 theorem parseObjectFuel_returns_canonical
@@ -204,7 +220,7 @@ theorem parseObjectFuel_returns_canonical
         IsCanonical ast := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:36`
+File: `SealV2/SerializationTheorems.lean:65`
 
 ```lean
 theorem parse_returns_canonical (raw : RawBytes) (ast : AST) :
@@ -214,21 +230,21 @@ theorem parse_returns_canonical (raw : RawBytes) (ast : AST) :
 
 ## Group B: serializer/parser roundtrip
 
-File: `SealV2/SerializationTheorems.lean:43`
+File: `SealV2/SerializationTheorems.lean:82`
 
 ```lean
 theorem serialize_roundtrip_null :
     parse (serializeAst ⟨.null, rfl⟩) = some .null := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:47`
+File: `SealV2/SerializationTheorems.lean:86`
 
 ```lean
 theorem serialize_roundtrip_bool (value : Bool) :
     parse (serializeAst ⟨.bool value, rfl⟩) = some (.bool value) := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:51`
+File: `SealV2/SerializationTheorems.lean:90`
 
 ```lean
 theorem serialize_roundtrip_number (value : Decimal)
@@ -236,7 +252,7 @@ theorem serialize_roundtrip_number (value : Decimal)
     parse (serializeAst ⟨.number value, h⟩) = some (.number value) := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:56`
+File: `SealV2/SerializationTheorems.lean:95`
 
 ```lean
 theorem serialize_roundtrip_string (value : String)
@@ -244,7 +260,7 @@ theorem serialize_roundtrip_string (value : String)
     parse (serializeAst ⟨.string value, h⟩) = some (.string value) := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:61`
+File: `SealV2/SerializationTheorems.lean:100`
 
 ```lean
 theorem serialize_roundtrip_array (items : List AST)
@@ -252,7 +268,7 @@ theorem serialize_roundtrip_array (items : List AST)
     parse (serializeAst ⟨.array items, h⟩) = some (.array items) := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:66`
+File: `SealV2/SerializationTheorems.lean:105`
 
 ```lean
 theorem serialize_roundtrip_object (fields : List (String × AST))
@@ -260,7 +276,7 @@ theorem serialize_roundtrip_object (fields : List (String × AST))
     parse (serializeAst ⟨.object fields, h⟩) = some (.object fields) := by
 ```
 
-File: `SealV2/SerializationTheorems.lean:71`
+File: `SealV2/SerializationTheorems.lean:110`
 
 ```lean
 theorem canonical_roundtrip (ast : {ast // IsCanonical ast}) :
@@ -269,7 +285,7 @@ theorem canonical_roundtrip (ast : {ast // IsCanonical ast}) :
 
 ## Group C: serializeAst determinism
 
-File: `SealV2/SerializationTheorems.lean:77`
+File: `SealV2/SerializationTheorems.lean:116`
 
 ```lean
 theorem serializeAst_deterministic (ast : AST)
@@ -279,7 +295,7 @@ theorem serializeAst_deterministic (ast : AST)
 
 ## Group D: ValidCapability-backed lift
 
-File: `SealV2/SerializationTheorems.lean:84`
+File: `SealV2/SerializationTheorems.lean:123`
 
 ```lean
 theorem serialize_validCapability_roundtrip {state : ApprovalState}

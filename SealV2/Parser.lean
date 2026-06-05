@@ -20,6 +20,87 @@ inductive AST where
   | object (fields : List (String × AST))
   deriving Repr, BEq
 
+def isPrintableAsciiStringChar (c : Char) : Bool :=
+  0x20 ≤ c.toNat && c.toNat ≤ 0x7e && c != '"' && c != '\\'
+
+def isCanonicalString (value : String) : Bool :=
+  value.toList.all isPrintableAsciiStringChar
+
+def isDigitChar (c : Char) : Bool :=
+  '0'.toNat ≤ c.toNat && c.toNat ≤ '9'.toNat
+
+def isNonZeroDigitChar (c : Char) : Bool :=
+  '1'.toNat ≤ c.toNat && c.toNat ≤ '9'.toNat
+
+def isCanonicalIntDigits (digits : String) : Bool :=
+  match digits.toList with
+  | ['0'] => true
+  | c :: rest => isNonZeroDigitChar c && rest.all isDigitChar
+  | [] => false
+
+def isCanonicalFracDigits (digits : String) : Bool :=
+  match digits.toList.reverse with
+  | last :: _ => isNonZeroDigitChar last && digits.toList.all isDigitChar
+  | [] => false
+
+def isCanonicalDecimal (decimal : Decimal) : Bool :=
+  isCanonicalIntDigits decimal.intDigits &&
+    (match decimal.fracDigits with
+     | none => true
+     | some digits => isCanonicalFracDigits digits) &&
+    !(decimal.negative && decimal.intDigits == "0" && decimal.fracDigits.isNone)
+
+def hasDuplicateKey (key : String) (fields : List (String × AST)) : Bool :=
+  fields.any fun field => field.fst == key
+
+mutual
+
+def isCanonicalAst : AST → Bool
+  | .null => true
+  | .bool _ => true
+  | .number value => isCanonicalDecimal value
+  | .string value => isCanonicalString value
+  | .array items => isCanonicalArray items
+  | .object fields => isCanonicalObject fields
+
+def isCanonicalArray : List AST → Bool
+  | [] => true
+  | item :: rest => isCanonicalAst item && isCanonicalArray rest
+
+def isCanonicalObject : List (String × AST) → Bool
+  | [] => true
+  | (key, value) :: rest =>
+      isCanonicalString key &&
+        isCanonicalAst value &&
+        !hasDuplicateKey key rest &&
+        isCanonicalObject rest
+
+end
+
+def IsCanonical (ast : AST) : Prop :=
+  isCanonicalAst ast = true
+
+instance (ast : AST) : Decidable (IsCanonical ast) :=
+  inferInstanceAs (Decidable (isCanonicalAst ast = true))
+
+def guardCanonicalResult (result : Option (AST × List Char)) : Option (AST × List Char) :=
+  match result with
+  | some (ast, rest) =>
+      if IsCanonical ast then
+        some (ast, rest)
+      else
+        none
+  | none => none
+
+def guardCanonicalStringResult (result : Option (String × List Char)) : Option (String × List Char) :=
+  match result with
+  | some (value, rest) =>
+      if isCanonicalString value then
+        some (value, rest)
+      else
+        none
+  | none => none
+
 private def isWs : Char → Bool
   | ' ' | '\n' | '\r' | '\t' => true
   | _ => false
@@ -54,16 +135,20 @@ private def parseLiteral (literal : List Char) (value : AST) (chars : List Char)
   else
     none
 
-def parseStringChars (acc : String) (chars : List Char) :
+def parseStringCharsUnchecked (acc : String) (chars : List Char) :
     Option (String × List Char) :=
   match chars with
   | '"' :: rest => some (acc, rest)
   | c :: rest =>
       if isAsciiStringChar c then
-        parseStringChars (acc ++ String.singleton c) rest
+        parseStringCharsUnchecked (acc ++ String.singleton c) rest
       else
         none
   | [] => none
+
+def parseStringChars (acc : String) (chars : List Char) :
+    Option (String × List Char) :=
+  guardCanonicalStringResult (parseStringCharsUnchecked acc chars)
 
 private def parseString (chars : List Char) : Option (String × List Char) :=
   match chars with
@@ -94,7 +179,11 @@ private def parseFraction (chars : List Char) : Option (Option String × List Ch
       | [] => none
   | _ => some (none, chars)
 
-def parseNumber (chars : List Char) : Option (AST × List Char) :=
+private def startsExponent : List Char → Bool
+  | 'e' :: _ | 'E' :: _ => true
+  | _ => false
+
+def parseNumberUnchecked (chars : List Char) : Option (AST × List Char) :=
   let (negative, rest) :=
     match chars with
     | '-' :: rest => (true, rest)
@@ -105,17 +194,21 @@ def parseNumber (chars : List Char) : Option (AST × List Char) :=
       match parseFraction afterInt with
       | none => none
       | some (fracDigits, tail) =>
-          if negative && intDigits == "0" && fracDigits.isNone then
+          if startsExponent tail then
             none
           else
-            some (.number { negative, intDigits, fracDigits }, tail)
+            let ast : AST := .number { negative, intDigits, fracDigits }
+            some (ast, tail)
+
+def parseNumber (chars : List Char) : Option (AST × List Char) :=
+  guardCanonicalResult (parseNumberUnchecked chars)
 
 private def duplicateKey (key : String) (fields : List (String × AST)) : Bool :=
   fields.any (fun field => field.fst == key)
 
 mutual
 
-def parseValueFuel (fuel : Nat) (chars : List Char) : Option (AST × List Char) :=
+def parseValueFuelUnchecked (fuel : Nat) (chars : List Char) : Option (AST × List Char) :=
   match fuel with
   | 0 => none
   | Nat.succ fuel' =>
@@ -128,37 +221,56 @@ def parseValueFuel (fuel : Nat) (chars : List Char) : Option (AST × List Char) 
           match parseString (skipWs chars) with
           | some (s, rest) => some (.string s, rest)
           | none => none
-      | '[' :: rest => parseArrayFuel fuel' [] (skipWs rest)
-      | '{' :: rest => parseObjectFuel fuel' [] (skipWs rest)
+      | '[' :: rest => parseArrayFuelUnchecked fuel' [] (skipWs rest)
+      | '{' :: rest => parseObjectFuelUnchecked fuel' [] (skipWs rest)
       | '-' :: _ => parseNumber (skipWs chars)
       | c :: _ => if isDigit c then parseNumber (skipWs chars) else none
 
-def parseArrayFuel (fuel : Nat) (acc : List AST) (chars : List Char) :
+def parseArrayFuelUnchecked (fuel : Nat) (acc : List AST) (chars : List Char) :
     Option (AST × List Char) :=
   match fuel with
   | 0 => none
   | Nat.succ fuel' =>
       match skipWs chars with
-      | ']' :: rest => some (.array acc.reverse, rest)
+      | ']' :: rest =>
+          let ast : AST := .array acc.reverse
+          if IsCanonical ast then
+            some (ast, rest)
+          else
+            none
       | rest =>
-          match parseValueFuel fuel' rest with
+          match parseValueFuelUnchecked fuel' rest with
           | none => none
           | some (value, afterValue) =>
               match skipWs afterValue with
               | ',' :: afterComma =>
                   match skipWs afterComma with
                   | ']' :: _ => none
-                  | checkedAfterComma => parseArrayFuel fuel' (value :: acc) checkedAfterComma
-              | ']' :: afterClose => some (.array (value :: acc).reverse, afterClose)
+                  | checkedAfterComma =>
+                      if isCanonicalArray (value :: acc) then
+                        parseArrayFuelUnchecked fuel' (value :: acc) checkedAfterComma
+                      else
+                        none
+              | ']' :: afterClose =>
+                  let ast : AST := .array (value :: acc).reverse
+                  if IsCanonical ast then
+                    some (ast, afterClose)
+                  else
+                    none
               | _ => none
 
-def parseObjectFuel (fuel : Nat) (acc : List (String × AST)) (chars : List Char) :
+def parseObjectFuelUnchecked (fuel : Nat) (acc : List (String × AST)) (chars : List Char) :
     Option (AST × List Char) :=
   match fuel with
   | 0 => none
   | Nat.succ fuel' =>
       match skipWs chars with
-      | '}' :: rest => some (.object acc.reverse, rest)
+      | '}' :: rest =>
+          let ast : AST := .object acc.reverse
+          if IsCanonical ast then
+            some (ast, rest)
+          else
+            none
       | rest =>
           match parseString rest with
           | none => none
@@ -168,7 +280,7 @@ def parseObjectFuel (fuel : Nat) (acc : List (String × AST)) (chars : List Char
               else
                 match skipWs afterKey with
                 | ':' :: afterColon =>
-                    match parseValueFuel fuel' afterColon with
+                    match parseValueFuelUnchecked fuel' afterColon with
                     | none => none
                     | some (value, afterValue) =>
                         match skipWs afterValue with
@@ -176,19 +288,42 @@ def parseObjectFuel (fuel : Nat) (acc : List (String × AST)) (chars : List Char
                             match skipWs afterComma with
                             | '}' :: _ => none
                             | checkedAfterComma =>
-                                parseObjectFuel fuel' ((key, value) :: acc) checkedAfterComma
-                        | '}' :: afterClose => some (.object ((key, value) :: acc).reverse, afterClose)
+                                if isCanonicalObject ((key, value) :: acc) then
+                                  parseObjectFuelUnchecked fuel' ((key, value) :: acc) checkedAfterComma
+                                else
+                                  none
+                        | '}' :: afterClose =>
+                            let ast : AST := .object ((key, value) :: acc).reverse
+                            if IsCanonical ast then
+                              some (ast, afterClose)
+                            else
+                              none
                         | _ => none
                 | _ => none
 
 end
+
+def parseValueFuel (fuel : Nat) (chars : List Char) : Option (AST × List Char) :=
+  guardCanonicalResult (parseValueFuelUnchecked fuel chars)
+
+def parseArrayFuel (fuel : Nat) (acc : List AST) (chars : List Char) :
+    Option (AST × List Char) :=
+  guardCanonicalResult (parseArrayFuelUnchecked fuel acc chars)
+
+def parseObjectFuel (fuel : Nat) (acc : List (String × AST)) (chars : List Char) :
+    Option (AST × List Char) :=
+  guardCanonicalResult (parseObjectFuelUnchecked fuel acc chars)
 
 def parse (raw : RawBytes) : Option AST :=
   let chars := raw.toList
   match parseValueFuel (chars.length + 1) chars with
   | some (ast, rest) =>
       match skipWs rest with
-      | [] => some ast
+      | [] =>
+          if IsCanonical ast then
+            some ast
+          else
+            none
       | _ => none
   | none => none
 

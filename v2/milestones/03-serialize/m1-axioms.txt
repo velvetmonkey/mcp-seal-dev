@@ -1,18 +1,14 @@
 ⚠ [8/20] Replayed SealV2.SerializationTheorems
-warning: SealV2/SerializationTheorems.lean:9:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:16:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:22:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:29:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:36:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:43:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:47:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:51:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:56:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:61:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:66:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:71:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:77:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:84:8: declaration uses `sorry`
-ℹ [10/20] Replayed Test.V2M1Axioms
+warning: SealV2/SerializationTheorems.lean:82:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:86:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:90:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:95:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:100:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:105:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:110:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:116:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:123:8: declaration uses `sorry`
+ℹ [18/20] Built Test.V2M1Axioms (433ms)
 info: Test/V2M1Axioms.lean:5:0: 'SealV2.parse_total' depends on axioms: [propext, Classical.choice, Quot.sound]
 info: Test/V2M1Axioms.lean:6:0: 'SealV2.parse_failure_has_no_ast' depends on axioms: [propext, Classical.choice, Quot.sound]
+✔ [20/20] Built v2_m1_axiom_check:exe (522ms)

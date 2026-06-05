@@ -29,6 +29,12 @@ Accepted examples: `0`, `12`, `-12`, `0.5`, `-0.5`, `0.05`, `12.34`.
 
 Rejected examples: `-0`, `00`, `01`, `1.0`, `1.20`, `1.`, `.5`, `1e3`.
 
+## M3 tightening annotation
+
+During M3, Aristotle identified parser-canonicality counterexamples around worker-level number parsing, including `-0.0` and `-00.0`. The M3 branch tightened the public parser workers to strict-reject every non-canonical AST result rather than normalising.
+
+The accepted numeric grammar remains the locked M1 grammar above. Regression fixtures now cover `-0`, `-0.0`, `-00.0`, `00`, `01`, `-00`, `1.0`, `1.20`, `1.`, `.5`, `1e3`, `1E3`, and `6.022e23`.
+
 ## A2 carry-forwards
 
 - Exponent notation is out of the strict subset and blocks.

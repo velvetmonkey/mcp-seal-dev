@@ -26,6 +26,8 @@ jobs:
       - run: lake exe v2_m2_axiom_check 2>&1 | tee /tmp/v2-m2-axioms.txt
       - run: "! grep -E 'sorryAx|Lean\\.ofReduceBool' /tmp/v2-m2-axioms.txt"
       - run: lake exe v2_serialize_tests
+      - run: lake exe v2_m3_parser_axiom_check 2>&1 | tee /tmp/v2-m3-parser-axioms.txt
+      - run: "! grep -E 'sorryAx|Lean\\.ofReduceBool' /tmp/v2-m3-parser-axioms.txt"
       - run: lake exe v2_m3_axiom_check 2>&1 | tee /tmp/v2-m3-axioms.txt
       - run: "! grep -E 'Lean\\.ofReduceBool' /tmp/v2-m3-axioms.txt"
       - run: python3 test/integration/test_seal.py

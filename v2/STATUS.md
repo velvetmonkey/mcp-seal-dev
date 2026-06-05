@@ -86,6 +86,12 @@ serialize : (Σ ast, ValidCapability ast state) -> CanonicalBytes
 
 The M2 signed-message stub now routes through the same `serializeAst` path on `signedMessageAst`; the previous `repr` stub is removed. There is one canonical serializer for both output bytes and signed-message bytes.
 
-M3 scaffold contains named `sorry` obligations for Groups A-D in `SealV2/SerializationTheorems.lean`. Main remains blocked from merge until every M3 `sorry` is discharged and CI is green without `sorryAx`.
+M3 scaffold contains named obligations for Groups A-D in `SealV2/SerializationTheorems.lean`. Group A is proved after parser tightening; Groups B-D remain WIP `sorry`s. Main remains blocked from merge until every remaining M3 `sorry` is discharged and CI is green without `sorryAx`.
 
 Claim discipline: `canonical_roundtrip` means seal self-consistency only. A2, target-parse equivalence, remains the per-server obligation, minimised by construction and by the differential fixture, not eliminated.
+
+### M3 parser tightening
+
+Aristotle found that the original Group A worker obligations were not strong enough around number parsing counterexamples such as `-0.0` and `-00.0`. M3 tightened the public parser workers so every successful public parse worker result is guarded by `IsCanonical`.
+
+The parser remains fail-closed and does not normalise. Non-canonical numeric forms such as `-0`, `-0.0`, `-00.0`, `00`, `01`, `-00`, `1.0`, `1.20`, `1.`, `.5`, `1e3`, `1E3`, and `6.022e23` return `none`. The strict Group A theorem `parse raw = some ast -> IsCanonical ast` is now proved with no `sorry`.

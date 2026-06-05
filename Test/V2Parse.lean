@@ -14,6 +14,16 @@ def assertNone (name raw : String) : IO Unit := do
   | none => pure ()
   | some ast => throw <| IO.userError s!"{name}: expected parse failure for {raw}, got {repr ast}"
 
+def assertParseNumberNone (name raw : String) : IO Unit := do
+  match parseNumber raw.toList with
+  | none => pure ()
+  | some parsed => throw <| IO.userError s!"{name}: expected parseNumber failure for {raw}, got {repr parsed}"
+
+def assertParseNumberSome (name raw : String) : IO Unit := do
+  match parseNumber raw.toList with
+  | some _ => pure ()
+  | none => throw <| IO.userError s!"{name}: expected parseNumber success for {raw}"
+
 def accepted : List (String × String) := [
   ("null", "null"),
   ("true", "true"),
@@ -38,6 +48,9 @@ def rejected : List (String × String) := [
   ("escaped string", "\"prod\\nusers\""),
   ("unterminated string", "\"prod"),
   ("negative zero", "-0"),
+  ("negative zero fraction", "-0.0"),
+  ("negative leading zero fraction", "-00.0"),
+  ("negative leading zero", "-00"),
   ("leading zero", "01"),
   ("double zero", "00"),
   ("empty fraction", "1."),
@@ -46,9 +59,40 @@ def rejected : List (String × String) := [
   ("missing integer", ".5"),
   ("exponent lower", "1e3"),
   ("exponent upper", "1E3"),
+  ("exponent scientific", "6.022e23"),
   ("overspecified negative exponent", "-1e-9"),
+  ("array noncanonical number", "[1.0]"),
+  ("object noncanonical number", "{\"amount\":1.20}"),
+  ("object noncanonical key", "{\"ü\":1}"),
+  ("nested duplicate keys", "{\"outer\":{\"a\":1,\"a\":2}}"),
   ("trailing comma array", "[1,]"),
   ("trailing comma object", "{\"a\":1,}")
+]
+
+def rejectedNumbers : List (String × String) := [
+  ("negative zero", "-0"),
+  ("negative zero fraction", "-0.0"),
+  ("negative leading zero fraction", "-00.0"),
+  ("double zero", "00"),
+  ("leading zero", "01"),
+  ("negative leading zero", "-00"),
+  ("trailing fractional zero", "1.0"),
+  ("trailing fractional zero long", "1.20"),
+  ("empty fraction", "1."),
+  ("missing integer", ".5"),
+  ("exponent lower", "1e3"),
+  ("exponent upper", "1E3"),
+  ("exponent scientific", "6.022e23")
+]
+
+def acceptedNumbers : List (String × String) := [
+  ("zero", "0"),
+  ("integer", "12"),
+  ("negative integer", "-12"),
+  ("fraction", "0.5"),
+  ("negative fraction", "-0.5"),
+  ("leading fractional zero", "0.05"),
+  ("decimal", "12.34")
 ]
 
 def main : IO UInt32 := do
@@ -56,5 +100,9 @@ def main : IO UInt32 := do
     assertSome name raw
   for (name, raw) in rejected do
     assertNone name raw
+  for (name, raw) in acceptedNumbers do
+    assertParseNumberSome name raw
+  for (name, raw) in rejectedNumbers do
+    assertParseNumberNone name raw
   IO.println s!"M1 parser corpus passed: {accepted.length} accepted, {rejected.length} rejected"
   pure 0

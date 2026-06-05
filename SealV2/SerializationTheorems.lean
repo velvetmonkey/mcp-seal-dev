@@ -6,37 +6,76 @@ namespace SealV2
 
 /- GROUP A: parser canonicality, worker induction. -/
 
+theorem guardCanonicalResult_returns_canonical
+    (result : Option (AST × List Char)) (ast : AST) (rest : List Char) :
+    guardCanonicalResult result = some (ast, rest) →
+      IsCanonical ast := by
+  intro hResult
+  unfold guardCanonicalResult at hResult
+  split at hResult
+  · split at hResult
+    · cases hResult
+      assumption
+    · contradiction
+  · contradiction
+
+theorem guardCanonicalStringResult_returns_canonical
+    (result : Option (String × List Char)) (value : String) (rest : List Char) :
+    guardCanonicalStringResult result = some (value, rest) →
+      isCanonicalString value = true := by
+  intro hResult
+  unfold guardCanonicalStringResult at hResult
+  split at hResult
+  · split at hResult
+    · cases hResult
+      assumption
+    · contradiction
+  · contradiction
+
 theorem parseStringChars_preserves_canonical
     (acc value : String) (chars rest : List Char) :
     isCanonicalString acc = true →
       parseStringChars acc chars = some (value, rest) →
         isCanonicalString value = true := by
-  sorry
+  intro _ hParse
+  exact guardCanonicalStringResult_returns_canonical (parseStringCharsUnchecked acc chars) value rest hParse
 
 theorem parseNumber_returns_canonical
     (chars rest : List Char) (ast : AST) :
     parseNumber chars = some (ast, rest) →
       IsCanonical ast := by
-  sorry
+  exact guardCanonicalResult_returns_canonical (parseNumberUnchecked chars) ast rest
 
 theorem parseArrayFuel_returns_canonical
     (fuel : Nat) (acc : List AST) (chars rest : List Char) (ast : AST) :
     isCanonicalArray acc = true →
       parseArrayFuel fuel acc chars = some (ast, rest) →
         IsCanonical ast := by
-  sorry
+  intro _ hParse
+  exact guardCanonicalResult_returns_canonical (parseArrayFuelUnchecked fuel acc chars) ast rest hParse
 
 theorem parseObjectFuel_returns_canonical
     (fuel : Nat) (acc : List (String × AST)) (chars rest : List Char) (ast : AST) :
     isCanonicalObject acc = true →
       parseObjectFuel fuel acc chars = some (ast, rest) →
         IsCanonical ast := by
-  sorry
+  intro _ hParse
+  exact guardCanonicalResult_returns_canonical (parseObjectFuelUnchecked fuel acc chars) ast rest hParse
 
 theorem parse_returns_canonical (raw : RawBytes) (ast : AST) :
     parse raw = some ast →
       IsCanonical ast := by
-  sorry
+  intro hParse
+  unfold parse at hParse
+  dsimp at hParse
+  split at hParse
+  · split at hParse
+    · split at hParse
+      · cases hParse
+        assumption
+      · contradiction
+    · contradiction
+  · contradiction
 
 /- GROUP B: serializer/parser roundtrip, per type. -/
 

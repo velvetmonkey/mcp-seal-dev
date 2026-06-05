@@ -1,0 +1,18 @@
+⚠ [8/20] Replayed SealV2.SerializationTheorems
+warning: SealV2/SerializationTheorems.lean:82:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:86:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:90:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:95:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:100:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:105:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:110:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:116:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:123:8: declaration uses `sorry`
+ℹ [10/20] Replayed Test.V2M3ParserAxioms
+info: Test/V2M3ParserAxioms.lean:5:0: 'SealV2.guardCanonicalResult_returns_canonical' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M3ParserAxioms.lean:6:0: 'SealV2.guardCanonicalStringResult_returns_canonical' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M3ParserAxioms.lean:7:0: 'SealV2.parseStringChars_preserves_canonical' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M3ParserAxioms.lean:8:0: 'SealV2.parseNumber_returns_canonical' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M3ParserAxioms.lean:9:0: 'SealV2.parseArrayFuel_returns_canonical' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M3ParserAxioms.lean:10:0: 'SealV2.parseObjectFuel_returns_canonical' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M3ParserAxioms.lean:11:0: 'SealV2.parse_returns_canonical' depends on axioms: [propext, Classical.choice, Quot.sound]
