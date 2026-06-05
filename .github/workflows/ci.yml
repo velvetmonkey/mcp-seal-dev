@@ -17,6 +17,10 @@ jobs:
           build: false
       - run: lake build
       - run: lake exe automaton_tests
-      - run: lake exe axiom_check | tee /tmp/axioms.txt
+      - run: lake exe axiom_check 2>&1 | tee /tmp/axioms.txt
       - run: "! grep -E 'sorryAx|Lean\\.ofReduceBool' /tmp/axioms.txt"
+      - run: lake exe v2_parse_tests
+      - run: lake exe v2_m1_axiom_check 2>&1 | tee /tmp/v2-m1-axioms.txt
+      - run: "! grep -E 'sorryAx|Lean\\.ofReduceBool' /tmp/v2-m1-axioms.txt"
       - run: python3 test/integration/test_seal.py
+      - run: python3 test/v2/m1_adversarial_mcp_fixture.py
