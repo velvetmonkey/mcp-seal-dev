@@ -54,7 +54,7 @@ private def parseLiteral (literal : List Char) (value : AST) (chars : List Char)
   else
     none
 
-private def parseStringChars (acc : String) (chars : List Char) :
+def parseStringChars (acc : String) (chars : List Char) :
     Option (String × List Char) :=
   match chars with
   | '"' :: rest => some (acc, rest)
@@ -94,7 +94,7 @@ private def parseFraction (chars : List Char) : Option (Option String × List Ch
       | [] => none
   | _ => some (none, chars)
 
-private def parseNumber (chars : List Char) : Option (AST × List Char) :=
+def parseNumber (chars : List Char) : Option (AST × List Char) :=
   let (negative, rest) :=
     match chars with
     | '-' :: rest => (true, rest)
@@ -115,7 +115,7 @@ private def duplicateKey (key : String) (fields : List (String × AST)) : Bool :
 
 mutual
 
-private def parseValueFuel (fuel : Nat) (chars : List Char) : Option (AST × List Char) :=
+def parseValueFuel (fuel : Nat) (chars : List Char) : Option (AST × List Char) :=
   match fuel with
   | 0 => none
   | Nat.succ fuel' =>
@@ -133,7 +133,7 @@ private def parseValueFuel (fuel : Nat) (chars : List Char) : Option (AST × Lis
       | '-' :: _ => parseNumber (skipWs chars)
       | c :: _ => if isDigit c then parseNumber (skipWs chars) else none
 
-private def parseArrayFuel (fuel : Nat) (acc : List AST) (chars : List Char) :
+def parseArrayFuel (fuel : Nat) (acc : List AST) (chars : List Char) :
     Option (AST × List Char) :=
   match fuel with
   | 0 => none
@@ -152,7 +152,7 @@ private def parseArrayFuel (fuel : Nat) (acc : List AST) (chars : List Char) :
               | ']' :: afterClose => some (.array (value :: acc).reverse, afterClose)
               | _ => none
 
-private def parseObjectFuel (fuel : Nat) (acc : List (String × AST)) (chars : List Char) :
+def parseObjectFuel (fuel : Nat) (acc : List (String × AST)) (chars : List Char) :
     Option (AST × List Char) :=
   match fuel with
   | 0 => none

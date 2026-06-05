@@ -1,0 +1,18 @@
+⚠ [8/20] Replayed SealV2.SerializationTheorems
+warning: SealV2/SerializationTheorems.lean:9:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:16:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:22:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:29:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:36:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:43:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:47:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:51:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:56:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:61:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:66:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:71:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:77:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:84:8: declaration uses `sorry`
+ℹ [10/20] Replayed Test.V2M1Axioms
+info: Test/V2M1Axioms.lean:5:0: 'SealV2.parse_total' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M1Axioms.lean:6:0: 'SealV2.parse_failure_has_no_ast' depends on axioms: [propext, Classical.choice, Quot.sound]

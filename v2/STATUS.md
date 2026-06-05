@@ -64,6 +64,28 @@ M2 defines the signed message as exactly:
 
 The message is represented as a canonical AST-shaped value through `signedMessageAst`. M2's crypto is stubbed by `stubSignatureFor`, but it signs/verifies this message shape only. M3 must serialize this same canonical message value; M5 must verify Ed25519 over those canonical bytes, not over a separate ad-hoc encoding.
 
+M3 scaffold strengthening: `ValidCapability` now carries `ast_canonical : IsCanonical ast`. This is additive to M2's witness facts; the six M2 witness lemmas remain unchanged. The strengthening is required so `serialize` can be proof-gated without making canonicality circular through `parse` or `serialize`.
+
 ### M6 atomic consume carry-forward
 
 `ValidCapability` proves `approval.consumed = false`; M2 does not consume. M6 must make the validate-and-consume transition atomic inside `decide`, with no TOCTOU window between proving an approval live and consuming it. The M6 `state_monotonicity` theorem must connect directly to the `consumed = false` fact carried by the M2 witness.
+
+## M3 canonical serialization
+
+Status: WIP scaffold on `feat/v2-m3-serialize`; Aristotle proof handoff pending.
+
+M3 adds a standalone structural canonicality predicate and proof-gated serialization:
+
+```lean
+IsCanonical : AST -> Prop
+serializeAst : {ast // IsCanonical ast} -> CanonicalBytes
+serialize : (Σ ast, ValidCapability ast state) -> CanonicalBytes
+```
+
+`IsCanonical` is structural only. It does not reference `parse` or `serialize`. `serializeAst` computes on the AST value only, so proof terms cannot influence emitted bytes.
+
+The M2 signed-message stub now routes through the same `serializeAst` path on `signedMessageAst`; the previous `repr` stub is removed. There is one canonical serializer for both output bytes and signed-message bytes.
+
+M3 scaffold contains named `sorry` obligations for Groups A-D in `SealV2/SerializationTheorems.lean`. Main remains blocked from merge until every M3 `sorry` is discharged and CI is green without `sorryAx`.
+
+Claim discipline: `canonical_roundtrip` means seal self-consistency only. A2, target-parse equivalence, remains the per-server obligation, minimised by construction and by the differential fixture, not eliminated.

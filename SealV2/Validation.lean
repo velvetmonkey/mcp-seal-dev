@@ -1,6 +1,6 @@
 /- SPDX-License-Identifier: Apache-2.0 -/
 
-import SealV2.Parser
+import SealV2.Serialization
 
 namespace SealV2
 
@@ -71,11 +71,22 @@ def signedMessageAst (message : SignedMessage) : AST :=
     ("expiry", .number { negative := false, intDigits := toString message.expiry, fracDigits := none })
   ]
 
+def signedMessageCanonical? (message : SignedMessage) : Option {ast // IsCanonical ast} :=
+  let ast := signedMessageAst message
+  if h : IsCanonical ast then
+    some ⟨ast, h⟩
+  else
+    none
+
 def stubSignatureFor (publicKey : PublicKey) (message : SignedMessage) : Signature :=
-  s!"stub-ed25519:{publicKey}:{repr (signedMessageAst message)}"
+  match signedMessageCanonical? message with
+  | some ast => s!"stub-ed25519:{publicKey}:{serializeAst ast}"
+  | none => s!"stub-ed25519:{publicKey}:<noncanonical>"
 
 def verifySignature (publicKey : PublicKey) (approval : Approval) : Bool :=
-  approval.signature == stubSignatureFor publicKey (signedMessage approval)
+  match signedMessageCanonical? (signedMessage approval) with
+  | some ast => approval.signature == s!"stub-ed25519:{publicKey}:{serializeAst ast}"
+  | none => false
 
 structure SignatureVerified (publicKey : PublicKey) (approval : Approval) : Prop where
   verified : verifySignature publicKey approval = true
@@ -131,6 +142,7 @@ def findApproval (state : ApprovalState) (target : Target) : Option Approval :=
   state.approvals.find? (approvalLiveFor state target)
 
 structure ValidCapability (ast : AST) (state : ApprovalState) where
+  ast_canonical : IsCanonical ast
   request : CapabilityRequest
   request_from_ast : requestFromAst ast = some request
   toolSpec : ToolSpec
@@ -147,43 +159,46 @@ structure ValidCapability (ast : AST) (state : ApprovalState) where
   signature_verified : SignatureVerified state.publicKey approval
 
 def validate (ast : AST) (state : ApprovalState) : Option (Σ checkedAst, ValidCapability checkedAst state) :=
-  match hReq : requestFromAst ast with
-  | none => none
-  | some request =>
-      match findToolSpec state request with
-      | none => none
-      | some spec =>
-          let target := targetFor state request spec
-          match findApproval state target with
-          | none => none
-          | some approval =>
-              if hSig : verifySignature state.publicKey approval then
-                if hTools : state.tools.contains spec then
-                  if hAction : spec.actions.contains request.action then
-                    if hApprovals : state.approvals.contains approval then
-                      if hTarget : approval.target == target then
-                        if hSession : approval.session = state.session then
-                          if hUnused : approval.consumed = false then
-                            if hExpiry : state.now <= approval.expiresAt then
-                              some ⟨ast, {
-                                request := request,
-                                request_from_ast := hReq,
-                                toolSpec := spec,
-                                tool_spec_in_state := hTools,
-                                action_allowed := hAction,
-                                target := target,
-                                target_matches := rfl,
-                                approval := approval,
-                                approval_in_state := hApprovals,
-                                approval_target_matches := hTarget,
-                                approval_session_matches := hSession,
-                                approval_unused := hUnused,
-                                approval_unexpired := hExpiry,
-                                signature_verified := {
-                                  verified := hSig,
-                                  signed_message_is_target_session_expiry := rfl
-                                }
-                              }⟩
+  if hCanonical : IsCanonical ast then
+    match hReq : requestFromAst ast with
+    | none => none
+    | some request =>
+        match findToolSpec state request with
+        | none => none
+        | some spec =>
+            let target := targetFor state request spec
+            match findApproval state target with
+            | none => none
+            | some approval =>
+                if hSig : verifySignature state.publicKey approval then
+                  if hTools : state.tools.contains spec then
+                    if hAction : spec.actions.contains request.action then
+                      if hApprovals : state.approvals.contains approval then
+                        if hTarget : approval.target == target then
+                          if hSession : approval.session = state.session then
+                            if hUnused : approval.consumed = false then
+                              if hExpiry : state.now <= approval.expiresAt then
+                                some ⟨ast, {
+                                  ast_canonical := hCanonical,
+                                  request := request,
+                                  request_from_ast := hReq,
+                                  toolSpec := spec,
+                                  tool_spec_in_state := hTools,
+                                  action_allowed := hAction,
+                                  target := target,
+                                  target_matches := rfl,
+                                  approval := approval,
+                                  approval_in_state := hApprovals,
+                                  approval_target_matches := hTarget,
+                                  approval_session_matches := hSession,
+                                  approval_unused := hUnused,
+                                  approval_unexpired := hExpiry,
+                                  signature_verified := {
+                                    verified := hSig,
+                                    signed_message_is_target_session_expiry := rfl
+                                  }
+                                }⟩
+                              else none
                             else none
                           else none
                         else none
@@ -191,6 +206,10 @@ def validate (ast : AST) (state : ApprovalState) : Option (Σ checkedAst, ValidC
                     else none
                   else none
                 else none
-              else none
+  else
+    none
+
+def serialize {state : ApprovalState} (checked : Σ ast, ValidCapability ast state) : CanonicalBytes :=
+  serializeAst ⟨checked.fst, checked.snd.ast_canonical⟩
 
 end SealV2

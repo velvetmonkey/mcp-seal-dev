@@ -1,0 +1,22 @@
+⚠ [8/20] Replayed SealV2.SerializationTheorems
+warning: SealV2/SerializationTheorems.lean:9:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:16:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:22:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:29:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:36:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:43:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:47:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:51:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:56:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:61:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:66:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:71:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:77:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:84:8: declaration uses `sorry`
+ℹ [10/20] Replayed Test.V2M2Axioms
+info: Test/V2M2Axioms.lean:5:0: 'SealV2.validate_none_no_witness_result' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M2Axioms.lean:6:0: 'SealV2.valid_capability_has_unused_approval' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M2Axioms.lean:7:0: 'SealV2.valid_capability_has_unexpired_approval' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M2Axioms.lean:8:0: 'SealV2.valid_capability_has_signature_verified' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M2Axioms.lean:9:0: 'SealV2.valid_capability_target_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Test/V2M2Axioms.lean:10:0: 'SealV2.valid_capability_session_bound' depends on axioms: [propext, Classical.choice, Quot.sound]

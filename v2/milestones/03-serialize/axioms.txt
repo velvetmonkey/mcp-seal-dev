@@ -1,0 +1,30 @@
+⚠ [8/20] Replayed SealV2.SerializationTheorems
+warning: SealV2/SerializationTheorems.lean:9:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:16:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:22:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:29:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:36:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:43:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:47:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:51:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:56:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:61:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:66:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:71:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:77:8: declaration uses `sorry`
+warning: SealV2/SerializationTheorems.lean:84:8: declaration uses `sorry`
+ℹ [10/20] Replayed Test.V2M3Axioms
+info: Test/V2M3Axioms.lean:5:0: 'SealV2.parseStringChars_preserves_canonical' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:6:0: 'SealV2.parseNumber_returns_canonical' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:7:0: 'SealV2.parseArrayFuel_returns_canonical' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:8:0: 'SealV2.parseObjectFuel_returns_canonical' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:9:0: 'SealV2.parse_returns_canonical' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:10:0: 'SealV2.serialize_roundtrip_null' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:11:0: 'SealV2.serialize_roundtrip_bool' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:12:0: 'SealV2.serialize_roundtrip_number' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:13:0: 'SealV2.serialize_roundtrip_string' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:14:0: 'SealV2.serialize_roundtrip_array' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:15:0: 'SealV2.serialize_roundtrip_object' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:16:0: 'SealV2.canonical_roundtrip' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:17:0: 'SealV2.serializeAst_deterministic' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+info: Test/V2M3Axioms.lean:18:0: 'SealV2.serialize_validCapability_roundtrip' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
