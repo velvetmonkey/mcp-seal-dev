@@ -1,0 +1,1 @@
+M2 adversarial MCP fixture passed: 5 rejected, 1 accepted
