@@ -187,7 +187,81 @@ theorem parseNumberUnchecked_serializeDecimal (value : Decimal) (rest : List Cha
     (hcan : isCanonicalDecimal value = true)
     (hrest : rest = [] ∨ ∃ c rest', rest = c :: rest' ∧ isDigit c = false ∧ c ≠ '.' ∧ c ≠ 'e' ∧ c ≠ 'E') :
     parseNumberUnchecked ((serializeDecimal value).toList ++ rest) = some (.number value, rest) := by
-  sorry
+  obtain ⟨neg, intDigits, fracDigits⟩ := value
+  have hcanInt : isCanonicalIntDigits intDigits = true := by
+    unfold isCanonicalDecimal at hcan; simp only [Bool.and_eq_true] at hcan; exact hcan.1.1
+  obtain ⟨ic, ics, hic, hicd⟩ : ∃ c cs, intDigits.toList = c :: cs ∧ isDigit c = true := by
+    unfold isCanonicalIntDigits at hcanInt
+    cases h : intDigits.toList with
+    | nil => rw [h] at hcanInt; simp at hcanInt
+    | cons c cs =>
+      refine ⟨c, cs, rfl, ?_⟩
+      rw [h] at hcanInt
+      by_cases h0 : c = '0' ∧ cs = []
+      · obtain ⟨rfl, rfl⟩ := h0; decide
+      · revert hcanInt; unfold isDigit
+        split
+        · intro hh; exact absurd (List.cons_eq_cons.mp ‹_›) h0
+        · rename_i hne; obtain ⟨rfl, _⟩ := List.cons_eq_cons.mp hne
+          intro hh; simp +decide at hh; unfold isNonZeroDigitChar at hh
+          simp +decide at hh ⊢; omega
+        · intro hh; simp at hh
+  obtain ⟨ftail, hftail⟩ : ∃ t : List Char,
+      t = (match fracDigits with | none => ([] : List Char) | some d => '.' :: d.toList) :=
+    ⟨_, rfl⟩
+  have hpInt : parseIntegerDigits (intDigits.toList ++ (ftail ++ rest))
+      = some (intDigits, ftail ++ rest) := by
+    apply parseIntegerDigits_canonical intDigits (ftail ++ rest) hcanInt
+    cases fracDigits with
+    | none =>
+      rw [hftail]; simp only [List.nil_append]
+      rcases hrest with rfl | ⟨c, r, rfl, hd, _, _, _⟩
+      · exact Or.inl rfl
+      · exact Or.inr ⟨c, r, rfl, hd⟩
+    | some d => rw [hftail]; exact Or.inr ⟨'.', d.toList ++ rest, rfl, by decide⟩
+  have hpFrac : parseFraction (ftail ++ rest) = some (fracDigits, rest) := by
+    cases fracDigits with
+    | none =>
+      rw [hftail]; simp only [List.nil_append]
+      rcases hrest with rfl | ⟨c, r, rfl, _, hdot, _, _⟩
+      · rfl
+      · exact parseFraction_nonDot c r hdot
+    | some d =>
+      rw [hftail]
+      have hcanFrac : isCanonicalFracDigits d = true := by
+        unfold isCanonicalDecimal at hcan; simp only [Bool.and_eq_true] at hcan; exact hcan.1.2
+      simp only [List.cons_append]
+      apply parseFraction_canonical d rest hcanFrac
+      rcases hrest with rfl | ⟨c, r, rfl, hd, _, _, _⟩
+      · exact Or.inl rfl
+      · exact Or.inr ⟨c, r, rfl, hd⟩
+  have hpExp : startsExponent rest = false := by
+    rcases hrest with rfl | ⟨c, r, rfl, _, _, he, hE⟩
+    · rfl
+    · exact startsExponent_nonExp c r he hE
+  have hicNotDash : ic ≠ '-' := by intro h; subst h; revert hicd; decide
+  have hdash : ("-" : String).toList = ['-'] := by decide
+  have hdot : ("." : String).toList = ['.'] := by decide
+  rw [hic] at hpInt
+  simp only [List.cons_append] at hpInt
+  cases neg with
+  | true =>
+    have hser : (serializeDecimal ⟨true, intDigits, fracDigits⟩).toList
+        = '-' :: ((ic :: ics) ++ ftail) := by
+      rw [hftail]; cases fracDigits <;>
+        simp [serializeDecimal, String.toList_append, hdash, hdot, hic, List.append_nil]
+    rw [hser]
+    unfold parseNumberUnchecked
+    simp [List.cons_append, List.append_assoc, hpInt, hpFrac, hpExp]
+  | false =>
+    have hser : (serializeDecimal ⟨false, intDigits, fracDigits⟩).toList
+        = (ic :: ics) ++ ftail := by
+      rw [hftail]; cases fracDigits <;>
+        simp [serializeDecimal, String.toList_append, hdash, hdot, hic, List.append_nil]
+    rw [hser, List.cons_append]
+    unfold parseNumberUnchecked
+    simp [hicNotDash, List.cons.injEq, false_and, List.cons_append,
+      List.append_assoc, hpInt, hpFrac, hpExp]
 
 theorem serializeDecimal_firstChar_neg (value : Decimal)
     (_hcan : isCanonicalDecimal value = true) (hneg : value.negative = true) :
