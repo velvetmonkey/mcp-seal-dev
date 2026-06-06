@@ -38,6 +38,19 @@ theorem valid_capability_session_bound {ast : AST} {state : ApprovalState}
 
 theorem signed_parse_canonical (raw : RawBytes) (ast : {ast // IsCanonical ast}) :
     signedParse raw = some ast → raw = serializeAst ast := by
-  sorry -- ARISTOTLE: injectivity / canonical-byte uniqueness for the signed path
+  unfold signedParse
+  intro h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i a _
+    split at h
+    · rename_i hc
+      split at h
+      · rename_i hbeq
+        have := Option.some.inj h
+        rw [← this]
+        exact eq_of_beq hbeq
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
 
 end SealV2
