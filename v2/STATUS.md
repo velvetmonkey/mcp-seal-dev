@@ -72,7 +72,7 @@ M3 scaffold strengthening: `ValidCapability` now carries `ast_canonical : IsCano
 
 ## M3 canonical serialization
 
-Status: WIP scaffold on `feat/v2-m3-serialize`; Aristotle proof handoff pending.
+Status: complete; merged to `main`. All M3 obligations are discharged with zero `sorry`, no `native_decide`, and the axiom gate is green.
 
 M3 adds a standalone structural canonicality predicate and proof-gated serialization:
 
@@ -86,7 +86,11 @@ serialize : (Σ ast, ValidCapability ast state) -> CanonicalBytes
 
 The M2 signed-message stub now routes through the same `serializeAst` path on `signedMessageAst`; the previous `repr` stub is removed. There is one canonical serializer for both output bytes and signed-message bytes.
 
-M3 scaffold contains named obligations for Groups A-D in `SealV2/SerializationTheorems.lean`. Group A is proved after parser tightening; Groups B-D remain WIP `sorry`s. Main remains blocked from merge until every remaining M3 `sorry` is discharged and CI is green without `sorryAx`.
+M3 scaffold contained named obligations for Groups A-D in `SealV2/SerializationTheorems.lean`. All are now proved: Group A canonicality after parser tightening, and Groups B-D the value, array, and object serialization roundtrips via fuel-based mutual induction. The keystone `value_roundtrip_size` closes the recursion. Zero `sorry`, no `native_decide`.
+
+### M3 axiom footprint (verified)
+
+`lake exe v2_m3_axiom_check` confirms all 14 M3 theorems depend only on `[propext, Classical.choice, Quot.sound]`. No `sorryAx`. Covered theorems include `parse_returns_canonical`, `serialize_roundtrip_{null,bool,number,string,array,object}`, `canonical_roundtrip`, `serializeAst_deterministic`, and `serialize_validCapability_roundtrip`.
 
 Claim discipline: `canonical_roundtrip` means seal self-consistency only. A2, target-parse equivalence, remains the per-server obligation, minimised by construction and by the differential fixture, not eliminated.
 
