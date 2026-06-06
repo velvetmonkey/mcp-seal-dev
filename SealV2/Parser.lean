@@ -101,24 +101,24 @@ def guardCanonicalStringResult (result : Option (String × List Char)) : Option 
         none
   | none => none
 
-private def isWs : Char → Bool
+def isWs : Char → Bool
   | ' ' | '\n' | '\r' | '\t' => true
   | _ => false
 
-private def isDigit (c : Char) : Bool :=
+def isDigit (c : Char) : Bool :=
   '0'.toNat ≤ c.toNat && c.toNat ≤ '9'.toNat
 
-private def isNonZeroDigit (c : Char) : Bool :=
+def isNonZeroDigit (c : Char) : Bool :=
   '1'.toNat ≤ c.toNat && c.toNat ≤ '9'.toNat
 
-private def isAsciiStringChar (c : Char) : Bool :=
+def isAsciiStringChar (c : Char) : Bool :=
   0x20 ≤ c.toNat && c.toNat ≤ 0x7e && c != '"' && c != '\\'
 
-private def skipWs : List Char → List Char
+def skipWs : List Char → List Char
   | c :: rest => if isWs c then skipWs rest else c :: rest
   | [] => []
 
-private def takeDigits (chars : List Char) : String × List Char :=
+def takeDigits (chars : List Char) : String × List Char :=
   match chars with
   | c :: rest =>
       if isDigit c then
@@ -128,7 +128,7 @@ private def takeDigits (chars : List Char) : String × List Char :=
         ("", chars)
   | [] => ("", [])
 
-private def parseLiteral (literal : List Char) (value : AST) (chars : List Char) :
+def parseLiteral (literal : List Char) (value : AST) (chars : List Char) :
     Option (AST × List Char) :=
   if chars.take literal.length == literal then
     some (value, chars.drop literal.length)
@@ -150,12 +150,12 @@ def parseStringChars (acc : String) (chars : List Char) :
     Option (String × List Char) :=
   guardCanonicalStringResult (parseStringCharsUnchecked acc chars)
 
-private def parseString (chars : List Char) : Option (String × List Char) :=
+def parseString (chars : List Char) : Option (String × List Char) :=
   match chars with
   | '"' :: rest => parseStringChars "" rest
   | _ => none
 
-private def parseIntegerDigits (chars : List Char) : Option (String × List Char) :=
+def parseIntegerDigits (chars : List Char) : Option (String × List Char) :=
   match chars with
   | '0' :: rest =>
       match rest with
@@ -169,7 +169,7 @@ private def parseIntegerDigits (chars : List Char) : Option (String × List Char
         none
   | [] => none
 
-private def parseFraction (chars : List Char) : Option (Option String × List Char) :=
+def parseFraction (chars : List Char) : Option (Option String × List Char) :=
   match chars with
   | '.' :: rest =>
       let (digits, tail) := takeDigits rest
@@ -179,7 +179,7 @@ private def parseFraction (chars : List Char) : Option (Option String × List Ch
       | [] => none
   | _ => some (none, chars)
 
-private def startsExponent : List Char → Bool
+def startsExponent : List Char → Bool
   | 'e' :: _ | 'E' :: _ => true
   | _ => false
 
@@ -203,7 +203,7 @@ def parseNumberUnchecked (chars : List Char) : Option (AST × List Char) :=
 def parseNumber (chars : List Char) : Option (AST × List Char) :=
   guardCanonicalResult (parseNumberUnchecked chars)
 
-private def duplicateKey (key : String) (fields : List (String × AST)) : Bool :=
+def duplicateKey (key : String) (fields : List (String × AST)) : Bool :=
   fields.any (fun field => field.fst == key)
 
 mutual
