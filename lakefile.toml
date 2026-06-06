@@ -7,6 +7,13 @@ name = "batteries"
 git = "https://github.com/leanprover-community/batteries.git"
 rev = "v4.28.0"
 
+# Proof-development only: aesop is a Batteries-based proof-search tactic.
+# Kernel-checked, adds no axioms, and is NOT linked into the runtime `seal` binary.
+[[require]]
+name = "aesop"
+git = "https://github.com/leanprover-community/aesop.git"
+rev = "v4.28.0"
+
 [[lean_lib]]
 name = "SealCore"
 
