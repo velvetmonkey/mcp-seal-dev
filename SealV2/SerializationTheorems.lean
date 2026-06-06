@@ -320,7 +320,44 @@ theorem serialize_roundtrip_bool (value : Bool) :
 theorem serialize_roundtrip_number (value : Decimal)
     (h : IsCanonical (.number value)) :
     parse (serializeAst ⟨.number value, h⟩) = some (.number value) := by
-  sorry
+  have hcan : isCanonicalDecimal value = true := h
+  have hpnum : parseNumber (serializeDecimal value).toList = some (.number value, []) := by
+    unfold parseNumber
+    have hx := parseNumberUnchecked_serializeDecimal value [] hcan (Or.inl rfl)
+    rw [List.append_nil] at hx
+    rw [hx]; simp only [guardCanonicalResult]; rw [if_pos h]
+  have hsw : skipWs (serializeDecimal value).toList = (serializeDecimal value).toList := by
+    by_cases hneg : value.negative = true
+    · obtain ⟨tl, ht⟩ := serializeDecimal_firstChar_neg value hcan hneg
+      rw [ht]; simp [skipWs, isWs]
+    · simp only [Bool.not_eq_true] at hneg
+      obtain ⟨c, tl, ht, hcd⟩ := serializeDecimal_firstChar_pos value hcan hneg
+      rw [ht]; simp [skipWs, digit_not_ws c hcd]
+  have hpvu : parseValueFuelUnchecked ((serializeDecimal value).toList.length + 1)
+      (serializeDecimal value).toList = some (.number value, []) := by
+    simp only [parseValueFuelUnchecked]
+    rw [hsw]
+    by_cases hneg : value.negative = true
+    · obtain ⟨tl, ht⟩ := serializeDecimal_firstChar_neg value hcan hneg
+      rw [ht]
+      show parseNumber ('-' :: tl) = some (.number value, [])
+      rw [← ht]; exact hpnum
+    · simp only [Bool.not_eq_true] at hneg
+      obtain ⟨c, tl, ht, hcd⟩ := serializeDecimal_firstChar_pos value hcan hneg
+      rw [ht]
+      split <;>
+        first
+        | (rw [if_pos hcd, ← ht]; exact hpnum)
+        | simp_all (config := { decide := true }) [isDigit]
+  have hpvf : parseValueFuel ((serializeDecimal value).toList.length + 1)
+      (serializeDecimal value).toList = some (.number value, []) := by
+    unfold parseValueFuel
+    rw [hpvu]; simp only [guardCanonicalResult]; rw [if_pos h]
+  change parse (serializeDecimal value) = some (.number value)
+  simp only [parse]
+  rw [hpvf]
+  simp only [skipWs]
+  rw [if_pos h]
 
 set_option maxRecDepth 8000 in
 set_option maxHeartbeats 6400000 in
