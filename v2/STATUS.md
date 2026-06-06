@@ -99,3 +99,42 @@ Claim discipline: `canonical_roundtrip` means seal self-consistency only. A2, ta
 Aristotle found that the original Group A worker obligations were not strong enough around number parsing counterexamples such as `-0.0` and `-00.0`. M3 tightened the public parser workers so every successful public parse worker result is guarded by `IsCanonical`.
 
 The parser remains fail-closed and does not normalise. Non-canonical numeric forms such as `-0`, `-0.0`, `-00.0`, `00`, `01`, `-00`, `1.0`, `1.20`, `1.`, `.5`, `1e3`, `1E3`, and `6.022e23` return `none`. The strict Group A theorem `parse raw = some ast -> IsCanonical ast` is now proved with no `sorry`.
+
+## M4 mediated decide and non-bypass
+
+Status: complete on `feat/v2-m4-nonbypass`. All M4 obligations are discharged with zero `sorry`, no `admit`, no `native_decide`, and the axiom gate is green.
+
+M4 adds the single mediated decision path:
+
+```lean
+Decision.Block : Decision
+Decision.Allow : CanonicalBytes -> Decision
+decide : RawBytes -> ApprovalState -> Decision
+```
+
+`decide` is fail-closed by exhaustive case analysis. It blocks if parsing fails or validation fails, and it allows only bytes produced by `serialize` from the proof-carrying `validate` witness.
+
+M4 proves:
+
+```lean
+non_bypass :
+  decide raw state = Decision.Allow out ->
+    ∃ ast, parse raw = some ast ∧
+      ∃ w : ValidCapability ast state, out = serialize ⟨ast, w⟩
+
+default_deny :
+  (parse raw = none ∨
+    ∃ ast, parse raw = some ast ∧ validate ast state = none) ->
+  decide raw state = Decision.Block
+
+decide_emit_unique :
+  decide raw state = Decision.Allow out ↔
+    ∃ ast, parse raw = some ast ∧
+      ∃ w : ValidCapability ast state,
+        validate ast state = some ⟨ast, w⟩ ∧
+          out = serialize ⟨ast, w⟩
+```
+
+### M4 axiom footprint (verified)
+
+`lake exe v2_m4_axiom_check` confirms all three M4 theorems depend only on `[propext, Classical.choice, Quot.sound]`. No `sorryAx`.

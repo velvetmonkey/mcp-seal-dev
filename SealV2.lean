@@ -7,3 +7,5 @@ import SealV2.Serialization
 import SealV2.Validation
 import SealV2.ValidationTheorems
 import SealV2.SerializationTheorems
+import SealV2.Decide
+import SealV2.DecideTheorems
