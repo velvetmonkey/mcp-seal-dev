@@ -4,7 +4,6 @@ import SealV2.Validation
 import SealV2.SerializationContainerLemmas
 import Aesop
 
-
 namespace SealV2
 
 /- GROUP A: parser canonicality, worker induction. -/
@@ -377,15 +376,192 @@ theorem serialize_roundtrip_string (value : String)
   rw [parseStringCharsUnchecked_acc "" value [] hcs]
   simp [hcs, IsCanonical, isCanonicalAst, skipWs]
 
+/- ============================================================
+   GROUP B2: Container roundtrip helpers
+   ============================================================ -/
+
+/-! ## GoodRest predicate -/
+
+def GoodRest (rest : List Char) : Prop :=
+  rest = [] ∨ ∃ c rest', rest = c :: rest' ∧
+    isDigit c = false ∧ c ≠ '.' ∧ c ≠ 'e' ∧ c ≠ 'E'
+
+theorem GoodRest_nil : GoodRest [] := Or.inl rfl
+theorem GoodRest_cons_comma (tl : List Char) : GoodRest (',' :: tl) :=
+  Or.inr ⟨',', tl, rfl, by decide, by decide, by decide, by decide⟩
+theorem GoodRest_cons_rbracket (tl : List Char) : GoodRest (']' :: tl) :=
+  Or.inr ⟨']', tl, rfl, by decide, by decide, by decide, by decide⟩
+theorem GoodRest_cons_rbrace (tl : List Char) : GoodRest ('}' :: tl) :=
+  Or.inr ⟨'}', tl, rfl, by decide, by decide, by decide, by decide⟩
+
+/-! ## isCanonicalObject reverse -/
+
+theorem hasDuplicateKey_reverse (k : String) (L : List (String × AST)) :
+    hasDuplicateKey k L.reverse = hasDuplicateKey k L := by
+  simp [hasDuplicateKey, List.any_reverse]
+
+theorem isCanonicalObject_snoc (L : List (String × AST)) (k : String) (v : AST)
+    (hL : isCanonicalObject L = true)
+    (hnd : hasDuplicateKey k L = false)
+    (hk : isCanonicalString k = true)
+    (hv : isCanonicalAst v = true) :
+    isCanonicalObject (L ++ [(k, v)]) = true := by
+  induction L <;> simp_all +decide [ isCanonicalObject ];
+  simp_all +decide [ hasDuplicateKey ];
+  grind
+
+theorem isCanonicalObject_of_reverse (L : List (String × AST))
+    (h : isCanonicalObject L = true) :
+    isCanonicalObject L.reverse = true := by
+  induction L with
+  | nil => exact h
+  | cons hd tl ih =>
+    obtain ⟨k, v⟩ := hd
+    have htl := isCanonicalObject_tail h
+    have hk := isCanonicalObject_head_key h
+    have hv := isCanonicalObject_head_value h
+    have hnd := isCanonicalObject_head_nodup h
+    simp only [List.reverse_cons]
+    exact isCanonicalObject_snoc tl.reverse k v (ih htl)
+      (hasDuplicateKey_reverse k tl ▸ hnd) hk hv
+
+/-! ## parseString roundtrip for keys -/
+
+theorem parseString_roundtrip (key : String) (afterKey : List Char)
+    (hcan : isCanonicalString key = true) :
+    parseString ('"' :: key.toList ++ '"' :: afterKey) = some (key, afterKey) := by
+  have h := parseStringCharsUnchecked_acc "" key afterKey hcan
+  simp only [parseString, List.cons_append, parseStringChars, guardCanonicalStringResult, h]
+  simp [hcan]
+
+/-! ## First-character properties -/
+
+private theorem serializeDecimal_first_props (v : Decimal) (hcan : isCanonicalDecimal v = true) :
+    ∀ c cs, (serializeDecimal v).toList = c :: cs → isWs c = false ∧ c ≠ ']' ∧ c ≠ '}' := by
+  intro c cs hcs
+  by_cases hneg : v.negative = true;
+  · have := serializeDecimal_firstChar_neg v hcan hneg; obtain ⟨ rest, hrest ⟩ := this; aesop;
+  · -- Since `v.negative` is false, `c` must be a digit.
+    have h_digit : isDigit c = true := by
+      have := serializeDecimal_firstChar_pos v hcan ( by simpa using hneg ) ; aesop;
+    unfold isDigit at h_digit;
+    unfold isWs; aesop
+
+private theorem serializeAstValue_first_props (ast : AST) (hcan : isCanonicalAst ast = true) :
+    ∀ c cs, (serializeAstValue ast).toList = c :: cs → isWs c = false ∧ c ≠ ']' ∧ c ≠ '}' := by
+  intro c cs h
+  match ast with
+  | .null =>
+    change "null".toList = _ at h
+    have : ("null" : String).toList = ['n', 'u', 'l', 'l'] := by decide
+    rw [this] at h; obtain ⟨rfl, _⟩ := h; exact ⟨by decide, by decide, by decide⟩
+  | .bool true =>
+    change "true".toList = _ at h
+    have : ("true" : String).toList = ['t', 'r', 'u', 'e'] := by decide
+    rw [this] at h; obtain ⟨rfl, _⟩ := h; exact ⟨by decide, by decide, by decide⟩
+  | .bool false =>
+    change "false".toList = _ at h
+    have : ("false" : String).toList = ['f', 'a', 'l', 's', 'e'] := by decide
+    rw [this] at h; obtain ⟨rfl, _⟩ := h; exact ⟨by decide, by decide, by decide⟩
+  | .number v => exact serializeDecimal_first_props v hcan c cs h
+  | .string _ =>
+    simp only [serializeAstValue, String.toList_append] at h
+    have : ("\"" : String).toList = ['"'] := by decide
+    rw [this] at h; simp at h; obtain ⟨rfl, _⟩ := h; exact ⟨by decide, by decide, by decide⟩
+  | .array _ =>
+    simp only [serializeAstValue, String.toList_append] at h
+    have : ("[" : String).toList = ['['] := by decide
+    rw [this] at h; simp at h; obtain ⟨rfl, _⟩ := h; exact ⟨by decide, by decide, by decide⟩
+  | .object _ =>
+    simp only [serializeAstValue, String.toList_append] at h
+    have : ("{" : String).toList = ['{'] := by decide
+    rw [this] at h; simp at h; obtain ⟨rfl, _⟩ := h; exact ⟨by decide, by decide, by decide⟩
+
+theorem serializeAstValue_head_not_ws (ast : AST) (hcan : isCanonicalAst ast = true) :
+    ∀ c cs, (serializeAstValue ast).toList = c :: cs → isWs c = false :=
+  fun c cs h => (serializeAstValue_first_props ast hcan c cs h).1
+
+theorem serializeAstValue_first_ne_rbracket (ast : AST) (hcan : isCanonicalAst ast = true) :
+    ∀ c cs, (serializeAstValue ast).toList = c :: cs → c ≠ ']' :=
+  fun c cs h => (serializeAstValue_first_props ast hcan c cs h).2.1
+
+theorem serializeAstValue_first_ne_rbrace (ast : AST) (hcan : isCanonicalAst ast = true) :
+    ∀ c cs, (serializeAstValue ast).toList = c :: cs → c ≠ '}' :=
+  fun c cs h => (serializeAstValue_first_props ast hcan c cs h).2.2
+
+/-! ## Array accumulator helper -/
+
+set_option maxHeartbeats 800000 in
+theorem parseArrayFuelUnchecked_roundtrip
+    (items : List AST) (acc : List AST) (rest : List Char) (fuel : Nat)
+    (hcan_items : isCanonicalArray items = true)
+    (hcan_acc : isCanonicalArray acc = true)
+    (hfuel : fuel ≥ (serializeArrayValue items).toList.length + 2)
+    (ih_value : ∀ (x : AST), x ∈ items → ∀ (tl : List Char) (fuel' : Nat),
+      isCanonicalAst x = true →
+      fuel' ≥ (serializeAstValue x).toList.length + 1 →
+      GoodRest tl →
+      parseValueFuelUnchecked fuel' ((serializeAstValue x).toList ++ tl) = some (x, tl)) :
+    parseArrayFuelUnchecked fuel acc ((serializeArrayValue items).toList ++ ']' :: rest)
+      = some (.array (acc.reverse ++ items), rest) := by
+  sorry
+
+/-! ## Object accumulator helper -/
+
+set_option maxHeartbeats 800000 in
+theorem parseObjectFuelUnchecked_roundtrip
+    (fields : List (String × AST)) (acc : List (String × AST)) (rest : List Char) (fuel : Nat)
+    (hcan_fields : isCanonicalObject fields = true)
+    (hcan_acc : isCanonicalObject acc = true)
+    (hnodup : ∀ (k : String) (v : AST), (k, v) ∈ fields → duplicateKey k acc = false)
+    (hfuel : fuel ≥ (serializeObjectValue fields).toList.length + 2)
+    (ih_value : ∀ (k : String) (v : AST), (k, v) ∈ fields → ∀ (tl : List Char) (fuel' : Nat),
+      isCanonicalAst v = true →
+      fuel' ≥ (serializeAstValue v).toList.length + 1 →
+      GoodRest tl →
+      parseValueFuelUnchecked fuel' ((serializeAstValue v).toList ++ tl) = some (v, tl)) :
+    parseObjectFuelUnchecked fuel acc ((serializeObjectValue fields).toList ++ '}' :: rest)
+      = some (.object (acc.reverse ++ fields), rest) := by
+  sorry
+
+/-! ## Value-level roundtrip by strong induction -/
+
+set_option maxHeartbeats 800000 in
+private theorem value_roundtrip_size (n : Nat) :
+    ∀ (ast : AST) (rest : List Char) (fuel : Nat),
+      sizeOf ast ≤ n →
+      isCanonicalAst ast = true →
+      fuel ≥ (serializeAstValue ast).toList.length + 1 →
+      GoodRest rest →
+      parseValueFuelUnchecked fuel ((serializeAstValue ast).toList ++ rest) = some (ast, rest) := by
+  sorry
+
+theorem serialize_roundtrip_value_unchecked (ast : AST) (rest : List Char) (fuel : Nat)
+    (hcan : isCanonicalAst ast = true)
+    (hfuel : fuel ≥ (serializeAstValue ast).toList.length + 1)
+    (hrest : GoodRest rest) :
+    parseValueFuelUnchecked fuel ((serializeAstValue ast).toList ++ rest) = some (ast, rest) :=
+  value_roundtrip_size (sizeOf ast) ast rest fuel (Nat.le_refl _) hcan hfuel hrest
+
+/-! ## Bridge to parse -/
+
+theorem serialize_roundtrip_parse (ast : AST) (hcan : IsCanonical ast) :
+    parse (serializeAstValue ast) = some ast := by
+  have h : parseValueFuelUnchecked ((serializeAstValue ast).toList.length + 1)
+      ((serializeAstValue ast).toList ++ []) = some (ast, []) :=
+    serialize_roundtrip_value_unchecked ast [] _ hcan (by omega) GoodRest_nil
+  simp only [List.append_nil] at h
+  simp only [parse, parseValueFuel, guardCanonicalResult, h, hcan, ↓reduceIte, skipWs]
+
 theorem serialize_roundtrip_array (items : List AST)
     (h : IsCanonical (.array items)) :
-    parse (serializeAst ⟨.array items, h⟩) = some (.array items) := by
-  sorry
+    parse (serializeAst ⟨.array items, h⟩) = some (.array items) :=
+  serialize_roundtrip_parse (.array items) h
 
 theorem serialize_roundtrip_object (fields : List (String × AST))
     (h : IsCanonical (.object fields)) :
-    parse (serializeAst ⟨.object fields, h⟩) = some (.object fields) := by
-  sorry
+    parse (serializeAst ⟨.object fields, h⟩) = some (.object fields) :=
+  serialize_roundtrip_parse (.object fields) h
 
 theorem canonical_roundtrip (ast : {ast // IsCanonical ast}) :
     parse (serializeAst ast) = some ast.val := by
