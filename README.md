@@ -54,6 +54,24 @@ Trusted, not proven:
 - Lean compiler/runtime, JSON parsing, child-process I/O, and host/server behavior.
 - The MCP boundary. In-process calls that never emit `tools/call` are out of scope.
 
+## v2: Verified Capability Pipeline (in progress)
+
+v2 builds a stronger, proof-carrying core alongside the shipped v1 sidecar. The v1 `seal` binary is unchanged; v2 lives in `SealV2` and is documented in [v2/STATUS.md](v2/STATUS.md). The pipeline is `parse -> validate -> serialize`, with each stage proven:
+
+- **M1 strict-subset parser** (`parse : RawBytes -> Option AST`): total and fail-closed. Malformed, ambiguous, duplicate-key, non-ASCII, partial, trailing-byte, or non-canonical numeric inputs return `none`. Numbers use a fixed canonical decimal grammar (no exponents, no leading/trailing-zero forms). `parse raw = some ast -> IsCanonical ast` is proved.
+- **M2 constructive validation** (`validate : AST -> ApprovalState -> Option (Σ ast, ValidCapability ast state)`): success returns a proof-carrying witness, not a boolean. The `ValidCapability` witness binds the decoded request, tool spec, exact target, exact approval, session, `consumed = false`, expiry, and signature.
+- **M3 canonical serialization** (`serialize : (Σ ast, ValidCapability ast state) -> CanonicalBytes`): one proof-gated canonical serializer for both output bytes and the M5 signed-message shape. The roundtrip and canonicality theorems are proved.
+
+M1, M2, and M3 are all axiom-clean: zero `sorry`, no `native_decide`, footprint `[propext, Classical.choice, Quot.sound]`. Verify with:
+
+```text
+lake exe v2_m1_axiom_check
+lake exe v2_m2_axiom_check
+lake exe v2_m3_axiom_check
+```
+
+Claim discipline: `canonical_roundtrip` means seal self-consistency only. A2, target-parser equivalence, remains the per-server obligation, minimised by construction and by the differential fixture, not eliminated. The non-bypass / complete-mediation headline and the M5 Ed25519 origin seam are the next fronts.
+
 ## Architecture
 
 `seal` has two separate layers:
