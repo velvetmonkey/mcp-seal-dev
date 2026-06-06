@@ -1,6 +1,6 @@
 name = "mcp-seal"
 version = "0.1.0"
-defaultTargets = ["seal"]
+defaultTargets = ["seal", "v2_m4_axiom_check"]
 
 [[require]]
 name = "batteries"

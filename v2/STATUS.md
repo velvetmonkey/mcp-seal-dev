@@ -137,4 +137,28 @@ decide_emit_unique :
 
 ### M4 axiom footprint (verified)
 
-`lake exe v2_m4_axiom_check` confirms all three M4 theorems depend only on `[propext, Classical.choice, Quot.sound]`. No `sorryAx`.
+`lake exe v2_m4_axiom_check` is now a build-breaking guard, not just a printer. It locks `canonical_roundtrip`, `serialize_validCapability_roundtrip`, `decide_emit_unique`, `non_bypass`, and `default_deny` to `[propext, Classical.choice, Quot.sound]`.
+
+## Signed-approval canonicality closure
+
+Status: implemented; one theorem is intentionally left for Aristotle.
+
+The general JSON-RPC parser remains whitespace-tolerant. The signed-approval path is stricter:
+
+```lean
+signedParse : RawBytes -> Option {ast // IsCanonical ast}
+signedMessageRawFor : SignedMessage -> RawBytes
+```
+
+`signedParse` parses the raw signed-message bytes and then rejects unless `raw == serializeAst parsedAst`. `Approval` now carries `signedMessageRaw`, and `verifySignature` checks the signature against that exact raw field only after `signedParse` accepts it and the parsed signed-message AST matches `(target, session, expiry)`.
+
+This closes the reviewed bypass where non-canonical bytes could be accepted by parsing, normalised to canonical bytes, and then verified over the normalised payload. Non-canonical witnesses such as trailing whitespace, leading whitespace, and interior insignificant whitespace are rejected by the signed path and make `decide` return `Block`.
+
+Deferred proof obligation:
+
+```lean
+signed_parse_canonical :
+  signedParse raw = some ast -> raw = serializeAst ast
+```
+
+This theorem is intentionally tagged in Lean for Aristotle as the remaining proof obligation.

@@ -36,4 +36,8 @@ theorem valid_capability_session_bound {ast : AST} {state : ApprovalState}
     witness.approval.session = state.session :=
   witness.approval_session_matches
 
+theorem signed_parse_canonical (raw : RawBytes) (ast : {ast // IsCanonical ast}) :
+    signedParse raw = some ast → raw = serializeAst ast := by
+  sorry -- ARISTOTLE: injectivity / canonical-byte uniqueness for the signed path
+
 end SealV2

@@ -31,11 +31,17 @@ def target : Target :=
   }
 
 def unsignedApproval : Approval :=
+  let message : SignedMessage := {
+    target := target,
+    session := "session-1",
+    expiry := 120
+  }
   {
     target := target,
     session := "session-1",
     expiresAt := 120,
     consumed := false,
+    signedMessageRaw := signedMessageRawFor message,
     signature := ""
   }
 

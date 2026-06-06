@@ -42,10 +42,10 @@ def expectSignatureUsesCanonicalBytes : IO Unit := do
   let expectedPayload :=
     "{\"target\":{\"tool\":\"db.execute\",\"action\":\"write\",\"toolVersion\":\"v1\",\"manifestDigest\":\"manifest-001\",\"arguments\":{\"database\":\"prod\",\"table\":\"users\",\"amount\":12.34}},\"session\":\"session-1\",\"expiry\":120}"
   let expectedSignature := s!"stub-ed25519:pubkey-1:{expectedPayload}"
-  if validApproval.signature == expectedSignature then
+  if validApproval.signedMessageRaw == expectedPayload && validApproval.signature == expectedSignature then
     pure ()
   else
-    throw <| IO.userError s!"signature did not use canonical bytes: {validApproval.signature}"
+    throw <| IO.userError s!"signature did not use canonical bytes: {validApproval.signedMessageRaw} / {validApproval.signature}"
 
 def main : IO UInt32 := do
   expectParsedRoundtrip "null" "null"

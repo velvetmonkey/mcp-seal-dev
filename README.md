@@ -61,16 +61,18 @@ v2 builds a stronger, proof-carrying core alongside the shipped v1 sidecar. The 
 - **M1 strict-subset parser** (`parse : RawBytes -> Option AST`): total and fail-closed. Malformed, ambiguous, duplicate-key, non-ASCII, partial, trailing-byte, or non-canonical numeric inputs return `none`. Numbers use a fixed canonical decimal grammar (no exponents, no leading/trailing-zero forms). `parse raw = some ast -> IsCanonical ast` is proved.
 - **M2 constructive validation** (`validate : AST -> ApprovalState -> Option (Σ ast, ValidCapability ast state)`): success returns a proof-carrying witness, not a boolean. The `ValidCapability` witness binds the decoded request, tool spec, exact target, exact approval, session, `consumed = false`, expiry, and signature.
 - **M3 canonical serialization** (`serialize : (Σ ast, ValidCapability ast state) -> CanonicalBytes`): one proof-gated canonical serializer for both output bytes and the M5 signed-message shape. The roundtrip and canonicality theorems are proved.
+- **M4 mediated decide** (`decide : RawBytes -> ApprovalState -> Decision`): a single fail-closed emit path. `Allow out` can only arise through `parse -> validate -> serialize`.
 
-M1, M2, and M3 are all axiom-clean: zero `sorry`, no `native_decide`, footprint `[propext, Classical.choice, Quot.sound]`. Verify with:
+M1 through M4 are axiom-clean for their discharged theorems, with footprint `[propext, Classical.choice, Quot.sound]`. Verify with:
 
 ```text
 lake exe v2_m1_axiom_check
 lake exe v2_m2_axiom_check
 lake exe v2_m3_axiom_check
+lake exe v2_m4_axiom_check
 ```
 
-Claim discipline: `canonical_roundtrip` means seal self-consistency only. A2, target-parser equivalence, remains the per-server obligation, minimised by construction and by the differential fixture, not eliminated. The non-bypass / complete-mediation headline and the M5 Ed25519 origin seam are the next fronts.
+Claim discipline: `canonical_roundtrip` means seal self-consistency only. A2, target-parser equivalence, remains the per-server obligation, minimised by construction and by the differential fixture, not eliminated. The signed-approval path rejects non-canonical signed-message bytes instead of normalising them before signature verification.
 
 ## Architecture
 

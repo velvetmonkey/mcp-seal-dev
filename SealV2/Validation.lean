@@ -43,6 +43,7 @@ structure Approval where
   session : SessionId
   expiresAt : Nat
   consumed : Bool
+  signedMessageRaw : RawBytes
   signature : Signature
   deriving Repr, BEq
 
@@ -78,14 +79,31 @@ def signedMessageCanonical? (message : SignedMessage) : Option {ast // IsCanonic
   else
     none
 
-def stubSignatureFor (publicKey : PublicKey) (message : SignedMessage) : Signature :=
+def signedParse (raw : RawBytes) : Option {ast // IsCanonical ast} :=
+  match parse raw with
+  | none => none
+  | some ast =>
+      if h : IsCanonical ast then
+        if raw == serializeAst ⟨ast, h⟩ then
+          some ⟨ast, h⟩
+        else
+          none
+      else
+        none
+
+def signedMessageRawFor (message : SignedMessage) : RawBytes :=
   match signedMessageCanonical? message with
-  | some ast => s!"stub-ed25519:{publicKey}:{serializeAst ast}"
-  | none => s!"stub-ed25519:{publicKey}:<noncanonical>"
+  | some ast => serializeAst ast
+  | none => "<noncanonical>"
+
+def stubSignatureFor (publicKey : PublicKey) (message : SignedMessage) : Signature :=
+  s!"stub-ed25519:{publicKey}:{signedMessageRawFor message}"
 
 def verifySignature (publicKey : PublicKey) (approval : Approval) : Bool :=
-  match signedMessageCanonical? (signedMessage approval) with
-  | some ast => approval.signature == s!"stub-ed25519:{publicKey}:{serializeAst ast}"
+  match signedParse approval.signedMessageRaw with
+  | some ast =>
+      ast.val == signedMessageAst (signedMessage approval) &&
+        approval.signature == s!"stub-ed25519:{publicKey}:{approval.signedMessageRaw}"
   | none => false
 
 structure SignatureVerified (publicKey : PublicKey) (approval : Approval) : Prop where

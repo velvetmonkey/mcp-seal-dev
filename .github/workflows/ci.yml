@@ -30,6 +30,7 @@ jobs:
       - run: "! grep -E 'sorryAx|Lean\\.ofReduceBool' /tmp/v2-m3-parser-axioms.txt"
       - run: lake exe v2_m3_axiom_check 2>&1 | tee /tmp/v2-m3-axioms.txt
       - run: "! grep -E 'Lean\\.ofReduceBool' /tmp/v2-m3-axioms.txt"
+      - run: lake exe v2_m4_axiom_check
       - run: python3 test/integration/test_seal.py
       - run: python3 test/v2/m1_adversarial_mcp_fixture.py
       - run: python3 test/v2/m2_adversarial_mcp_fixture.py
