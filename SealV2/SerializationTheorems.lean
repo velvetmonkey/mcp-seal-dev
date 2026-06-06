@@ -489,9 +489,90 @@ theorem serializeAstValue_first_ne_rbrace (ast : AST) (hcan : isCanonicalAst ast
     ∀ c cs, (serializeAstValue ast).toList = c :: cs → c ≠ '}' :=
   fun c cs h => (serializeAstValue_first_props ast hcan c cs h).2.2
 
+/-! ## Additional helper lemmas for container roundtrips -/
+
+private theorem serializeAstValue_nonempty (ast : AST) (hcan : isCanonicalAst ast = true) :
+    ∃ c cs, (serializeAstValue ast).toList = c :: cs := by
+  match ast with
+  | .null => exact ⟨'n', ['u', 'l', 'l'], by decide⟩
+  | .bool true => exact ⟨'t', ['r', 'u', 'e'], by decide⟩
+  | .bool false => exact ⟨'f', ['a', 'l', 's', 'e'], by decide⟩
+  | .number v =>
+    simp only [serializeAstValue]
+    unfold serializeDecimal
+    by_cases hneg : v.negative
+    · simp [hneg, String.toList_append]
+      exact ⟨'-', _, rfl⟩
+    · simp only [Bool.not_eq_true] at hneg
+      simp [hneg, String.toList_append]
+      have hcan' : isCanonicalDecimal v = true := hcan
+      have hcanInt : isCanonicalIntDigits v.intDigits = true := by
+        unfold isCanonicalDecimal at hcan'; simp [Bool.and_eq_true] at hcan'; exact hcan'.1.1
+      cases h : v.intDigits.toList with
+      | nil =>
+        unfold isCanonicalIntDigits at hcanInt; rw [h] at hcanInt; simp at hcanInt
+      | cons c cs =>
+        exact ⟨c, _, rfl⟩
+  | .string s =>
+    simp only [serializeAstValue, String.toList_append]
+    exact ⟨'"', s.toList ++ ['"'], by simp; rfl⟩
+  | .array items =>
+    simp only [serializeAstValue, String.toList_append]
+    exact ⟨'[', (serializeArrayValue items).toList ++ [']'], by simp; rfl⟩
+  | .object fields =>
+    simp only [serializeAstValue, String.toList_append]
+    exact ⟨'{', (serializeObjectValue fields).toList ++ ['}'], by simp; rfl⟩
+
+private theorem skipWs_serializeAstValue_append (ast : AST) (hcan : isCanonicalAst ast = true)
+    (tail : List Char) :
+    skipWs ((serializeAstValue ast).toList ++ tail) = (serializeAstValue ast).toList ++ tail := by
+  obtain ⟨c, cs, hcs⟩ := serializeAstValue_nonempty ast hcan
+  have hws := serializeAstValue_head_not_ws ast hcan c cs hcs
+  rw [hcs, List.cons_append]
+  exact skipWs_cons_of_not_ws c (cs ++ tail) hws
+
+private theorem serializeAstValue_first_ne_rbracket' (ast : AST) (hcan : isCanonicalAst ast = true)
+    (tail : List Char) :
+    ∀ c cs, (serializeAstValue ast).toList ++ tail = c :: cs → c ≠ ']' := by
+  intro c cs h
+  obtain ⟨c', cs', hcs'⟩ := serializeAstValue_nonempty ast hcan
+  rw [hcs', List.cons_append] at h
+  obtain ⟨rfl, _⟩ := List.cons.inj h
+  exact serializeAstValue_first_ne_rbracket ast hcan c' cs' hcs'
+
+private theorem serializeAstValue_first_ne_rbrace' (ast : AST) (hcan : isCanonicalAst ast = true)
+    (tail : List Char) :
+    ∀ c cs, (serializeAstValue ast).toList ++ tail = c :: cs → c ≠ '}' := by
+  intro c cs h
+  obtain ⟨c', cs', hcs'⟩ := serializeAstValue_nonempty ast hcan
+  rw [hcs', List.cons_append] at h
+  obtain ⟨rfl, _⟩ := List.cons.inj h
+  exact serializeAstValue_first_ne_rbrace ast hcan c' cs' hcs'
+
+-- duplicateKey and hasDuplicateKey are definitionally equal
+private theorem duplicateKey_eq_hasDuplicateKey (k : String) (fields : List (String × AST)) :
+    duplicateKey k fields = hasDuplicateKey k fields := by
+  rfl
+
 /-! ## Array accumulator helper -/
 
-set_option maxHeartbeats 800000 in
+private theorem serializeArrayValue_cons_cons_toList (x y : AST) (ys : List AST) :
+    (serializeArrayValue (x :: y :: ys)).toList =
+      (serializeAstValue x).toList ++ [','] ++ (serializeArrayValue (y :: ys)).toList := by
+  show (serializeAstValue x ++ "," ++ serializeArrayValue (y :: ys)).toList = _
+  have hc : ("," : String).toList = [','] := by decide
+  simp [String.toList_append, hc]
+
+private theorem serializeArrayValue_head_eq (x : AST) (xs : List AST) :
+    ∃ tail, (serializeArrayValue (x :: xs)).toList =
+      (serializeAstValue x).toList ++ tail := by
+  cases xs with
+  | nil => exact ⟨[], by simp [serializeArrayValue]⟩
+  | cons y ys =>
+    exact ⟨[','] ++ (serializeArrayValue (y :: ys)).toList,
+      by rw [serializeArrayValue_cons_cons_toList]; simp [List.append_assoc]⟩
+
+set_option maxHeartbeats 1600000 in
 theorem parseArrayFuelUnchecked_roundtrip
     (items : List AST) (acc : List AST) (rest : List Char) (fuel : Nat)
     (hcan_items : isCanonicalArray items = true)
@@ -504,11 +585,157 @@ theorem parseArrayFuelUnchecked_roundtrip
       parseValueFuelUnchecked fuel' ((serializeAstValue x).toList ++ tl) = some (x, tl)) :
     parseArrayFuelUnchecked fuel acc ((serializeArrayValue items).toList ++ ']' :: rest)
       = some (.array (acc.reverse ++ items), rest) := by
-  sorry
+  induction items generalizing acc fuel rest with
+  | nil =>
+    -- serializeArrayValue [] = "", so input is ']' :: rest
+    simp only [serializeArrayValue, String.toList, List.nil_append, List.append_nil]
+    obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
+    rw [parseArrayFuelUnchecked.eq_def]
+    simp [skipWs, isWs]
+    show isCanonicalAst (AST.array acc.reverse) = true
+    show isCanonicalArray acc.reverse = true
+    rw [isCanonicalArray_reverse]; exact hcan_acc
+  | cons x xs ih =>
+    have hcan_x : isCanonicalAst x = true := isCanonicalAst_of_mem_array List.mem_cons_self hcan_items
+    have hcan_xs : isCanonicalArray xs = true := by
+      rw [isCanonicalArray_cons] at hcan_items; simp [Bool.and_eq_true] at hcan_items; exact hcan_items.2
+    obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
+    obtain ⟨c, cs, hcs⟩ := serializeAstValue_nonempty x hcan_x
+    have hws_c : isWs c = false := serializeAstValue_head_not_ws x hcan_x c cs hcs
+    have hne_c : c ≠ ']' := serializeAstValue_first_ne_rbracket x hcan_x c cs hcs
+    cases xs with
+    | nil =>
+      -- Singleton [x]: serializeArrayValue [x] = serializeAstValue x
+      simp only [serializeArrayValue]
+      rw [parseArrayFuelUnchecked.eq_def]
+      rw [skipWs_serializeAstValue_append x hcan_x (']' :: rest)]
+      rw [hcs, List.cons_append]
+      -- Match: c is not ']', so goes to rest branch
+      -- After simp with char facts, the match resolves
+      have hfuel' : fuel' ≥ (serializeAstValue x).toList.length + 1 := by
+        have : (serializeArrayValue [x]).toList.length = (serializeAstValue x).toList.length := by rfl
+        omega
+      simp only [] -- reduce Nat match
+      split -- match on c :: ... vs ']' :: ...
+      · rename_i h; obtain ⟨rfl, _⟩ := List.cons.inj h; exact absurd rfl hne_c
+      · rw [← List.cons_append, ← hcs]
+        rw [ih_value x List.mem_cons_self (']' :: rest) fuel' hcan_x hfuel' (GoodRest_cons_rbracket rest)]
+        simp only [] -- reduce Option match
+        simp [skipWs, isWs]
+        show isCanonicalArray (acc.reverse ++ [x]) = true
+        rw [isCanonicalArray_append]
+        simp [isCanonicalArray_reverse, hcan_acc, isCanonicalArray_cons, hcan_x, isCanonicalArray]
+    | cons y ys =>
+      -- cons-cons: serializeArrayValue (x :: y :: ys)
+      rw [serializeArrayValue_cons_cons_toList]
+      rw [List.append_assoc, List.append_assoc]
+      rw [parseArrayFuelUnchecked.eq_def]
+      -- skipWs is no-op on head c
+      rw [show (serializeAstValue x).toList ++ ([','] ++ ((serializeArrayValue (y :: ys)).toList ++ (']' :: rest)))
+        = c :: (cs ++ ([','] ++ ((serializeArrayValue (y :: ys)).toList ++ (']' :: rest)))) by rw [hcs, List.cons_append]]
+      simp only [skipWs_cons_of_not_ws c _ hws_c]
+      split -- match on c :: ... vs ']' :: ...
+      · rename_i h; obtain ⟨rfl, _⟩ := List.cons.inj h; exact absurd rfl hne_c
+      · have hfuel_x : fuel' ≥ (serializeAstValue x).toList.length + 1 := by
+          have hser' := serializeArrayValue_cons_cons_toList x y ys
+          rw [hser', List.length_append, List.length_append, List.length_cons, List.length_nil] at hfuel; omega
+        rw [show c :: (cs ++ ([','] ++ ((serializeArrayValue (y :: ys)).toList ++ (']' :: rest))))
+          = (serializeAstValue x).toList ++ (',' :: ((serializeArrayValue (y :: ys)).toList ++ (']' :: rest)))
+          by rw [hcs]; simp [List.cons_append, List.append_assoc]]
+        rw [ih_value x List.mem_cons_self _ fuel' hcan_x hfuel_x (GoodRest_cons_comma _)]
+        simp only [] -- reduce Option.some match
+        -- skipWs on ',' :: ...
+        simp only [skipWs, isWs_comma]
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        -- skipWs on afterComma = serializeArrayValue(y::ys) ++ ']' :: rest
+        have hcan_y : isCanonicalAst y = true :=
+          isCanonicalAst_of_mem_array List.mem_cons_self hcan_xs
+        obtain ⟨d, ds, hds⟩ := serializeAstValue_nonempty y hcan_y
+        have hws_d : isWs d = false := serializeAstValue_head_not_ws y hcan_y d ds hds
+        have hne_d : d ≠ ']' := serializeAstValue_first_ne_rbracket y hcan_y d ds hds
+        obtain ⟨ser_tail, hser_head⟩ := serializeArrayValue_head_eq y ys
+        -- skipWs on serializeArrayValue(y::ys) ++ ']' :: rest is a no-op
+        rw [hser_head, hds, List.cons_append, List.cons_append, skipWs_cons_of_not_ws d _ hws_d]
+        -- match on d :: ... vs ']' :: ...
+        split
+        · rename_i h; obtain ⟨rfl, _⟩ := List.cons.inj h; exact absurd rfl hne_d
+        · have hcan_xacc : isCanonicalArray (x :: acc) = true := by
+            rw [isCanonicalArray_cons]; simp [hcan_x, hcan_acc]
+          rw [if_pos hcan_xacc]
+          have hfuel_rest : fuel' ≥ (serializeArrayValue (y :: ys)).toList.length + 2 := by
+            have hser' := serializeArrayValue_cons_cons_toList x y ys
+            rw [hser', List.length_append, List.length_append, List.length_cons, List.length_nil] at hfuel; omega
+          -- Rewrite back to serializeArrayValue form for IH
+          have hrewrite : d :: (ds ++ ser_tail ++ ']' :: rest) =
+              (serializeArrayValue (y :: ys)).toList ++ ']' :: rest := by
+            rw [hser_head, hds]; simp [List.cons_append, List.append_assoc]
+          rw [hrewrite]
+          have hrev : acc.reverse ++ x :: y :: ys = (x :: acc).reverse ++ (y :: ys) := by
+            simp [List.reverse_cons, List.append_assoc]
+          rw [hrev]
+          exact ih (x :: acc) rest fuel' hcan_xs hcan_xacc hfuel_rest
+            (fun x' hx' tl fuel'' hcan_x' hf' hgr' =>
+              ih_value x' (List.mem_cons_of_mem x hx') tl fuel'' hcan_x' hf' hgr')
+
+/-! ## Object accumulator helper lemmas -/
+
+private theorem serializeObjectValue_singleton_toList (k : String) (v : AST) :
+    (serializeObjectValue [(k, v)]).toList =
+      ['"'] ++ k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList := by
+  show ("\"" ++ k ++ "\":" ++ serializeAstValue v).toList = _
+  have h1 : ("\"" : String).toList = ['"'] := by decide
+  have h2 : ("\":" : String).toList = ['"', ':'] := by decide
+  simp [String.toList_append, h1, h2]
+
+private theorem serializeObjectValue_cons_cons_toList' (k : String) (v : AST)
+    (k2 : String) (v2 : AST) (rest : List (String × AST)) :
+    (serializeObjectValue ((k, v) :: (k2, v2) :: rest)).toList =
+      ['"'] ++ k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList ++
+      [','] ++ (serializeObjectValue ((k2, v2) :: rest)).toList := by
+  show ("\"" ++ k ++ "\":" ++ serializeAstValue v ++ "," ++ serializeObjectValue ((k2, v2) :: rest)).toList = _
+  have h1 : ("\"" : String).toList = ['"'] := by decide
+  have h2 : ("\":" : String).toList = ['"', ':'] := by decide
+  have h3 : ("," : String).toList = [','] := by decide
+  simp [String.toList_append, h1, h2, h3]
+
+private theorem serializeObjectValue_head_is_quote (kv : String × AST) (rest : List (String × AST)) :
+    ∃ tail, (serializeObjectValue (kv :: rest)).toList = '"' :: tail := by
+  obtain ⟨k, v⟩ := kv
+  cases rest with
+  | nil =>
+    rw [serializeObjectValue_singleton_toList]
+    exact ⟨k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList, by simp [List.cons_append]⟩
+  | cons hd tl =>
+    obtain ⟨k2, v2⟩ := hd
+    rw [serializeObjectValue_cons_cons_toList' k v k2 v2 tl]
+    exact ⟨k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList ++ [','] ++
+      (serializeObjectValue ((k2, v2) :: tl)).toList, by simp [List.cons_append]⟩
+
+-- duplicateKey shift: if (k == k') = false and duplicateKey k' acc = false, then duplicateKey k' ((k,v)::acc) = false
+private theorem duplicateKey_cons_ne (k' k : String) (v : AST) (acc : List (String × AST))
+    (hne : (k == k') = false) (hacc : duplicateKey k' acc = false) :
+    duplicateKey k' ((k, v) :: acc) = false := by
+  unfold duplicateKey at *
+  simp only [List.any_cons, Bool.or_eq_false_iff]
+  exact ⟨hne, hacc⟩
+
+-- If hasDuplicateKey k fields = false and (k', v') ∈ fields, then (k' == k) = false
+private theorem ne_of_hasDuplicateKey_false {k k' : String} {v' : AST}
+    {fields : List (String × AST)} (hnd : hasDuplicateKey k fields = false)
+    (hmem : (k', v') ∈ fields) : (k' == k) = false := by
+  unfold hasDuplicateKey at hnd
+  have h := List.any_eq_false.mp hnd (k', v') hmem
+  simp at h
+  simp [BEq.beq, h]
+
+-- BEq symmetry for String
+private theorem beq_comm_string (a b : String) : (a == b) = (b == a) := by
+  simp [BEq.beq, decide_eq_decide]
+  constructor <;> (intro h; exact h.symm)
 
 /-! ## Object accumulator helper -/
 
-set_option maxHeartbeats 800000 in
+set_option maxHeartbeats 3200000 in
 theorem parseObjectFuelUnchecked_roundtrip
     (fields : List (String × AST)) (acc : List (String × AST)) (rest : List Char) (fuel : Nat)
     (hcan_fields : isCanonicalObject fields = true)
@@ -522,11 +749,199 @@ theorem parseObjectFuelUnchecked_roundtrip
       parseValueFuelUnchecked fuel' ((serializeAstValue v).toList ++ tl) = some (v, tl)) :
     parseObjectFuelUnchecked fuel acc ((serializeObjectValue fields).toList ++ '}' :: rest)
       = some (.object (acc.reverse ++ fields), rest) := by
-  sorry
+  induction fields generalizing acc fuel rest with
+  | nil =>
+    simp only [serializeObjectValue, String.toList, List.nil_append, List.append_nil]
+    obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
+    rw [parseObjectFuelUnchecked.eq_def]
+    simp [skipWs, isWs]
+    show isCanonicalAst (AST.object acc.reverse) = true
+    show isCanonicalObject acc.reverse = true
+    exact isCanonicalObject_of_reverse acc hcan_acc
+  | cons hd tl ih =>
+    obtain ⟨k, v⟩ := hd
+    have hcan_k : isCanonicalString k = true := isCanonicalObject_head_key hcan_fields
+    have hcan_v : isCanonicalAst v = true := isCanonicalObject_head_value hcan_fields
+    have hcan_tl : isCanonicalObject tl = true := isCanonicalObject_tail hcan_fields
+    have hnodup_k : hasDuplicateKey k tl = false := isCanonicalObject_head_nodup hcan_fields
+    obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
+    have hdup : duplicateKey k acc = false := hnodup k v List.mem_cons_self
+    cases tl with
+    | nil =>
+      -- Singleton [(k,v)]
+      rw [serializeObjectValue_singleton_toList]
+      simp only [List.cons_append, List.append_assoc, List.nil_append]
+      rw [parseObjectFuelUnchecked.eq_def, skipWs_cons_of_not_ws '"' _ isWs_quote]
+      simp only [] -- reduce Nat match
+      split
+      · rename_i h; have := (List.cons.inj h).1; contradiction
+      · have hps := parseString_roundtrip k (':' :: (String.toList (serializeAstValue v) ++ '}' :: rest)) hcan_k
+        simp only [List.cons_append] at hps
+        rw [hps]
+        simp only []
+        simp only [hdup, Bool.false_eq_true, ↓reduceIte]
+        rw [skipWs_cons_of_not_ws ':' _ isWs_colon]
+        have hfuel_v : fuel' ≥ (serializeAstValue v).toList.length + 1 := by
+          rw [serializeObjectValue_singleton_toList] at hfuel
+          rw [List.length_append, List.length_append, List.length_append,
+              List.length_cons, List.length_nil, List.length_cons, List.length_cons, List.length_nil] at hfuel
+          omega
+        simp only [] -- reduce ':' match
+        rw [ih_value k v List.mem_cons_self ('}' :: rest) fuel' hcan_v hfuel_v (GoodRest_cons_rbrace rest)]
+        simp only []
+        simp [skipWs, isWs]
+        show isCanonicalObject (acc.reverse ++ [(k, v)]) = true
+        exact isCanonicalObject_snoc acc.reverse k v (isCanonicalObject_of_reverse acc hcan_acc)
+          (hasDuplicateKey_reverse k acc ▸ hdup) hcan_k hcan_v
+    | cons hd2 tl2 =>
+      obtain ⟨k2, v2⟩ := hd2
+      rw [serializeObjectValue_cons_cons_toList' k v k2 v2 tl2]
+      simp only [List.cons_append, List.append_assoc, List.nil_append]
+      rw [parseObjectFuelUnchecked.eq_def, skipWs_cons_of_not_ws '"' _ isWs_quote]
+      simp only [] -- reduce Nat match
+      split
+      · rename_i h; have := (List.cons.inj h).1; contradiction
+      · have hps := parseString_roundtrip k (':' :: (String.toList (serializeAstValue v) ++ ',' :: ((serializeObjectValue ((k2, v2) :: tl2)).toList ++ '}' :: rest))) hcan_k
+        simp only [List.cons_append] at hps
+        rw [hps]
+        simp only []
+        simp only [hdup, Bool.false_eq_true, ↓reduceIte]
+        rw [skipWs_cons_of_not_ws ':' _ isWs_colon]
+        simp only [] -- reduce ':' match
+        have hfuel_v : fuel' ≥ (serializeAstValue v).toList.length + 1 := by
+          rw [serializeObjectValue_cons_cons_toList' k v k2 v2 tl2] at hfuel
+          repeat rw [List.length_append] at hfuel
+          have : (['"'] : List Char).length = 1 := by rfl
+          have : (['"', ':'] : List Char).length = 2 := by rfl
+          have : ([','] : List Char).length = 1 := by rfl
+          omega
+        rw [ih_value k v List.mem_cons_self (',' :: ((serializeObjectValue ((k2, v2) :: tl2)).toList ++ '}' :: rest)) fuel' hcan_v hfuel_v (GoodRest_cons_comma _)]
+        simp only []
+        simp only [skipWs, isWs_comma]
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        obtain ⟨qtail2, hqtail2⟩ := serializeObjectValue_head_is_quote (k2, v2) tl2
+        rw [hqtail2, List.cons_append, skipWs_cons_of_not_ws '"' _ isWs_quote]
+        split
+        · rename_i h; have := (List.cons.inj h).1; contradiction
+        · have hcan_kv_acc : isCanonicalObject ((k, v) :: acc) = true := by
+            rw [isCanonicalObject_cons]; simp [hcan_k, hcan_v, hcan_acc]; exact hdup
+          rw [if_pos hcan_kv_acc]
+          have hfuel_rest : fuel' ≥ (serializeObjectValue ((k2, v2) :: tl2)).toList.length + 2 := by
+            rw [serializeObjectValue_cons_cons_toList' k v k2 v2 tl2] at hfuel
+            repeat rw [List.length_append] at hfuel
+            have : (['"'] : List Char).length = 1 := by rfl
+            have : (['"', ':'] : List Char).length = 2 := by rfl
+            have : ([','] : List Char).length = 1 := by rfl
+            omega
+          rw [← List.cons_append, ← hqtail2]
+          have hnodup' : ∀ (k' : String) (v' : AST), (k', v') ∈ ((k2, v2) :: tl2) →
+              duplicateKey k' ((k, v) :: acc) = false := by
+            intro k' v' hmem
+            exact duplicateKey_cons_ne k' k v acc
+              (beq_comm_string k k' ▸ ne_of_hasDuplicateKey_false hnodup_k hmem)
+              (hnodup k' v' (List.mem_cons_of_mem _ hmem))
+          have hrev : acc.reverse ++ (k, v) :: (k2, v2) :: tl2 = ((k, v) :: acc).reverse ++ ((k2, v2) :: tl2) := by
+            simp [List.reverse_cons, List.append_assoc]
+          rw [hrev]
+          exact ih ((k, v) :: acc) rest fuel' hcan_tl hcan_kv_acc hnodup' hfuel_rest
+            (fun k' v' hmem tl' fuel'' hcan' hf' hgr' =>
+              ih_value k' v' (List.mem_cons_of_mem _ hmem) tl' fuel'' hcan' hf' hgr')
 
 /-! ## Value-level roundtrip by strong induction -/
 
-set_option maxHeartbeats 800000 in
+private theorem value_roundtrip_worker_null (rest : List Char) (fuel : Nat)
+    (hfuel : fuel ≥ (serializeAstValue .null).toList.length + 1) (hrest : GoodRest rest) :
+    parseValueFuelUnchecked fuel ((serializeAstValue .null).toList ++ rest) = some (.null, rest) := by
+  rcases fuel with ( _ | _ | fuel ) <;> simp_all +arith +decide [ parseValueFuelUnchecked ];
+  rfl
+
+private theorem value_roundtrip_worker_bool (b : Bool) (rest : List Char) (fuel : Nat)
+    (hfuel : fuel ≥ (serializeAstValue (.bool b)).toList.length + 1) (hrest : GoodRest rest) :
+    parseValueFuelUnchecked fuel ((serializeAstValue (.bool b)).toList ++ rest) = some (.bool b, rest) := by
+  rcases b with ( _ | _ ) <;> simp +decide [ serializeAstValue ] at *;
+  · unfold parseValueFuelUnchecked; aesop;
+  · rcases fuel with ( _ | _ | _ | _ | fuel ) <;> simp_all +arith +decide;
+    cases hrest <;> aesop
+
+private theorem value_roundtrip_worker_number (v : Decimal) (rest : List Char) (fuel : Nat)
+    (hcan : isCanonicalDecimal v = true)
+    (hfuel : fuel ≥ (serializeAstValue (.number v)).toList.length + 1) (hrest : GoodRest rest) :
+    parseValueFuelUnchecked fuel ((serializeAstValue (.number v)).toList ++ rest) = some (.number v, rest) := by
+  rcases fuel with ( _ | fuel ) <;> first | exact absurd hfuel (by omega) | skip;
+  obtain ⟨h, w⟩ : ∃ h, h = (String.toList (serializeAstValue (AST.number v)) ++ rest) ∧ skipWs h = h := by
+    exact ⟨ _, rfl, skipWs_serializeAstValue_append _ ( by
+      exact? ) _ ⟩;
+  obtain ⟨c, cs, hc⟩ : ∃ c cs, h = c :: cs ∧ (c = '-' ∨ isDigit c = true) := by
+    rw [w.1]
+    have hser : serializeAstValue (AST.number v) = serializeDecimal v := rfl
+    by_cases hneg : v.negative = true
+    · obtain ⟨tl, ht⟩ := serializeDecimal_firstChar_neg v hcan hneg
+      refine ⟨'-', tl ++ rest, ?_, Or.inl rfl⟩
+      rw [hser, ht]; rfl
+    · simp only [Bool.not_eq_true] at hneg
+      obtain ⟨d, tl, ht, hcd⟩ := serializeDecimal_firstChar_pos v hcan hneg
+      refine ⟨d, tl ++ rest, ?_, Or.inr hcd⟩
+      rw [hser, ht]; rfl
+  rcases hc with ⟨ rfl, hc | hc ⟩ <;> simp_all +decide [ parseValueFuelUnchecked ];
+  · rw [ ← w.1, w.2 ];
+    rw [ show parseNumber ( '-' :: cs ) = guardCanonicalResult ( parseNumberUnchecked ( '-' :: cs ) ) from rfl ];
+    rw [ show parseNumberUnchecked ( '-' :: cs ) = some ( AST.number v, rest ) from ?_ ];
+    · exact if_pos ( by aesop );
+    · rw [ w.1 ]
+      exact parseNumberUnchecked_serializeDecimal v rest hcan hrest
+  · rw [ ← w.1, w.2 ];
+    -- digit head: rule out every special-char arm so the opaque-head match collapses to the number arm
+    have hn : c ≠ 'n' := fun he => absurd (he ▸ hc) (by decide)
+    have ht : c ≠ 't' := fun he => absurd (he ▸ hc) (by decide)
+    have hf : c ≠ 'f' := fun he => absurd (he ▸ hc) (by decide)
+    have hq : c ≠ '"' := fun he => absurd (he ▸ hc) (by decide)
+    have hlb : c ≠ '[' := fun he => absurd (he ▸ hc) (by decide)
+    have hcb : c ≠ '{' := fun he => absurd (he ▸ hc) (by decide)
+    have hdash : c ≠ '-' := fun he => absurd (he ▸ hc) (by decide)
+    simp only [hn, ht, hf, hq, hlb, hcb, hdash, hc, if_true]
+    rw [ show parseNumber ( c :: cs ) = guardCanonicalResult ( parseNumberUnchecked ( c :: cs ) ) from rfl ];
+    rw [ show parseNumberUnchecked ( c :: cs ) = some ( AST.number v, rest ) from by
+      rw [ w.1 ]; exact parseNumberUnchecked_serializeDecimal v rest hcan hrest ];
+    have hcanAst : IsCanonical (AST.number v) := by unfold IsCanonical isCanonicalAst; exact hcan
+    simp [guardCanonicalResult, hcanAst]
+
+private theorem value_roundtrip_worker_string (s : String) (rest : List Char) (fuel : Nat)
+    (hcan : isCanonicalString s = true)
+    (hfuel : fuel ≥ (serializeAstValue (.string s)).toList.length + 1) (hrest : GoodRest rest) :
+    parseValueFuelUnchecked fuel ((serializeAstValue (.string s)).toList ++ rest) = some (.string s, rest) := by
+  obtain ⟨c, cs, h⟩ : ∃ c cs, (serializeAstValue (AST.string s)).toList = c :: cs := by
+    exact?;
+  rcases fuel with ( _ | fuel ) <;> simp_all +decide [ parseValueFuelUnchecked ];
+  -- Since `c` is not a whitespace character, `skipWs` will return `c :: (cs ++ rest)`.
+  have h_skipWs : skipWs (c :: (cs ++ rest)) = c :: (cs ++ rest) := by
+    apply skipWs_cons_of_not_ws;
+    have := serializeAstValue_head_not_ws ( AST.string s ) ( by
+      exact? ) c cs h; aesop;
+  have h_c : c = '"' := by
+    replace h := congrArg List.head? h; simp_all +decide [ serializeAstValue ] ;
+    cases h ; trivial;
+  rw [ h_skipWs, h_c ];
+  rw [ show cs = s.toList ++ ['\"'] from ?_ ];
+  · rw [ show parseString ( '\"' :: ( s.toList ++ ['\"'] ++ rest ) ) = some ( s, rest ) from ?_ ];
+    · rfl;
+    · have hassoc : s.toList ++ ['\"'] ++ rest = s.toList ++ '\"' :: rest := by
+        simp [ List.append_assoc ];
+      rw [ hassoc ];
+      show parseStringChars "" ( s.toList ++ '\"' :: rest ) = some ( s, rest );
+      unfold parseStringChars;
+      rw [ parseStringCharsUnchecked_acc "" s rest hcan ];
+      have hempty : ( "" : String ) ++ s = s := by simp;
+      rw [ hempty ];
+      simp [ guardCanonicalStringResult, hcan ];
+  · have hquote : "\"".toList = ['"'] := rfl
+    have hser : (serializeAstValue (AST.string s)).toList = '"' :: (s.toList ++ ['"']) := by
+      show ("\"" ++ s ++ "\"").toList = '"' :: (s.toList ++ ['"'])
+      simp [String.toList_append, hquote]
+    rw [hser] at h
+    simp only [List.cons.injEq] at h
+    exact h.2.symm
+
+set_option maxHeartbeats 3200000 in
 private theorem value_roundtrip_size (n : Nat) :
     ∀ (ast : AST) (rest : List Char) (fuel : Nat),
       sizeOf ast ≤ n →
