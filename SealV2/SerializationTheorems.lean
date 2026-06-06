@@ -941,6 +941,40 @@ private theorem value_roundtrip_worker_string (s : String) (rest : List Char) (f
     simp only [List.cons.injEq] at h
     exact h.2.symm
 
+-- skipWs over a serialized container body + close delimiter is the identity: the
+-- head is either the close delimiter (empty case) or the first char of a serialized
+-- value (cons case), neither of which is whitespace.
+private theorem skipWs_serializeArrayValue_rbracket_append
+    (items : List AST) (hcan : isCanonicalArray items = true) (tl : List Char) :
+    skipWs ((serializeArrayValue items).toList ++ ']' :: tl)
+      = (serializeArrayValue items).toList ++ ']' :: tl := by
+  cases items with
+  | nil =>
+    show skipWs (']' :: tl) = ']' :: tl
+    exact skipWs_cons_of_not_ws ']' tl isWs_rbracket
+  | cons x xs =>
+    have hcan_x : isCanonicalAst x = true := isCanonicalAst_of_mem_array List.mem_cons_self hcan
+    obtain ⟨c, cs, hcs⟩ := serializeAstValue_nonempty x hcan_x
+    have hws : isWs c = false := serializeAstValue_head_not_ws x hcan_x c cs hcs
+    obtain ⟨tail, htail⟩ := serializeArrayValue_head_eq x xs
+    rw [htail, hcs]
+    simp only [List.cons_append]
+    exact skipWs_cons_of_not_ws c _ hws
+
+private theorem skipWs_serializeObjectValue_rbrace_append
+    (fields : List (String × AST)) (tl : List Char) :
+    skipWs ((serializeObjectValue fields).toList ++ '}' :: tl)
+      = (serializeObjectValue fields).toList ++ '}' :: tl := by
+  cases fields with
+  | nil =>
+    show skipWs ('}' :: tl) = '}' :: tl
+    exact skipWs_cons_of_not_ws '}' tl isWs_rbrace
+  | cons kv rest =>
+    obtain ⟨tail, htail⟩ := serializeObjectValue_head_is_quote kv rest
+    rw [htail]
+    simp only [List.cons_append]
+    exact skipWs_cons_of_not_ws '"' _ isWs_quote
+
 set_option maxHeartbeats 3200000 in
 private theorem value_roundtrip_size (n : Nat) :
     ∀ (ast : AST) (rest : List Char) (fuel : Nat),
@@ -949,7 +983,72 @@ private theorem value_roundtrip_size (n : Nat) :
       fuel ≥ (serializeAstValue ast).toList.length + 1 →
       GoodRest rest →
       parseValueFuelUnchecked fuel ((serializeAstValue ast).toList ++ rest) = some (ast, rest) := by
-  sorry
+  induction n using Nat.strongRecOn with
+  | ind n IH =>
+    intro ast rest fuel hsize hcan hfuel hrest
+    cases ast with
+    | null => exact value_roundtrip_worker_null rest fuel hfuel hrest
+    | bool b => exact value_roundtrip_worker_bool b rest fuel hfuel hrest
+    | number v => exact value_roundtrip_worker_number v rest fuel hcan hfuel hrest
+    | string s => exact value_roundtrip_worker_string s rest fuel hcan hfuel hrest
+    | array items =>
+      have hcan_items : isCanonicalArray items = true := hcan
+      have hbr : ("[" : String).toList = ['['] := by decide
+      have hbr2 : ("]" : String).toList = [']'] := by decide
+      have hlist : (serializeAstValue (AST.array items)).toList ++ rest
+          = '[' :: ((serializeArrayValue items).toList ++ ']' :: rest) := by
+        show ("[" ++ serializeArrayValue items ++ "]").toList ++ rest = _
+        simp [String.toList_append, hbr, hbr2, List.append_assoc]
+      have hlen : (serializeAstValue (AST.array items)).toList.length
+          = (serializeArrayValue items).toList.length + 2 := by
+        show ("[" ++ serializeArrayValue items ++ "]").toList.length = _
+        simp [String.toList_append, hbr, hbr2, List.length_append]
+      obtain ⟨fuel', rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by omega⟩
+      have hfuel_c : fuel' ≥ (serializeArrayValue items).toList.length + 2 := by
+        rw [hlen] at hfuel; omega
+      have ihv : ∀ (x : AST), x ∈ items → ∀ (tl : List Char) (f'' : Nat),
+          isCanonicalAst x = true → f'' ≥ (serializeAstValue x).toList.length + 1 →
+          GoodRest tl →
+          parseValueFuelUnchecked f'' ((serializeAstValue x).toList ++ tl) = some (x, tl) := by
+        intro x hx tl f'' hcx hfx hgr
+        have hsx : sizeOf x < n := Nat.lt_of_lt_of_le (sizeOf_lt_array hx) hsize
+        exact IH (sizeOf x) hsx x tl f'' (Nat.le_refl _) hcx hfx hgr
+      rw [hlist]
+      show parseArrayFuelUnchecked fuel' []
+        (skipWs ((serializeArrayValue items).toList ++ ']' :: rest)) = some (AST.array items, rest)
+      rw [skipWs_serializeArrayValue_rbracket_append items hcan_items rest]
+      rw [parseArrayFuelUnchecked_roundtrip items [] rest fuel' hcan_items (by decide) hfuel_c ihv]
+      simp only [List.reverse_nil, List.nil_append]
+    | object fields =>
+      have hcan_fields : isCanonicalObject fields = true := hcan
+      have hbr : ("{" : String).toList = ['{'] := by decide
+      have hbr2 : ("}" : String).toList = ['}'] := by decide
+      have hlist : (serializeAstValue (AST.object fields)).toList ++ rest
+          = '{' :: ((serializeObjectValue fields).toList ++ '}' :: rest) := by
+        show ("{" ++ serializeObjectValue fields ++ "}").toList ++ rest = _
+        simp [String.toList_append, hbr, hbr2, List.append_assoc]
+      have hlen : (serializeAstValue (AST.object fields)).toList.length
+          = (serializeObjectValue fields).toList.length + 2 := by
+        show ("{" ++ serializeObjectValue fields ++ "}").toList.length = _
+        simp [String.toList_append, hbr, hbr2, List.length_append]
+      obtain ⟨fuel', rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by omega⟩
+      have hfuel_c : fuel' ≥ (serializeObjectValue fields).toList.length + 2 := by
+        rw [hlen] at hfuel; omega
+      have hnodup : ∀ (k : String) (v : AST), (k, v) ∈ fields → duplicateKey k [] = false :=
+        fun _ _ _ => rfl
+      have ihv : ∀ (k : String) (v : AST), (k, v) ∈ fields → ∀ (tl : List Char) (f'' : Nat),
+          isCanonicalAst v = true → f'' ≥ (serializeAstValue v).toList.length + 1 →
+          GoodRest tl →
+          parseValueFuelUnchecked f'' ((serializeAstValue v).toList ++ tl) = some (v, tl) := by
+        intro k v hmem tl f'' hcv hfv hgr
+        have hsv : sizeOf v < n := Nat.lt_of_lt_of_le (sizeOf_lt_object hmem) hsize
+        exact IH (sizeOf v) hsv v tl f'' (Nat.le_refl _) hcv hfv hgr
+      rw [hlist]
+      show parseObjectFuelUnchecked fuel' []
+        (skipWs ((serializeObjectValue fields).toList ++ '}' :: rest)) = some (AST.object fields, rest)
+      rw [skipWs_serializeObjectValue_rbrace_append fields rest]
+      rw [parseObjectFuelUnchecked_roundtrip fields [] rest fuel' hcan_fields (by decide) hnodup hfuel_c ihv]
+      simp only [List.reverse_nil, List.nil_append]
 
 theorem serialize_roundtrip_value_unchecked (ast : AST) (rest : List Char) (fuel : Nat)
     (hcan : isCanonicalAst ast = true)
