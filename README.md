@@ -125,6 +125,48 @@ python3 demo/langgraph_injection_demo.py
 
 The demo shows a prompt-injected request to drop a production table: first blocked cold, then allowed once after a trusted human approval, then blocked again when the one-shot approval has been consumed.
 
+## End-to-End Demo (seal x Canary)
+
+The flagship demo wraps `seal` in front of a real LangGraph agent ([Canary](https://github.com/velvetmonkey/canary), an ESG regulatory-change pipeline) writing to an MCP vault server. It runs Canary through `seal` (the legitimate report `note/create` is approved and succeeds), then proves a destructive `note/delete` dies at the gate: deleted without `seal`, blocked and the file survives byte-identical with `seal`.
+
+Honest claim: a default-deny gate blocks the destructive action at a verified boundary the model cannot influence, and every allowed action is explicitly approved. This does **not** claim prompt-injection prevention or additive-only containment. The model can still be fooled; the demo shows the action dies.
+
+### Dependencies (fresh machine)
+
+The demo spans three repositories plus an LLM key:
+
+1. **Lean toolchain** for `seal` itself. Install [`elan`](https://github.com/leanprover/elan); it pins `leanprover/lean4:v4.28.0` from `lean-toolchain`. Then in this repo:
+   ```bash
+   lake build          # produces .lake/build/bin/seal
+   ```
+2. **Node.js v22.x** for the upstream MCP server. (nvm: `nvm install 22`.)
+3. **flywheel-memory** (the real MCP server `seal` spawns):
+   ```bash
+   git clone https://github.com/velvetmonkey/flywheel-memory
+   cd flywheel-memory && npm ci && npm run build
+   # server entry: packages/mcp-server/dist/index.js
+   ```
+4. **Canary** (the LangGraph host + demo runner), Python 3.12 via [`uv`](https://github.com/astral-sh/uv):
+   ```bash
+   git clone https://github.com/velvetmonkey/canary
+   cd canary && uv sync
+   ```
+   Python deps (resolved by `uv`): langgraph, langchain-anthropic, langchain-mcp-adapters, mcp, beautifulsoup4, lxml, pydantic, pyyaml, httpx, tenacity.
+5. **`ANTHROPIC_API_KEY`** in the environment. Canary's extraction step calls Claude, so the end-to-end run needs a working key. The regulation corpus itself is frozen on disk (`canary/demo/corpus`), so no EUR-Lex or other network fetch is required.
+
+### Run
+
+```bash
+cd canary
+uv run python demo/run_p3.py
+```
+
+The runner rebuilds a disposable workspace under `/tmp/seal-demo-p3` (fresh vault, policy, approvals control file, change-detection DB), runs Canary through `seal`, performs the kill/restore proof, and prints `P3-REPORT.md` ending in a PASS/FAIL line.
+
+### Known gap (not yet turnkey)
+
+`canary/demo/run_p3.py` currently hardcodes absolute paths to the author's machine: `SEAL` (this repo's `.lake/build/bin/seal`), `NODE` (the nvm node binary), and `SERVER` (the flywheel-memory `dist/index.js`). On a new machine, edit those constants at the top of `run_p3.py` to your local paths before running. Making the runner path-agnostic (env vars / discovery) is tracked as P4 onboarding work.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
