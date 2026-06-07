@@ -200,6 +200,14 @@ The runner rebuilds a disposable workspace under `/tmp/seal-demo-p3` (fresh vaul
 
 It exits with a clear message if a dependency cannot be found. Verified: full PASS with all overrides and `ANTHROPIC_API_KEY` unset, every path resolved by discovery. The verified core and seal's gating behaviour are additionally proven on clean GitHub `ubuntu-latest` runners every commit (`lake build`, axiom checks, and `test/integration/test_seal.py`).
 
+## Related repositories
+
+Part of the velvetmonkey verified-cognition stack:
+
+- **mcp-seal** (this repo) — the verified MCP approval-gate sidecar.
+- [canary](https://github.com/velvetmonkey/canary) — a LangGraph compliance pipeline that hosts the end-to-end [seal x Canary demo](#end-to-end-demo-seal-x-canary).
+- [flywheel-memory](https://github.com/velvetmonkey/flywheel-memory) — the knowledge-graph MCP server that `seal` gates in that demo.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
