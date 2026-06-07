@@ -129,6 +129,8 @@ The demo shows a prompt-injected request to drop a production table: first block
 
 The flagship demo wraps `seal` in front of a real LangGraph agent ([Canary](https://github.com/velvetmonkey/canary), an ESG regulatory-change pipeline) writing to an MCP vault server. It runs Canary through `seal` (the legitimate report `note/create` is approved and succeeds), then proves a destructive `note/delete` dies at the gate: deleted without `seal`, blocked and the file survives byte-identical with `seal`.
 
+> Scope note: a single container (in the Canary repo) bundles all three repos so the multi-repo *demo* runs reproducibly with one command. That container is a demo harness only. `seal` itself is a single native binary with no container or runtime dependencies; adoption is a one-line host config change.
+
 Honest claim: a default-deny gate blocks the destructive action at a verified boundary the model cannot influence, and every allowed action is explicitly approved. This does **not** claim prompt-injection prevention or additive-only containment. The model can still be fooled; the demo shows the action dies.
 
 ### Dependencies (fresh machine)
