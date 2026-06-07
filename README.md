@@ -133,7 +133,7 @@ Honest claim: a default-deny gate blocks the destructive action at a verified bo
 
 ### Dependencies (fresh machine)
 
-The demo spans three repositories plus an LLM key:
+The demo spans three repositories and runs fully offline (no LLM key):
 
 1. **Lean toolchain** for `seal` itself. Install [`elan`](https://github.com/leanprover/elan); it pins `leanprover/lean4:v4.28.0` from `lean-toolchain`. Then in this repo:
    ```bash
@@ -152,7 +152,7 @@ The demo spans three repositories plus an LLM key:
    cd canary && uv sync
    ```
    Python deps (resolved by `uv`): langgraph, langchain-anthropic, langchain-mcp-adapters, mcp, beautifulsoup4, lxml, pydantic, pyyaml, httpx, tenacity.
-5. **No API key, no network.** The demo runs fully offline. The regulation corpus is frozen on disk (`canary/demo/corpus`), and Canary's extraction step is replayed from a frozen fixture (`CANARY_FIXTURE_EXTRACTION`, set automatically by the runner), so no `ANTHROPIC_API_KEY` and no EUR-Lex fetch are required. The seal kill/restore proof never touches an LLM in the first place.
+5. **No API key, no network.** The demo runs fully offline. The regulation corpus is frozen on disk (`canary/demo/corpus`), and Canary's [[extraction]] step is replayed from a frozen fixture (`CANARY_FIXTURE_EXTRACTION`, set automatically by the runner), so no `ANTHROPIC_API_KEY` and no EUR-Lex fetch are required. The seal kill/restore proof never touches an LLM in the first place.
 
 ### Run
 
@@ -165,7 +165,7 @@ The runner rebuilds a disposable workspace under `/tmp/seal-demo-p3` (fresh vaul
 
 ### Known gap (not yet turnkey)
 
-`canary/demo/run_p3.py` currently hardcodes absolute paths to the author's machine: `SEAL` (this repo's `.lake/build/bin/seal`), `NODE` (the nvm node binary), and `SERVER` (the flywheel-memory `dist/index.js`). On a new machine, edit those constants at the top of `run_p3.py` to your local paths before running. Making the runner path-agnostic (env vars / discovery) is tracked as P4 onboarding work.
+`canary/demo/run_p3.py` currently hardcodes absolute paths to the author's machine: `SEAL` (this repo's `.lake/build/bin/seal`), `NODE` (the nvm node binary), and `SERVER` (the flywheel-memory `dist/index.js`). On a new machine, edit those constants at the top of `run_p3.py` to your local paths before running. Making the runner path-agnostic (env vars / discovery) is tracked as P4 [[onboarding]] work.
 
 ## License
 
