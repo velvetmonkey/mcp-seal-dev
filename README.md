@@ -152,7 +152,7 @@ The demo spans three repositories plus an LLM key:
    cd canary && uv sync
    ```
    Python deps (resolved by `uv`): langgraph, langchain-anthropic, langchain-mcp-adapters, mcp, beautifulsoup4, lxml, pydantic, pyyaml, httpx, tenacity.
-5. **`ANTHROPIC_API_KEY`** in the environment. Canary's extraction step calls Claude, so the end-to-end run needs a working key. The regulation corpus itself is frozen on disk (`canary/demo/corpus`), so no EUR-Lex or other network fetch is required.
+5. **No API key, no network.** The demo runs fully offline. The regulation corpus is frozen on disk (`canary/demo/corpus`), and Canary's extraction step is replayed from a frozen fixture (`CANARY_FIXTURE_EXTRACTION`, set automatically by the runner), so no `ANTHROPIC_API_KEY` and no EUR-Lex fetch are required. The seal kill/restore proof never touches an LLM in the first place.
 
 ### Run
 
