@@ -26,13 +26,30 @@ ARIA-relevant object; v1 is the shipped demonstrator.
 
 | # | Property | Evidence | Status |
 |---|---|---|---|
-| 1 | **Complete mediation** — every guarded invocation passes the monitor | MITM transport: only `tools/call` inspected, all else relayed unchanged; `decide` is the single entry to Allow | Proven path + design |
+| 1 | **Complete mediation** — every guarded invocation passes the monitor | MITM transport: only `tools/call` inspected, all else relayed unchanged; `decide` is the single entry to Allow | **Architectural** (see note) |
 | 2 | **Non-bypass** — `Allow` only via parse -> validate -> serialize | `non_bypass`, `decide_emit_unique` | Proven |
 | 3 | **Default deny** — malformed / unmatched / expired / unsigned / replayed / non-canonical block | `default_deny`; M1 strict parser total + fail-closed (`parse raw = some ast -> IsCanonical ast`) | Proven |
 | 4 | **Target binding** — approval for A cannot authorize B | `approval_binds_to_target` (v1 core); v2 `ValidCapability` witness binds exact target | Proven |
 | 5 | **Session binding** — approval scoped to a session | `ValidCapability` witness binds session | Proven |
 | 6 | **One-shot / replay resistance** — a consumed approval cannot be reused | v1 one-shot consumption; v2 A3 nonce + replay set + TTL cap | Proven |
 | 7 | **Canonical signed approval** — signature over exact canonical bytes | `signed_parse_canonical` (byte-guard: `raw == serializeAst` + `eq_of_beq`) | Proven |
+
+### Note on "complete mediation" (property 1) — stated plainly
+
+Properties 2-7 are **machine-checked theorems** about the decision core.
+Property 1 is different in kind, and we say so rather than let a reviewer catch
+it: complete mediation is an **architectural** guarantee, not a Lean theorem. It
+holds because `seal` is the stdio man-in-the-middle, every guarded `tools/call`
+on that path traverses `decide`, and `decide` is the single source of `Allow`.
+
+What this guarantee is **conditional on**, and therefore in the trusted base:
+the agent has no effective path to the tools that bypasses the monitored stdio
+transport (no shell, no direct network, no alternate MCP config, no cached tool
+handle, no in-process effect). Those out-of-band channels are explicitly
+out of scope here (see [THREAT_MODEL.md](THREAT_MODEL.md)) and are the subject of
+the Example 6 capability-broker follow-on, where confinement is enforced rather
+than assumed. So: **non-bypass is proven; completeness is architectural and
+scoped to the `tools/call` boundary.** We do not claim "complete" as a proof.
 
 ### Proof-carrying pipeline (v2)
 - **M1 parse** `RawBytes -> Option AST`: total, fail-closed; canonical decimal grammar; `IsCanonical` proven on success.
