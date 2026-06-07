@@ -54,6 +54,31 @@ Trusted, not proven:
 - Lean compiler/runtime, JSON parsing, child-process I/O, and host/server behavior.
 - The MCP boundary. In-process calls that never emit `tools/call` are out of scope.
 
+## Performance
+
+A verified gate is worth little if it is slow. It is not. Per-call mediation
+overhead on the gate hot path (a guarded `tools/call` hitting default-deny:
+parse + classify + decide + emit), measured over ~1900 calls on commodity
+hardware:
+
+| metric | latency |
+|---|---|
+| mean | ~0.20 ms |
+| p50 | ~0.19 ms |
+| p90 | ~0.23 ms |
+| p99 | ~0.30 ms |
+
+Sub-millisecond. The verified boundary is not where your latency goes.
+
+Honest scope: this is the **decision path**. An *allowed* call additionally
+forwards to the upstream server, whose latency is not seal's overhead. Reproduce
+it yourself:
+
+```bash
+lake build
+python3 test/bench/latency_bench.py
+```
+
 ## v2: Verified Capability Pipeline (in progress)
 
 v2 builds a stronger, proof-carrying core alongside the shipped v1 sidecar. The v1 `seal` binary is unchanged; v2 lives in `SealV2` and is documented in [v2/STATUS.md](v2/STATUS.md). The pipeline is `parse -> validate -> serialize`, with each stage proven:
