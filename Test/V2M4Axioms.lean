@@ -22,4 +22,8 @@ import SealV2
 #guard_msgs in
 #print axioms SealV2.default_deny
 
+/-- info: 'SealV2.signed_parse_canonical' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms SealV2.signed_parse_canonical
+
 def main : IO UInt32 := pure 0

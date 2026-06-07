@@ -40,7 +40,7 @@ def expectValidateSerializeRoundtrip : IO Unit := do
 
 def expectSignatureUsesCanonicalBytes : IO Unit := do
   let expectedPayload :=
-    "{\"target\":{\"tool\":\"db.execute\",\"action\":\"write\",\"toolVersion\":\"v1\",\"manifestDigest\":\"manifest-001\",\"arguments\":{\"database\":\"prod\",\"table\":\"users\",\"amount\":12.34}},\"session\":\"session-1\",\"expiry\":120}"
+    "{\"target\":{\"tool\":\"db.execute\",\"action\":\"write\",\"toolVersion\":\"v1\",\"manifestDigest\":\"manifest-001\",\"arguments\":{\"database\":\"prod\",\"table\":\"users\",\"amount\":12.34}},\"session\":\"session-1\",\"issuedAt\":0,\"expiry\":120,\"nonce\":\"" ++ hex64a ++ "\"}"
   let expectedSignature := s!"stub-ed25519:pubkey-1:{expectedPayload}"
   if validApproval.signedMessageRaw == expectedPayload && validApproval.signature == expectedSignature then
     pure ()
