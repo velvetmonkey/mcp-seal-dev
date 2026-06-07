@@ -163,9 +163,15 @@ uv run python demo/run_p3.py
 
 The runner rebuilds a disposable workspace under `/tmp/seal-demo-p3` (fresh vault, policy, approvals control file, change-detection DB), runs Canary through `seal`, performs the kill/restore proof, and prints `P3-REPORT.md` ending in a PASS/FAIL line.
 
-### Known gap (not yet turnkey)
+### Portability
 
-`canary/demo/run_p3.py` currently hardcodes absolute paths to the author's machine: `SEAL` (this repo's `.lake/build/bin/seal`), `NODE` (the nvm node binary), and `SERVER` (the flywheel-memory `dist/index.js`). On a new machine, edit those constants at the top of `run_p3.py` to your local paths before running. Making the runner path-agnostic (env vars / discovery) is tracked as P4 [[onboarding]] work.
+`run_p3.py` resolves its dependencies at runtime, so it is not bound to any one machine. It checks environment overrides first, then falls back to the sibling repos and `PATH`:
+
+- `SEAL_BIN` — the `seal` binary (default: `../mcp-seal/.lake/build/bin/seal`)
+- `FLYWHEEL_SERVER` — the flywheel-memory `dist/index.js` (default: `../flywheel-memory/packages/mcp-server/dist/index.js`)
+- `NODE_BIN` — the node binary (default: `node` on `PATH`)
+
+It exits with a clear message if a dependency cannot be found. Verified: full PASS with all overrides and `ANTHROPIC_API_KEY` unset, every path resolved by discovery. The verified core and seal's gating behaviour are additionally proven on clean GitHub `ubuntu-latest` runners every commit (`lake build`, axiom checks, and `test/integration/test_seal.py`).
 
 ## License
 
