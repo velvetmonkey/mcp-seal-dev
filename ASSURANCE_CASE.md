@@ -26,15 +26,15 @@ ARIA-relevant object; v1 is the shipped demonstrator.
 
 | # | Property | Evidence | Status |
 |---|---|---|---|
-| 1 | **Complete mediation** — every guarded invocation passes the monitor | MITM transport: only `tools/call` inspected, all else relayed unchanged; `decide` is the single entry to Allow | **Architectural** (see note) |
-| 2 | **Non-bypass** — `Allow` only via parse -> validate -> serialize | `non_bypass`, `decide_emit_unique` | Proven |
-| 3 | **Default deny** — malformed / unmatched / expired / unsigned / replayed / non-canonical block | `default_deny`; M1 strict parser total + fail-closed (`parse raw = some ast -> IsCanonical ast`) | Proven |
-| 4 | **Target binding** — approval for A cannot authorize B | `approval_binds_to_target` (v1 core); v2 `ValidCapability` witness binds exact target | Proven |
-| 5 | **Session binding** — approval scoped to a session | `ValidCapability` witness binds session | Proven |
-| 6 | **One-shot / replay resistance** — a consumed approval cannot be reused | v1 one-shot consumption; v2 A3 nonce + replay set + TTL cap | Proven |
-| 7 | **Canonical signed approval** — signature over exact canonical bytes | `signed_parse_canonical` (byte-guard: `raw == serializeAst` + `eq_of_beq`) | Proven |
+| 1 | **Complete mediation**: every guarded invocation passes the monitor | MITM transport: only `tools/call` inspected, all else relayed unchanged; `decide` is the single entry to Allow | **Architectural** (see note) |
+| 2 | **Non-bypass**: `Allow` only via parse -> validate -> serialize | `non_bypass`, `decide_emit_unique` | Proven |
+| 3 | **Default deny**: malformed / unmatched / expired / unsigned / replayed / non-canonical block | `default_deny`; M1 strict parser total + fail-closed (`parse raw = some ast -> IsCanonical ast`) | Proven |
+| 4 | **Target binding**: approval for A cannot authorize B | `approval_binds_to_target` (v1 core); v2 `ValidCapability` witness binds exact target | Proven |
+| 5 | **Session binding**: approval scoped to a session | `ValidCapability` witness binds session | Proven |
+| 6 | **One-shot / replay resistance**: a consumed approval cannot be reused | v1 one-shot consumption; v2 A3 nonce + replay set + TTL cap | Proven |
+| 7 | **Canonical signed approval**: signature over exact canonical bytes | `signed_parse_canonical` (byte-guard: `raw == serializeAst` + `eq_of_beq`) | Proven |
 
-### Note on "complete mediation" (property 1) — stated plainly
+### Note on "complete mediation" (property 1): stated plainly
 
 Properties 2-7 are **machine-checked theorems** about the decision core.
 Property 1 is different in kind, and we say so rather than let a reviewer catch
@@ -80,7 +80,7 @@ with grep guards that fail the build if `sorryAx` or `Lean.ofReduceBool` appear.
 ## Verification evidence beyond the kernel
 
 - `lake exe automaton_tests`, `lake exe v2_parse_tests`, `v2_validate_tests`, `v2_serialize_tests`.
-- `python3 test/integration/test_seal.py` — `seal` as a live stdio MITM against a mock server.
+- `python3 test/integration/test_seal.py`, `seal` as a live stdio MITM against a mock server.
 - Adversarial MCP fixtures (`test/v2/m1_*`, `m2_*`, `m3_*`).
 - All of the above run on clean GitHub `ubuntu-latest` runners every commit (machine-independent, not author's box).
 - End-to-end demonstrator (seal x Canary): a destructive `note/delete` blocked at the gate while a legitimate `note/create` is approved; reproducible offline, proven in container CI.
@@ -88,9 +88,9 @@ with grep guards that fail the build if `sorryAx` or `Lean.ofReduceBool` appear.
 ## Trusted base (explicit residuals)
 
 Not proven, and stated so reviewers can weigh them:
-1. **Classifier / policy completeness** — the runtime policy must identify the calls that matter.
-2. **Target-parser equivalence (A2)** — `seal`'s parse of the target vs the upstream server's execution; minimised (canonical arg-tree hash + differential fixture), not eliminated. The standing red-team line.
-3. **Approval origin** — control-file permissions (v1) / signing-key management (v2); and that the human understood what they approved.
+1. **Classifier / policy completeness**: the runtime policy must identify the calls that matter.
+2. **Target-parser equivalence (A2)**: `seal`'s parse of the target vs the upstream server's execution; minimised (canonical arg-tree hash + differential fixture), not eliminated. The standing red-team line.
+3. **Approval origin**: control-file permissions (v1) / signing-key management (v2); and that the human understood what they approved.
 4. **Lean compiler + kernel, child-process I/O, host/transport, OS.**
 5. **Out-of-band effects** that never emit `tools/call` through `seal`.
 

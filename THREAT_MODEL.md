@@ -8,8 +8,8 @@ product.
 ## System and trust boundary
 
 ```
-[ AI host / agent ]  <-- stdio JSON-RPC -->  [ seal ]  <-- stdio JSON-RPC -->  [ real MCP server ]
-        untrusted output                  reference monitor                 the capability (effects)
+[ AI host / agent ] <-- stdio JSON-RPC --> [ seal ] <-- stdio JSON-RPC --> [ real MCP server ]
+ untrusted output reference monitor the capability (effects)
 ```
 
 `seal` is a man-in-the-middle on the stdio transport. The host launches `seal`;
@@ -49,7 +49,7 @@ compromise the Lean-compiled decision core, the host transport, or the OS.
 6. **Replay / one-shot.** A consumed approval cannot be reused; nonce + replay set + TTL cap reject replays (v2 A3).
 7. **Signature integrity (signed-approval path).** The signature is verified over the exact canonical byte shape, not a normalized substitute, so a parser-differential cannot launder a non-canonical signed message past verification.
 
-## Out of scope (trusted, not proven) — stated plainly
+## Out of scope (trusted, not proven): stated plainly
 
 - **Classifier / policy completeness and correctness.** The runtime JSON policy decides *which* calls are guarded and *what* the target is. `seal` proves the automaton's decisions are correct **given** the policy; it does not prove the policy captures every dangerous call or that "destructive" is correctly characterised. This is a human responsibility.
 - **Target-parser equivalence (A2).** `seal` classifies bytes; the upstream server executes bytes. If `seal`'s view of "the target" diverges from what the server actually does (HTTP-request-smuggling family), the theorem stays true while the mediated event is the wrong event. This residual is **minimised** by canonical parsing + arg-tree hashing + a differential fixture, **not eliminated**. It is the standing red-team line and a Track B differential-harness obligation.
