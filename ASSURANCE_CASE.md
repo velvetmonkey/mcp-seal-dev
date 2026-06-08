@@ -31,12 +31,17 @@ ARIA-relevant object; v1 is the shipped demonstrator.
 | 3 | **Default deny**: malformed / unmatched / expired / unsigned / replayed / non-canonical block | `default_deny`; M1 strict parser total + fail-closed (`parse raw = some ast -> IsCanonical ast`) | Proven |
 | 4 | **Target binding**: approval for A cannot authorize B | `approval_binds_to_target` (v1 core); v2 `ValidCapability` witness binds exact target | Proven |
 | 5 | **Session binding**: approval scoped to a session | `ValidCapability` witness binds session | Proven |
-| 6 | **One-shot / replay resistance**: a consumed approval cannot be reused | v1 one-shot consumption; v2 A3 nonce + replay set + TTL cap | Proven |
+| 6 | **One-shot consume + approval expiry**: a consumed (v1) or expired approval is rejected at validation | v1 one-shot consumption; `valid_capability_has_unexpired_approval` | Proven |
+| 6b | **Cross-message replay set + TTL cap**: a re-presented nonce is refused and stale approvals are capped | v2 A3 `validateAndConsumeWithStore`, `ttlWithinCap`, `nonceConsumed` over a host-persisted fail-closed replay store (`listReplayStore`) | Host-enforced, fail-closed; the no-replay-after-consume lifecycle invariant (A5, state monotonicity) is on the sprint plan, not yet a theorem |
 | 7 | **Canonical signed approval**: signature over exact canonical bytes | `signed_parse_canonical` (byte-guard: `raw == serializeAst` + `eq_of_beq`) | Proven |
 
 ### Note on "complete mediation" (property 1): stated plainly
 
-Properties 2-7 are **machine-checked theorems** about the decision core.
+Properties 2-5, 6 and 7 are **machine-checked theorems** about the decision core.
+Property 6b (cross-message replay set + TTL cap) is **host-enforced and
+fail-closed**, not a Lean theorem: its no-replay-after-consume lifecycle
+invariant (A5, state monotonicity) is on the sprint plan, and the host replay
+store is part of the trusted base.
 Property 1 is different in kind, and we say so rather than let a reviewer catch
 it: complete mediation is an **architectural** guarantee, not a Lean theorem. It
 holds because `seal` is the stdio man-in-the-middle, every guarded `tools/call`
