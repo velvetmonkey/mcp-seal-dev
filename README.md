@@ -7,7 +7,7 @@
 
 `mcp-seal` is a verified MCP approval-gate sidecar. The `seal` binary sits between an MCP host and a real MCP server, forwards ordinary JSON-RPC traffic unchanged, and blocks configured `tools/call` actions until a human approval exists for the exact request.
 
-The claim is deliberately narrow: this is a provably-correct policy monitor, not a proven-safe agent.
+The claim is deliberately narrow: this is a provably-correct policy monitor, not a proven-safe agent. Four safety rules are [proven in Lean](#what-is-proven); you can [watch them hold](#demos) in about a minute.
 
 ## In Plain English
 
@@ -15,40 +15,39 @@ Think of `seal` as a bouncer on the door of your tools. An AI agent can ask to u
 
 Each ticket is single-use. One approved tool call spends it, and the very next identical request is stopped again until a human adds another ticket. The agent cannot forge a ticket or add itself to the list: tickets only count when they arrive through the trusted file, never through the agent's own traffic.
 
-What makes `seal` different from an ordinary check is that the bouncer is mathematically proven, in Lean, to follow four rules without exception: never let an unticketed guest through, never reuse a spent ticket, never accept a ticket made for a different guest, and never wave anyone past without looking. The rest of this README shows you how to watch that bouncer work, then how it is built.
+What makes `seal` different from an ordinary check is that the bouncer is mathematically proven, in Lean, to follow four rules without exception: never let an unticketed guest through, never reuse a spent ticket, never accept a ticket made for a different guest, and never wave anyone past without looking.
 
-## Try It in Five Minutes
+### The one rule to hold in your head: one approval row = one tool call
 
-You do not need any of the demo stack to see `seal` work. You can drop it in front of a real MCP server your host already talks to and watch it gate live tool calls. This walkthrough uses the official MCP reference server, [`@modelcontextprotocol/server-everything`](https://www.npmjs.com/package/@modelcontextprotocol/server-everything): no account, no API key, no network beyond a one-time `npx` fetch, and it speaks stdio natively so there is nothing to bridge. The shape is identical for any server.
-
-**What you will see:** a tool that works normally suddenly refuses to run. You add one line to a file. The same tool runs exactly once, then refuses again. That one-line-equals-one-call behaviour, with a mathematical proof underneath it, is the whole product.
-
-### The mental model: one approval row = one tool call
-
-This is the single most important thing to understand before testing:
-
-- A `guarded` tool is **blocked by default**. It is allowed only when a matching approval record is already present in the control file.
-- Each approval is a **one-shot ticket**. The first matching `tools/call` *consumes* it (the engine erases it from state). The next identical call is blocked again.
-- An unused approval also dies on **wall-clock TTL expiry**, whether or not it was ever spent. A bare `{"target": <hash>}` record expires `ttl_seconds` after `seal` first reads it. A record may also carry `"issuedAt": <epoch-ms>` (the wall-clock time you minted it), in which case it expires `ttl_seconds` after *that* moment, so a ticket you minted and forgot is already dead by the time `seal` sees it. `ttl_seconds` defaults to 120 and is capped at 300. `issuedAt` can only ever make a ticket expire sooner, never later, than `now + ttl_seconds`.
-
-So the relationship is literal and one-to-one:
+- A `guarded` tool is **blocked by default**. It is allowed only when a matching approval is already present in the control file.
+- Each approval is a **one-shot ticket**. The first matching `tools/call` consumes it; the next identical call is blocked again.
+- An unused ticket also **expires** on a wall-clock TTL (`ttl_seconds`, default 120, capped 300), whether or not it was ever spent.
 
 ```
 N approval rows in the control file  =  N authorized tool calls
 ```
 
-One `seal` instance gates an unlimited number of tools and holds an unlimited number of live approvals at once. What is "once only" is each individual approval *record*, not the gate. Think single-use tickets at a turnstile, not a one-time keyswitch: the gate runs forever, every passage spends one ticket, and you (the human) mint tickets by appending lines to the control file.
+The gate runs forever; each individual ticket is single-use. Think turnstile tickets, not a one-time keyswitch: you (the human) mint tickets by appending lines to the control file, and every passage spends one. With that rule in hand, the demos below will make sense on sight.
 
-### See it, do not just read it: `demo/ttl_demo.py`
+## Demos
 
-Rather than take the table on faith, run the policy demo. It drives the real `seal` binary in front of server-everything, prints the exact policy JSON it uses, and checks every approval and TTL behaviour live:
+Four ways to watch the gate work, ordered simplest to richest. Each is self-contained with copy-paste commands. Start at the top.
+
+Every demo needs the `seal` binary, so build it once:
 
 ```bash
-lake build                  # produces .lake/build/bin/seal
-python3 demo/ttl_demo.py    # needs only node/npx; no key, no network beyond one npx fetch
+lake build          # produces .lake/build/bin/seal
 ```
 
-It exercises four scenarios and exits non-zero if any misbehaves:
+### Demo 1: approval + TTL policy, fully scripted
+
+The fastest proof. `demo/ttl_demo.py` drives the real `seal` binary in front of the official zero-auth reference server ([`@modelcontextprotocol/server-everything`](https://www.npmjs.com/package/@modelcontextprotocol/server-everything)), prints the exact policy JSON it uses, and checks every approval and TTL behaviour live. Needs only Node/npx; no API key, no network beyond a one-time `npx` fetch.
+
+```bash
+python3 demo/ttl_demo.py
+```
+
+Expected output (exits non-zero if any check misbehaves):
 
 ```
 === Policy A (ttl_seconds = 120): default-deny + one-shot ticket ===
@@ -63,45 +62,34 @@ It exercises four scenarios and exits non-zero if any misbehaves:
   PASS: 6/6 checks passed
 ```
 
-That is default-deny, the one-shot ticket, wall-clock expiry, and mint-time `issuedAt`, all demonstrated against the shipped binary. The rest of this section is the same behaviour, by hand.
+That is default-deny, the one-shot ticket, wall-clock expiry, and mint-time `issuedAt`, all demonstrated against the shipped binary in one command.
 
-### 1. Build seal
+### Demo 2: gate a server by hand
+
+Same gate, driven yourself over stdio, so you can see there is no trick. This needs no host and no reload. It blocks a call, you mint a ticket, the same call is allowed once.
 
 ```bash
-lake build          # produces .lake/build/bin/seal
+: > /tmp/seal-approvals.ndjson          # start with an empty guest list
+{ printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"sealtest","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","arguments":{"message":"hello seal"}}}'
+  sleep 3 ; } \
+| .lake/build/bin/seal --policy config/policy.everything.json -- \
+    npx -y @modelcontextprotocol/server-everything stdio
 ```
 
-### 2. Write a policy
+The trailing `sleep 3` holds the pipe open so the `npx` child can boot on a cold first run. Expect `initialize` forwarded with a real upstream reply, and `id:2` returning a seal block (`isError: true`, `approval required: 13354254271524378478`) because no approval exists yet. The block error hands you the exact target hash you need (see [Reference: policies and the target hash](#reference-policies-and-the-target-hash)).
 
-Two ready-made policies ship in `config/`:
+Now mint that hash and re-run:
 
-- [`config/policy.deny-all.json`](config/policy.deny-all.json): `"tools": []`. Every `tools/call` hits default-deny and is blocked unconditionally. No approval can ever open it (there is no rule to match). This is the pure-block test.
-- [`config/policy.everything.json`](config/policy.everything.json): marks two harmless server-everything tools (`echo`, `add`) as `guarded` with `"match": { "type": "always" }` and an empty `target`. Guarded means each call is blocked until a matching approval exists, then allowed exactly once.
-
-A minimal guarded rule looks like:
-
-```json
-{ "name": "echo", "mode": "guarded", "match": { "type": "always" }, "target": [] }
+```bash
+echo '{"target":13354254271524378478}' >> /tmp/seal-approvals.ndjson
 ```
 
-#### What the target hash is, exactly
+The second run returns `Echo: hello seal`; a third run (ticket consumed) blocks again. To bind the ticket to when *you* minted it rather than when `seal` reads it, add `issuedAt` (Unix epoch ms): `echo '{"target":13354254271524378478,"issuedAt":'$(date +%s%3N)'}' >> /tmp/seal-approvals.ndjson`.
 
-A ticket on the guest list is a single number: the **target hash**. It is a fingerprint of the request you are approving, so an approval for one action cannot quietly unlock a different one.
-
-It is computed deterministically (a 64-bit FNV-1a hash, no crypto, no secret) over one string built from the tool name plus any chosen argument values, joined by `|`:
-
-```
-target = FNV-1a( toolName | part1 | part2 | ... )
-```
-
-- With `"target": []` (name only), the string is just the tool name, so every call to that tool shares one hash. Worked example: the tool `echo` always hashes to `13354254271524378478`, on any machine, every run. That is the number the block error hands you below.
-- With `"target": ["arguments.message"]`, the string becomes `echo|hello`, so a ticket minted for the message `hello` will not authorize an `echo` of `goodbye`. Each distinct argument value gets its own hash and therefore its own ticket.
-
-So the hash is simply a stable, unguessable-by-accident name for "this exact request". That is why the block error hands you the hash directly: you are not decoding anything, you are reading the name of the thing you are choosing to let through, then writing that same name onto the guest list. Empty `target` is the coarsest grain (one ticket per tool); adding `target` parts drawn from the call arguments binds approvals to specific argument values for finer control.
-
-### 3. Point your host at seal
-
-`seal` is a stdio sidecar, and so is server-everything, so `seal` simply spawns it as its child. In your host config (e.g. `~/.claude.json`), add or replace the server entry:
+**Wire it into a real host** the same way: in your host config (e.g. `~/.claude.json`), replace the server entry with `seal` spawning it. Back up your config first.
 
 ```jsonc
 "everything": {
@@ -114,53 +102,57 @@ So the hash is simply a stable, unguessable-by-accident name for "this exact req
 }
 ```
 
-Back up your config first. The trailing `stdio` argument matters: without it the launcher prints a banner that corrupts the JSON-RPC stream. `seal` spawns the child, forwards `initialize` / `tools/list` / notifications byte-for-byte (so tools still appear in discovery), and gates only `tools/call`. Reload MCP (restart the host or reconnect) so the new stdio entry replaces the old one. (A remote HTTP server works too: bridge it to stdio with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) as seal's child instead of the `npx` line above.)
+The trailing `stdio` argument matters: without it the launcher prints a banner that corrupts the JSON-RPC stream. `seal` forwards `initialize` / `tools/list` / notifications byte-for-byte (tools still appear in discovery) and gates only `tools/call`. Reload MCP to pick up the change. To roll back, restore your backed-up config entry and reload; nothing else is touched. (A remote HTTP server works too: bridge it to stdio with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) as seal's child instead of the `npx` line.)
 
-### 4. Watch it block, then mint a ticket
+### Demo 3: prompt-injection smoke test
 
-Call a guarded tool. It is blocked, and the error text **echoes the exact target hash you need**:
-
-```json
-{ "result": { "content": [ { "type": "text", "text": "approval required: 13354254271524378478" } ], "isError": true } }
-```
-
-Copy that hash and append one approval row to the control file named in your policy (`/tmp/seal-approvals.ndjson`):
+A scripted `tools/call` that tries to drop a production table, run three times against the verified core, with zero external dependencies. It shows the full lifecycle of a single ticket: blocked cold, allowed once after a trusted human approval is appended, then blocked again once that one-shot approval is consumed.
 
 ```bash
-echo '{"target":13354254271524378478}' >> /tmp/seal-approvals.ndjson
+lake exe automaton_tests
+lake exe axiom_check
+python3 test/integration/test_seal.py
+python3 demo/langgraph_injection_demo.py
 ```
 
-Call `echo` again: it is **allowed once** and returns the real result (`Echo: ...`). Call a third time without re-minting: blocked again, because the ticket was consumed. Append five rows, get five calls. That is the whole gate.
+### Demo 4: flagship, seal x Canary
 
-To bind the ticket to when *you* minted it rather than when `seal` reads it, add `issuedAt` (Unix epoch ms): `echo '{"target":13354254271524378478,"issuedAt":'$(date +%s%3N)'}' >> /tmp/seal-approvals.ndjson`. The ticket then expires `ttl_seconds` after that instant, so a stale mint is refused even on its first use.
+The applied demo: `seal` wrapped in front of a real LangGraph agent ([Canary](https://github.com/velvetmonkey/canary), an ESG regulatory-change pipeline) writing to an MCP vault server. Canary's legitimate report `note/create` is approved and succeeds; a destructive `note/delete` then dies at the gate. Without `seal` the file is deleted; with `seal` it is blocked and the file survives byte-identical. This is the artefact for a pitch or an ARIA reviewer: it proves the gate on a real agent doing a real task, not just in a unit test.
 
-### 5. Sanity-check from a shell (no host reload)
+The runner lives in the [Canary](https://github.com/velvetmonkey/canary) repo and orchestrates three repositories: Canary (the host), `seal` (this repo), and [flywheel-memory](https://github.com/velvetmonkey/flywheel-memory) (the MCP server being gated). It runs fully offline (no LLM key).
 
-You can drive the full chain directly over stdio:
+> Scope note: a single container (in the Canary repo) bundles all three repos so the multi-repo *demo* runs reproducibly with one command. That container is a demo harness only. `seal` itself is a single native binary with no container or runtime dependencies; adoption is a one-line host config change.
+
+**Honest claim**: a default-deny gate blocks the destructive action at a verified boundary the model cannot influence, and every allowed action is explicitly approved. This does **not** claim prompt-injection prevention or additive-only containment. The model can still be fooled; the demo shows the action dies anyway.
+
+#### Dependencies (fresh machine)
+
+1. **Lean toolchain** for `seal` itself. Install [`elan`](https://github.com/leanprover/elan); it pins `leanprover/lean4:v4.28.0` from `lean-toolchain`. Then in this repo: `lake build`.
+2. **Node.js v22.x** for the upstream MCP server. (nvm: `nvm install 22`.)
+3. **flywheel-memory** (the real MCP server `seal` spawns):
+   ```bash
+   git clone https://github.com/velvetmonkey/flywheel-memory
+   cd flywheel-memory && npm ci && npm run build
+   # server entry: packages/mcp-server/dist/index.js
+   ```
+4. **Canary** (the LangGraph host + demo runner), Python 3.12 via [`uv`](https://github.com/astral-sh/uv):
+   ```bash
+   git clone https://github.com/velvetmonkey/canary
+   cd canary && uv sync
+   ```
+   Python deps (resolved by `uv`): langgraph, langchain-anthropic, langchain-mcp-adapters, mcp, beautifulsoup4, lxml, pydantic, pyyaml, httpx, tenacity.
+5. **No API key, no network.** The regulation corpus is frozen on disk (`canary/demo/corpus`), and Canary's extraction step is replayed from a frozen fixture (`CANARY_FIXTURE_EXTRACTION`, set automatically by the runner), so no `ANTHROPIC_API_KEY` and no EUR-Lex fetch are required. The seal kill/restore proof never touches an LLM in the first place.
+
+#### Run
 
 ```bash
-cd mcp-seal
-: > /tmp/seal-approvals.ndjson          # start with an empty guest list
-{ printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"sealtest","version":"0"}}}' \
-  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","arguments":{"message":"hello seal"}}}'
-  sleep 3 ; } \
-| .lake/build/bin/seal --policy config/policy.everything.json -- \
-    npx -y @modelcontextprotocol/server-everything stdio
+cd canary
+uv run python demo/run_p3.py
 ```
 
-The trailing `sleep 3` holds the pipe open so the `npx` child has time to boot on a cold first run; without it stdin can close before the server replies. Expect: `initialize` forwarded with a real upstream reply; `id:2` returns a seal block (`isError: true`, `approval required: 13354254271524378478`) because no approval exists yet. Now mint a ticket and re-run to see the same call allowed:
+The runner rebuilds a disposable workspace under `/tmp/seal-demo-p3` (fresh vault, policy, approvals control file, change-detection DB), runs Canary through `seal`, performs the kill/restore proof, and prints `P3-REPORT.md` ending in a PASS/FAIL line.
 
-```bash
-echo '{"target":13354254271524378478}' >> /tmp/seal-approvals.ndjson
-```
-
-The second run returns `Echo: hello seal`, and a third run (ticket consumed) blocks again.
-
-### Rollback
-
-Restore your backed-up host config entry and reload. Nothing else is touched.
+`run_p3.py` resolves its dependencies at runtime via environment overrides (`SEAL_BIN`, `FLYWHEEL_SERVER`, `NODE_BIN`), then sibling repos and `PATH`, so it is not bound to any one machine. Verified: full PASS with all overrides and `ANTHROPIC_API_KEY` unset. The verified core and seal's gating behaviour are additionally proven on clean GitHub `ubuntu-latest` runners every commit (`lake build`, axiom checks, `test/integration/test_seal.py`).
 
 ## How It Works
 
@@ -240,9 +232,7 @@ python3 test/bench/latency_bench.py
 - **Rules as data**: `config/policy.example.json` classifies tool calls, target fields, deny rules, and approval control-file settings at runtime.
 - **Engine as code**: `SealCore` contains the compiled Lean automaton and the zero-`sorry` invariants.
 
-Approvals arrive only through the trusted control file as newline-delimited JSON records, re-read on each `tools/call` in v1. File permissions are the origin check. An approval sent as an ordinary agent tool call is ignored by the classifier and remains blocked by default.
-
-Runtime config is JSON via Lean's built-in parser, so policies are data, not baked into Lean source. Unknown tools, unmatched patterns, missing target fields, and explicit deny rules all block by default. See [config/policy.example.json](config/policy.example.json).
+Approvals arrive only through the trusted control file as newline-delimited JSON records, re-read on each `tools/call` in v1. File permissions are the origin check. An approval sent as an ordinary agent tool call is ignored by the classifier and remains blocked by default. Runtime config is JSON via Lean's built-in parser, so policies are data, not baked into Lean source. Unknown tools, unmatched patterns, missing target fields, and explicit deny rules all block by default.
 
 ## v2: Verified Capability Pipeline (in progress)
 
@@ -264,88 +254,45 @@ lake exe v2_m4_axiom_check
 
 Claim discipline: `canonical_roundtrip` means seal self-consistency only. A2, target-parser equivalence, remains the per-server obligation, minimised by construction and by the differential fixture, not eliminated. The signed-approval path rejects non-canonical signed-message bytes instead of normalising them before signature verification.
 
-## The Demos
+## Reference: policies and the target hash
 
-Two demos ship with this repo. The first is a self-contained smoke test you can run in seconds with nothing else installed. The second is the flagship: a real agent, doing a real job, with `seal` catching a real attack. Read them as **what / why / where / when / how**.
+### Policy files
 
-### Quick demo: prompt-injection smoke test
+Three ready-made policies ship in `config/`:
 
-- **What**: a scripted `tools/call` that tries to drop a production table, run three times against the verified core.
-- **Why**: to show the lifecycle of a single ticket end to end, with zero external dependencies.
-- **Where**: [`demo/langgraph_injection_demo.py`](demo) in this repo, against the mock MCP server.
-- **When**: first thing, to confirm your build works and to feel the gate before wiring anything real.
-- **How**:
+- [`config/policy.deny-all.json`](config/policy.deny-all.json): `"tools": []`. Every `tools/call` hits default-deny and is blocked unconditionally. The pure-block test.
+- [`config/policy.everything.json`](config/policy.everything.json): marks two harmless server-everything tools (`echo`, `add`) as `guarded` with `"match": { "type": "always" }` and an empty `target`. Used by Demos 1 and 2.
+- [`config/policy.example.json`](config/policy.example.json): the generic template.
 
-```bash
-lake build
-lake exe automaton_tests
-lake exe axiom_check
-python3 test/integration/test_seal.py
-python3 demo/langgraph_injection_demo.py
+A minimal guarded rule:
+
+```json
+{ "name": "echo", "mode": "guarded", "match": { "type": "always" }, "target": [] }
 ```
 
-The destructive request is first blocked cold, then allowed once after a trusted human approval is appended, then blocked again once that one-shot approval has been consumed. Same shape as the five-minute walkthrough above, with no host to configure.
+The `approval` block sets the control file and `ttl_seconds` (default 120, capped 300). Approval records are newline-delimited JSON: `{"target": <hash>}`, optionally with `"issuedAt": <epoch-ms>` to bind the TTL to mint time.
 
-### Flagship demo: seal x Canary
+### What the target hash is, exactly
 
-- **What**: `seal` wrapped in front of a real LangGraph agent ([Canary](https://github.com/velvetmonkey/canary), an ESG regulatory-change pipeline) that writes to an MCP vault server. Canary's legitimate report `note/create` is approved and succeeds; a destructive `note/delete` then dies at the gate. Without `seal` the file is deleted; with `seal` it is blocked and the file survives byte-identical.
-- **Why**: a unit test proves the gate in the lab. This proves it on a real agent doing a real task, which is the difference between "the maths works" and "it works where it matters". It is the artefact for a pitch or an ARIA reviewer.
-- **Where**: the runner lives in the [Canary](https://github.com/velvetmonkey/canary) repo (`demo/run_p3.py`) and orchestrates three repositories: Canary (the host), `seal` (this repo), and [flywheel-memory](https://github.com/velvetmonkey/flywheel-memory) (the MCP server being gated).
-- **When**: when you want the full story rather than the mechanism, or when you need a reproducible, key-free run on a fresh machine.
-- **How**: see the run instructions below.
+A ticket on the guest list is a single number: the **target hash**. It is a fingerprint of the request you are approving, so an approval for one action cannot quietly unlock a different one.
 
-> Scope note: a single container (in the Canary repo) bundles all three repos so the multi-repo *demo* runs reproducibly with one command. That container is a demo harness only. `seal` itself is a single native binary with no container or runtime dependencies; adoption is a one-line host config change.
+It is computed deterministically (a 64-bit FNV-1a hash, no crypto, no secret) over one string built from the tool name plus any chosen argument values, joined by `|`:
 
-**Honest claim**: a default-deny gate blocks the destructive action at a verified boundary the model cannot influence, and every allowed action is explicitly approved. This does **not** claim prompt-injection prevention or additive-only containment. The model can still be fooled; the demo shows the action dies anyway.
-
-#### Dependencies (fresh machine)
-
-The demo spans three repositories and runs fully offline (no LLM key):
-
-1. **Lean toolchain** for `seal` itself. Install [`elan`](https://github.com/leanprover/elan); it pins `leanprover/lean4:v4.28.0` from `lean-toolchain`. Then in this repo:
-   ```bash
-   lake build          # produces .lake/build/bin/seal
-   ```
-2. **Node.js v22.x** for the upstream MCP server. (nvm: `nvm install 22`.)
-3. **flywheel-memory** (the real MCP server `seal` spawns):
-   ```bash
-   git clone https://github.com/velvetmonkey/flywheel-memory
-   cd flywheel-memory && npm ci && npm run build
-   # server entry: packages/mcp-server/dist/index.js
-   ```
-4. **Canary** (the LangGraph host + demo runner), Python 3.12 via [`uv`](https://github.com/astral-sh/uv):
-   ```bash
-   git clone https://github.com/velvetmonkey/canary
-   cd canary && uv sync
-   ```
-   Python deps (resolved by `uv`): langgraph, langchain-anthropic, langchain-mcp-adapters, mcp, beautifulsoup4, lxml, pydantic, pyyaml, httpx, tenacity.
-5. **No API key, no network.** The demo runs fully offline. The regulation corpus is frozen on disk (`canary/demo/corpus`), and Canary's extraction step is replayed from a frozen fixture (`CANARY_FIXTURE_EXTRACTION`, set automatically by the runner), so no `ANTHROPIC_API_KEY` and no EUR-Lex fetch are required. The seal kill/restore proof never touches an LLM in the first place.
-
-#### Run
-
-```bash
-cd canary
-uv run python demo/run_p3.py
+```
+target = FNV-1a( toolName | part1 | part2 | ... )
 ```
 
-The runner rebuilds a disposable workspace under `/tmp/seal-demo-p3` (fresh vault, policy, approvals control file, change-detection DB), runs Canary through `seal`, performs the kill/restore proof, and prints `P3-REPORT.md` ending in a PASS/FAIL line.
+- With `"target": []` (name only), the string is just the tool name, so every call to that tool shares one hash. Worked example: the tool `echo` always hashes to `13354254271524378478`, on any machine, every run. That is the number the block error hands you.
+- With `"target": ["arguments.message"]`, the string becomes `echo|hello`, so a ticket minted for the message `hello` will not authorize an `echo` of `goodbye`. Each distinct argument value gets its own hash and therefore its own ticket.
 
-#### Portability
-
-`run_p3.py` resolves its dependencies at runtime, so it is not bound to any one machine. It checks environment overrides first, then falls back to the sibling repos and `PATH`:
-
-- `SEAL_BIN`: the `seal` binary (default: `../mcp-seal/.lake/build/bin/seal`)
-- `FLYWHEEL_SERVER`: the flywheel-memory `dist/index.js` (default: `../flywheel-memory/packages/mcp-server/dist/index.js`)
-- `NODE_BIN`: the node binary (default: `node` on `PATH`)
-
-It exits with a clear message if a dependency cannot be found. Verified: full PASS with all overrides and `ANTHROPIC_API_KEY` unset, every path resolved by discovery. The verified core and seal's gating behaviour are additionally proven on clean GitHub `ubuntu-latest` runners every commit (`lake build`, axiom checks, and `test/integration/test_seal.py`).
+So the hash is a stable, unguessable-by-accident name for "this exact request". The block error hands it to you directly: you are not decoding anything, you are reading the name of the thing you are choosing to let through, then writing that same name onto the guest list. Empty `target` is the coarsest grain (one ticket per tool); adding `target` parts drawn from the call arguments binds approvals to specific argument values for finer control.
 
 ## Related repositories
 
 Part of the velvetmonkey verified-cognition stack:
 
 - **mcp-seal** (this repo): the verified MCP approval-gate sidecar.
-- [canary](https://github.com/velvetmonkey/canary): a LangGraph compliance pipeline that hosts the flagship [seal x Canary demo](#flagship-demo-seal-x-canary).
+- [canary](https://github.com/velvetmonkey/canary): a LangGraph compliance pipeline that hosts the flagship [seal x Canary demo](#demo-4-flagship-seal-x-canary).
 - [flywheel-memory](https://github.com/velvetmonkey/flywheel-memory): the knowledge-graph MCP server that `seal` gates in that demo.
 
 ## License
