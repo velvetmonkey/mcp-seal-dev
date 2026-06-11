@@ -1,0 +1,10 @@
+{
+  "approval": {
+    "control_file": "/tmp/seal-approvals.ndjson",
+    "ttl_seconds": 120
+  },
+  "tools": [
+    { "name": "echo", "mode": "guarded", "match": { "type": "always" }, "target": [] },
+    { "name": "add",  "mode": "guarded", "match": { "type": "always" }, "target": [] }
+  ]
+}

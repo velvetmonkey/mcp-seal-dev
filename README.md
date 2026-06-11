@@ -19,7 +19,7 @@ What makes `seal` different from an ordinary check is that the bouncer is mathem
 
 ## Try It in Five Minutes
 
-You do not need any of the demo stack to see `seal` work. You can drop it in front of a real MCP server your host already talks to and watch it gate live tool calls. This walkthrough uses a remote HTTP MCP server ([Alpha Vantage](https://mcp.alphavantage.co), free stock and economics data) bridged to stdio, but the shape is identical for any server.
+You do not need any of the demo stack to see `seal` work. You can drop it in front of a real MCP server your host already talks to and watch it gate live tool calls. This walkthrough uses the official MCP reference server, [`@modelcontextprotocol/server-everything`](https://www.npmjs.com/package/@modelcontextprotocol/server-everything): no account, no API key, no network beyond a one-time `npx` fetch, and it speaks stdio natively so there is nothing to bridge. The shape is identical for any server.
 
 **What you will see:** a tool that works normally suddenly refuses to run. You add one line to a file. The same tool runs exactly once, then refuses again. That one-line-equals-one-call behaviour, with a mathematical proof underneath it, is the whole product.
 
@@ -56,12 +56,12 @@ lake build          # produces .lake/build/bin/seal
 Two ready-made policies ship in `config/`:
 
 - [`config/policy.deny-all.json`](config/policy.deny-all.json): `"tools": []`. Every `tools/call` hits default-deny and is blocked unconditionally. No approval can ever open it (there is no rule to match). This is the pure-block test.
-- [`config/policy.alphavantage.json`](config/policy.alphavantage.json): marks the server's meta-tools (`TOOL_LIST`, `TOOL_GET`, `TOOL_CALL`) as `guarded` with `"match": { "type": "always" }` and an empty `target`. Guarded means each call is blocked until a matching approval exists, then allowed exactly once.
+- [`config/policy.everything.json`](config/policy.everything.json): marks two harmless server-everything tools (`echo`, `add`) as `guarded` with `"match": { "type": "always" }` and an empty `target`. Guarded means each call is blocked until a matching approval exists, then allowed exactly once.
 
 A minimal guarded rule looks like:
 
 ```json
-{ "name": "TOOL_LIST", "mode": "guarded", "match": { "type": "always" }, "target": [] }
+{ "name": "echo", "mode": "guarded", "match": { "type": "always" }, "target": [] }
 ```
 
 #### What the target hash is, exactly
@@ -74,43 +74,43 @@ It is computed deterministically (a 64-bit FNV-1a hash, no crypto, no secret) ov
 target = FNV-1a( toolName | part1 | part2 | ... )
 ```
 
-- With `"target": []` (name only), the string is just the tool name, so every call to that tool shares one hash. Worked example: the tool `TOOL_LIST` always hashes to `13575275683051354052`, on any machine, every run. That is the number the block error hands you below.
-- With `"target": ["arguments.symbol"]`, the string becomes `TOOL_CALL|IBM`, so a ticket minted for `IBM` will not authorize a call for `MSFT`. Each distinct argument value gets its own hash and therefore its own ticket.
+- With `"target": []` (name only), the string is just the tool name, so every call to that tool shares one hash. Worked example: the tool `echo` always hashes to `13354254271524378478`, on any machine, every run. That is the number the block error hands you below.
+- With `"target": ["arguments.message"]`, the string becomes `echo|hello`, so a ticket minted for the message `hello` will not authorize an `echo` of `goodbye`. Each distinct argument value gets its own hash and therefore its own ticket.
 
 So the hash is simply a stable, unguessable-by-accident name for "this exact request". That is why the block error hands you the hash directly: you are not decoding anything, you are reading the name of the thing you are choosing to let through, then writing that same name onto the guest list. Empty `target` is the coarsest grain (one ticket per tool); adding `target` parts drawn from the call arguments binds approvals to specific argument values for finer control.
 
 ### 3. Point your host at seal
 
-`seal` is a stdio sidecar. If your real server is remote HTTP, bridge it to stdio with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) as seal's child. In your host config (e.g. `~/.claude.json`), replace the server entry:
+`seal` is a stdio sidecar, and so is server-everything, so `seal` simply spawns it as its child. In your host config (e.g. `~/.claude.json`), add or replace the server entry:
 
 ```jsonc
-"alphavantage": {
+"everything": {
   "command": "/abs/path/mcp-seal/.lake/build/bin/seal",
   "args": [
-    "--policy", "/abs/path/mcp-seal/config/policy.alphavantage.json",
+    "--policy", "/abs/path/mcp-seal/config/policy.everything.json",
     "--",
-    "npx", "-y", "mcp-remote@0.1.38", "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
+    "npx", "-y", "@modelcontextprotocol/server-everything", "stdio"
   ]
 }
 ```
 
-Back up your config first. `seal` spawns the child, forwards `initialize` / `tools/list` / notifications byte-for-byte (so tools still appear in discovery), and gates only `tools/call`. Reload MCP (restart the host or reconnect) so the new stdio entry replaces the old one.
+Back up your config first. The trailing `stdio` argument matters: without it the launcher prints a banner that corrupts the JSON-RPC stream. `seal` spawns the child, forwards `initialize` / `tools/list` / notifications byte-for-byte (so tools still appear in discovery), and gates only `tools/call`. Reload MCP (restart the host or reconnect) so the new stdio entry replaces the old one. (A remote HTTP server works too: bridge it to stdio with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) as seal's child instead of the `npx` line above.)
 
 ### 4. Watch it block, then mint a ticket
 
 Call a guarded tool. It is blocked, and the error text **echoes the exact target hash you need**:
 
 ```json
-{ "result": { "content": [ { "type": "text", "text": "approval required: 13575275683051354052" } ], "isError": true } }
+{ "result": { "content": [ { "type": "text", "text": "approval required: 13354254271524378478" } ], "isError": true } }
 ```
 
 Copy that hash and append one approval row to the control file named in your policy (`/tmp/seal-approvals.ndjson`):
 
 ```bash
-echo '{"target":13575275683051354052}' >> /tmp/seal-approvals.ndjson
+echo '{"target":13354254271524378478}' >> /tmp/seal-approvals.ndjson
 ```
 
-Call the tool again: it is **allowed once** and returns real data. Call a third time without re-minting: blocked again, because the ticket was consumed. Append five rows, get five calls. That is the whole gate.
+Call `echo` again: it is **allowed once** and returns the real result (`Echo: ...`). Call a third time without re-minting: blocked again, because the ticket was consumed. Append five rows, get five calls. That is the whole gate.
 
 ### 5. Sanity-check from a shell (no host reload)
 
@@ -118,15 +118,23 @@ You can drive the full chain directly over stdio:
 
 ```bash
 cd mcp-seal
-printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"sealtest","version":"0"}}}' \
+: > /tmp/seal-approvals.ndjson          # start with an empty guest list
+{ printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"sealtest","version":"0"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"TOOL_LIST","arguments":{}}}' \
-| .lake/build/bin/seal --policy config/policy.alphavantage.json -- \
-    npx -y mcp-remote@0.1.38 "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","arguments":{"message":"hello seal"}}}'
+  sleep 3 ; } \
+| .lake/build/bin/seal --policy config/policy.everything.json -- \
+    npx -y @modelcontextprotocol/server-everything stdio
 ```
 
-Expect: `initialize` and `tools/list` forwarded with real upstream replies; `id:2` returns a seal block (`isError: true`) because no approval exists yet. Append a `{"target":<hash>}` row for the echoed hash and re-run to see the same call allowed once.
+The trailing `sleep 3` holds the pipe open so the `npx` child has time to boot on a cold first run; without it stdin can close before the server replies. Expect: `initialize` forwarded with a real upstream reply; `id:2` returns a seal block (`isError: true`, `approval required: 13354254271524378478`) because no approval exists yet. Now mint a ticket and re-run to see the same call allowed:
+
+```bash
+echo '{"target":13354254271524378478}' >> /tmp/seal-approvals.ndjson
+```
+
+The second run returns `Echo: hello seal`, and a third run (ticket consumed) blocks again.
 
 ### Rollback
 
