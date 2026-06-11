@@ -29,9 +29,14 @@ def prune (now : Nat) (approved : Std.HashMap Hash Nat) : Std.HashMap Hash Nat :
   approved.fold (init := ∅) fun acc target deadline =>
     if now < deadline then acc.insert target deadline else acc
 
-def step (now : Nat) (ttlMs : Nat) (s : State) (e : Event) : Decision × State :=
+/-- The runtime computes each approval's absolute deadline (from the record's
+    `issuedAt` if present, else ingest time, plus the policy TTL) and passes it
+    in the event; the engine just records it. The engine never derives the
+    deadline from a clock itself, keeping the core clock-agnostic and the proofs
+    free of real-time reasoning. -/
+def step (now : Nat) (s : State) (e : Event) : Decision × State :=
   match e with
-  | .approval target => (.allow, { approved := s.approved.insert target (now + ttlMs) })
+  | .approval target deadline => (.allow, { approved := s.approved.insert target deadline })
   | .guarded target =>
       if live s target now then
         (.allow, { approved := s.approved.erase target })
@@ -40,7 +45,7 @@ def step (now : Nat) (ttlMs : Nat) (s : State) (e : Event) : Decision × State :
   | .benign => (.allow, s)
   | .defaultDeny => (.block, s)
 
-def run (now : Nat) (ttlMs : Nat) (s : State) (events : List Event) : State :=
-  events.foldl (fun st e => (step now ttlMs st e).2) s
+def run (now : Nat) (s : State) (events : List Event) : State :=
+  events.foldl (fun st e => (step now st e).2) s
 
 end SealCore

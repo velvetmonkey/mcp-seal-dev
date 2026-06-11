@@ -29,7 +29,7 @@ This is the single most important thing to understand before testing:
 
 - A `guarded` tool is **blocked by default**. It is allowed only when a matching approval record is already present in the control file.
 - Each approval is a **one-shot ticket**. The first matching `tools/call` *consumes* it (the engine erases it from state). The next identical call is blocked again.
-- An unused approval also dies on **wall-clock TTL expiry**. When `seal` first reads an approval record it stamps an absolute deadline of `now + ttl_seconds` against a monotonic clock; once that deadline passes the ticket is refused and pruned, whether or not it was ever spent. `ttl_seconds` defaults to 120 and is capped at 300. (The clock starts when `seal` ingests the record, not when you wrote the line.)
+- An unused approval also dies on **wall-clock TTL expiry**, whether or not it was ever spent. A bare `{"target": <hash>}` record expires `ttl_seconds` after `seal` first reads it. A record may also carry `"issuedAt": <epoch-ms>` (the wall-clock time you minted it), in which case it expires `ttl_seconds` after *that* moment, so a ticket you minted and forgot is already dead by the time `seal` sees it. `ttl_seconds` defaults to 120 and is capped at 300. `issuedAt` can only ever make a ticket expire sooner, never later, than `now + ttl_seconds`.
 
 So the relationship is literal and one-to-one:
 
@@ -112,6 +112,8 @@ echo '{"target":13354254271524378478}' >> /tmp/seal-approvals.ndjson
 
 Call `echo` again: it is **allowed once** and returns the real result (`Echo: ...`). Call a third time without re-minting: blocked again, because the ticket was consumed. Append five rows, get five calls. That is the whole gate.
 
+To bind the ticket to when *you* minted it rather than when `seal` reads it, add `issuedAt` (Unix epoch ms): `echo '{"target":13354254271524378478,"issuedAt":'$(date +%s%3N)'}' >> /tmp/seal-approvals.ndjson`. The ticket then expires `ttl_seconds` after that instant, so a stale mint is refused even on its first use.
+
 ### 5. Sanity-check from a shell (no host reload)
 
 You can drive the full chain directly over stdio:
@@ -188,7 +190,7 @@ Trusted, not proven:
 - Approval origin, enforced in v1 by a permissions-protected control file.
 - Classifier completeness and correctness: the runtime JSON policy must identify the calls you care about.
 - Lean compiler/runtime, JSON parsing, child-process I/O, and host/server behavior.
-- The monotonic clock. The runtime supplies a non-decreasing timestamp (`IO.monoMsNow`) to the verified decision function; Lean proves the decision relative to that timestamp, it does not verify the OS clock. A clock that stalls, jumps, or resets can only delay or skip the expiry of an already human-approved ticket. It can never cause an unapproved call to be allowed. Expiry is best-effort liveness, never safety.
+- The wall-clock. The runtime supplies a Unix-epoch timestamp (`Std.Time.Timestamp.now`, milliseconds) to the verified decision function; Lean proves the decision relative to that timestamp, it does not verify the OS clock. Wall-clock (rather than a monotonic clock) is required so a record-supplied `issuedAt` is comparable. A clock that jumps, skews, or is wrong can only change *when* an already human-approved ticket expires. It can never cause an unapproved call to be allowed. Expiry is best-effort liveness, never safety.
 - The MCP boundary. In-process calls that never emit `tools/call` are out of scope.
 
 ## Performance

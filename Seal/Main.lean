@@ -2,6 +2,7 @@
 
 import Lean.Data.Json
 import Std.Sync.Mutex
+import Std.Time
 import SealCore
 import Seal.Policy
 import Seal.Classify
@@ -59,18 +60,20 @@ private def processHostLine
           childIn.putStr hostLine
           childIn.flush
       | some (toolName, toolArgs) =>
-          -- One monotonic timestamp per tools/call. Fresh approvals are stamped
-          -- with an absolute deadline (now + ttlMs) at ingest; the same `now`
-          -- decides liveness for this call. Each record is ingested exactly once
-          -- (the seen counter), so deadlines are never re-stamped on later calls.
-          let now ← IO.monoMsNow
+          -- One wall-clock epoch reading (ms) per tools/call. Wall-clock (not
+          -- monotonic) so a record-supplied `issuedAt` is comparable: the deadline
+          -- is computed in Channel as min(issuedAt, now) + ttlMs. The same `now`
+          -- decides liveness for this call, and each record is ingested exactly
+          -- once (the seen counter), so deadlines are never re-stamped later.
+          let nowTs ← Std.Time.Timestamp.now
+          let now := nowTs.toMillisecondsSinceUnixEpoch.toInt.toNat
           let seen ← approvalSeenRef.get
-          let (newSeen, approvals) ← readApprovalsFrom policy.approvalFile seen
+          let (newSeen, approvals) ← readApprovalsFrom policy.approvalFile seen now policy.approvalTtlMs
           approvalSeenRef.set newSeen
           let st0 ← stateRef.get
-          let st1 := approvals.foldl (fun st e => (step now policy.approvalTtlMs st e).2) st0
+          let st1 := approvals.foldl (fun st e => (step now st e).2) st0
           let hostEvent := classifyToolCall policy toolName toolArgs
-          let (decision, st2) := step now policy.approvalTtlMs st1 hostEvent.toEvent
+          let (decision, st2) := step now st1 hostEvent.toEvent
           stateRef.set { approved := prune now st2.approved }
           match decision with
           | .allow =>

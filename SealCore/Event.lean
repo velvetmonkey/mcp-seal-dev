@@ -5,7 +5,7 @@ namespace SealCore
 abbrev Hash := UInt64
 
 inductive Event where
-  | approval (target : Hash)
+  | approval (target : Hash) (deadline : Nat)
   | guarded (target : Hash)
   | benign
   | defaultDeny
