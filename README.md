@@ -150,6 +150,106 @@ python3 demo/langgraph_injection_demo.py
 
 The demo shows a prompt-injected request to drop a production table: first blocked cold, then allowed once after a trusted human approval, then blocked again when the one-shot approval has been consumed.
 
+## Try It Yourself: gate any remote MCP server
+
+You do not need the Canary stack to see `seal` work. You can drop it in front of any MCP server your host already talks to and watch it gate live tool calls. This walkthrough uses a remote HTTP MCP server ([Alpha Vantage](https://mcp.alphavantage.co)) bridged to stdio, but the shape is identical for any server.
+
+### The mental model: one approval row = one tool call
+
+This is the single most important thing to understand before testing:
+
+- A `guarded` tool is **blocked by default**. It is allowed only when a matching approval record is already present in the control file.
+- Each approval is a **one-shot ticket**. The first matching `tools/call` *consumes* it (the engine erases it from state). The next identical call is blocked again.
+- An unused approval also dies on **TTL expiry** (`ttl_seconds`, e.g. 120s), whether or not it was ever spent.
+
+So the relationship is literal and one-to-one:
+
+```
+N approval rows in the control file  =  N authorized tool calls
+```
+
+One `seal` instance gates an unlimited number of tools and holds an unlimited number of live approvals at once. What is "once only" is each individual approval *record*, not the gate. Think single-use tickets at a turnstile, not a one-time keyswitch: the gate runs forever, every passage spends one ticket, and you (the human) mint tickets by appending lines to the control file.
+
+| approvals appended for `TOOL_X` | calls to `TOOL_X` that succeed |
+|---|---|
+| 1 | 1, then blocked |
+| 5 | 5, then blocked |
+| 0 | blocked every time (pure deny) |
+
+### 1. Build seal
+
+```bash
+lake build          # produces .lake/build/bin/seal
+```
+
+### 2. Write a policy
+
+Two ready-made policies ship in `config/`:
+
+- [`config/policy.deny-all.json`](config/policy.deny-all.json) — `"tools": []`. Every `tools/call` hits default-deny and is blocked unconditionally. No approval can ever open it (there is no rule to match). This is the pure-block test.
+- [`config/policy.alphavantage.json`](config/policy.alphavantage.json) — marks the server's meta-tools (`TOOL_LIST`, `TOOL_GET`, `TOOL_CALL`) as `guarded` with `"match": { "type": "always" }` and an empty `target`. Guarded means each call is blocked until a matching approval exists, then allowed exactly once.
+
+A minimal guarded rule looks like:
+
+```json
+{ "name": "TOOL_LIST", "mode": "guarded", "match": { "type": "always" }, "target": [] }
+```
+
+With an empty `target: []`, the approval hash is computed over just the tool name, so every call to that tool shares one target hash. (Add `target` parts drawn from the call arguments to bind approvals to specific argument values instead.)
+
+### 3. Point your host at seal
+
+`seal` is a stdio sidecar. If your real server is remote HTTP, bridge it to stdio with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) as seal's child. In your host config (e.g. `~/.claude.json`), replace the server entry:
+
+```jsonc
+"alphavantage": {
+  "command": "/abs/path/mcp-seal/.lake/build/bin/seal",
+  "args": [
+    "--policy", "/abs/path/mcp-seal/config/policy.alphavantage.json",
+    "--",
+    "npx", "-y", "mcp-remote@0.1.38", "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
+  ]
+}
+```
+
+Back up your config first. `seal` spawns the child, forwards `initialize` / `tools/list` / notifications byte-for-byte (so tools still appear in discovery), and gates only `tools/call`. Reload MCP (restart the host or reconnect) so the new stdio entry replaces the old one.
+
+### 4. Watch it block, then mint a ticket
+
+Call a guarded tool. It is blocked, and the error text **echoes the exact target hash you need**:
+
+```json
+{ "result": { "content": [ { "type": "text", "text": "approval required: 13575275683051354052" } ], "isError": true } }
+```
+
+Copy that hash and append one approval row to the control file named in your policy (`/tmp/seal-approvals.ndjson`):
+
+```bash
+echo '{"target":13575275683051354052}' >> /tmp/seal-approvals.ndjson
+```
+
+Call the tool again: it is **allowed once** and returns real data. Call a third time without re-minting: blocked again — the ticket was consumed. Append five rows, get five calls. That is the whole gate.
+
+### 5. Sanity-check from a shell (no host reload)
+
+You can drive the full chain directly over stdio:
+
+```bash
+cd mcp-seal
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"sealtest","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"TOOL_LIST","arguments":{}}}' \
+| .lake/build/bin/seal --policy config/policy.alphavantage.json -- \
+    npx -y mcp-remote@0.1.38 "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
+```
+
+Expect: `initialize` and `tools/list` forwarded with real upstream replies; `id:2` returns a seal block (`isError: true`) because no approval exists yet. Append a `{"target":<hash>}` row for the echoed hash and re-run to see the same call allowed once.
+
+### Rollback
+
+Restore your backed-up host config entry and reload. Nothing else is touched.
+
 ## End-to-End Demo (seal x Canary)
 
 The flagship demo wraps `seal` in front of a real LangGraph agent ([Canary](https://github.com/velvetmonkey/canary), an ESG regulatory-change pipeline) writing to an MCP vault server. It runs Canary through `seal` (the legitimate report `note/create` is approved and succeeds), then proves a destructive `note/delete` dies at the gate: deleted without `seal`, blocked and the file survives byte-identical with `seal`.
