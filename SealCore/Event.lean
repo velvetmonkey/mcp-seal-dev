@@ -9,7 +9,6 @@ inductive Event where
   | guarded (target : Hash)
   | benign
   | defaultDeny
-  | tick
   deriving Repr, BEq, DecidableEq
 
 inductive Decision where

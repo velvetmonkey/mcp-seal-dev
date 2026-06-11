@@ -29,7 +29,7 @@ This is the single most important thing to understand before testing:
 
 - A `guarded` tool is **blocked by default**. It is allowed only when a matching approval record is already present in the control file.
 - Each approval is a **one-shot ticket**. The first matching `tools/call` *consumes* it (the engine erases it from state). The next identical call is blocked again.
-- An unused approval also dies on **TTL expiry** (`ttl_seconds`, e.g. 120s), whether or not it was ever spent.
+- An unused approval also dies on **wall-clock TTL expiry**. When `seal` first reads an approval record it stamps an absolute deadline of `now + ttl_seconds` against a monotonic clock; once that deadline passes the ticket is refused and pruned, whether or not it was ever spent. `ttl_seconds` defaults to 120 and is capped at 300. (The clock starts when `seal` ingests the record, not when you wrote the line.)
 
 So the relationship is literal and one-to-one:
 
@@ -163,6 +163,7 @@ The Lean core proves the safety rules for the compiled automaton:
 - Guarded calls cannot be allowed unless a matching live approval is already in state.
 - Approvals bind to target, so approval for hash A cannot authorize hash B.
 - Approvals are one-shot at the engine boundary: an allowed guarded call consumes the matching approval.
+- Expired approvals are not live: once an approval's deadline has passed, the gate blocks (`expired_not_live`), and a freshly minted approval is live at mint time (`fresh_approval_live`). TTL expiry is a **liveness** bound; it never weakens the safety rules above.
 
 The CI axiom gate runs:
 
@@ -187,6 +188,7 @@ Trusted, not proven:
 - Approval origin, enforced in v1 by a permissions-protected control file.
 - Classifier completeness and correctness: the runtime JSON policy must identify the calls you care about.
 - Lean compiler/runtime, JSON parsing, child-process I/O, and host/server behavior.
+- The monotonic clock. The runtime supplies a non-decreasing timestamp (`IO.monoMsNow`) to the verified decision function; Lean proves the decision relative to that timestamp, it does not verify the OS clock. A clock that stalls, jumps, or resets can only delay or skip the expiry of an already human-approved ticket. It can never cause an unapproved call to be allowed. Expiry is best-effort liveness, never safety.
 - The MCP boundary. In-process calls that never emit `tools/call` are out of scope.
 
 ## Performance

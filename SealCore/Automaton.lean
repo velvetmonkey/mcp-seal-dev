@@ -5,37 +5,42 @@ import Std.Data.HashMap
 
 namespace SealCore
 
+/-- `approved` maps a target hash to an absolute expiry deadline (monotonic
+    milliseconds). A target is live while the current time is strictly before
+    its deadline. The deadline is stamped by the runtime when the approval is
+    ingested (`now + ttlMs`); the engine never trusts a caller-supplied time. -/
 structure State where
   approved : Std.HashMap Hash Nat := ∅
   deriving Repr
 
 def State.empty : State := {}
 
-def live (s : State) (target : Hash) : Bool :=
+/-- A target is live iff it has an approval whose deadline has not yet passed
+    at time `now`. -/
+def live (s : State) (target : Hash) (now : Nat) : Bool :=
   match s.approved[target]? with
-  | some ttl => ttl > 0
+  | some deadline => now < deadline
   | none => false
 
-def decayApproved (approved : Std.HashMap Hash Nat) : Std.HashMap Hash Nat :=
-  approved.fold (init := ∅) fun acc target ttl =>
-    match ttl with
-    | 0 => acc
-    | 1 => acc
-    | Nat.succ (Nat.succ rest) => acc.insert target (Nat.succ rest)
+/-- Drop every approval whose deadline is at or before `now`. Memory hygiene
+    only: lazy `live` already refuses expired entries, so pruning changes no
+    decision. -/
+def prune (now : Nat) (approved : Std.HashMap Hash Nat) : Std.HashMap Hash Nat :=
+  approved.fold (init := ∅) fun acc target deadline =>
+    if now < deadline then acc.insert target deadline else acc
 
-def step (approvalTtl : Nat) (s : State) (e : Event) : Decision × State :=
+def step (now : Nat) (ttlMs : Nat) (s : State) (e : Event) : Decision × State :=
   match e with
-  | .approval target => (.allow, { approved := s.approved.insert target approvalTtl })
+  | .approval target => (.allow, { approved := s.approved.insert target (now + ttlMs) })
   | .guarded target =>
-      if live s target then
+      if live s target now then
         (.allow, { approved := s.approved.erase target })
       else
         (.block, s)
   | .benign => (.allow, s)
   | .defaultDeny => (.block, s)
-  | .tick => (.allow, { approved := decayApproved s.approved })
 
-def run (approvalTtl : Nat) (s : State) (events : List Event) : State :=
-  events.foldl (fun st e => (step approvalTtl st e).2) s
+def run (now : Nat) (ttlMs : Nat) (s : State) (events : List Event) : State :=
+  events.foldl (fun st e => (step now ttlMs st e).2) s
 
 end SealCore

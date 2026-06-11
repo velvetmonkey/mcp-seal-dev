@@ -59,14 +59,19 @@ private def processHostLine
           childIn.putStr hostLine
           childIn.flush
       | some (toolName, toolArgs) =>
+          -- One monotonic timestamp per tools/call. Fresh approvals are stamped
+          -- with an absolute deadline (now + ttlMs) at ingest; the same `now`
+          -- decides liveness for this call. Each record is ingested exactly once
+          -- (the seen counter), so deadlines are never re-stamped on later calls.
+          let now ← IO.monoMsNow
           let seen ← approvalSeenRef.get
           let (newSeen, approvals) ← readApprovalsFrom policy.approvalFile seen
           approvalSeenRef.set newSeen
           let st0 ← stateRef.get
-          let st1 := approvals.foldl (fun st e => (step policy.approvalTtl st e).2) st0
+          let st1 := approvals.foldl (fun st e => (step now policy.approvalTtlMs st e).2) st0
           let hostEvent := classifyToolCall policy toolName toolArgs
-          let (decision, st2) := step policy.approvalTtl st1 hostEvent.toEvent
-          stateRef.set st2
+          let (decision, st2) := step now policy.approvalTtlMs st1 hostEvent.toEvent
+          stateRef.set { approved := prune now st2.approved }
           match decision with
           | .allow =>
               childIn.putStr hostLine

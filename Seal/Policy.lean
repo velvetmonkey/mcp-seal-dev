@@ -31,7 +31,10 @@ structure ToolRule where
   deriving Repr
 
 structure Policy where
-  approvalTtl : Nat
+  /-- Approval lifetime in MILLISECONDS, capped at 300s, used to stamp an
+      absolute expiry deadline (`now + approvalTtlMs`) when an approval is
+      ingested. -/
+  approvalTtlMs : Nat
   approvalFile : System.FilePath
   tools : List ToolRule
   deriving Repr
@@ -86,13 +89,19 @@ private def parseToolRule (json : Json) : Except String ToolRule := do
     | none => pure []
   pure { name, mode, matcher, target }
 
+/-- Approvals may not outlive this many seconds, mirroring SealV2's
+    `maxApprovalTtl`. Longer configured TTLs are clamped down (fail-safe:
+    a shorter lifetime is strictly more restrictive). -/
+def maxApprovalTtlSeconds : Nat := 300
+
 def parsePolicyJson (json : Json) : Except String Policy := do
   let approval ← json.getObjVal? "approval"
-  let approvalTtl ← getObjNatD approval "ttl_seconds" 120
+  let approvalTtlSeconds ← getObjNatD approval "ttl_seconds" 120
+  let approvalTtlMs := (min approvalTtlSeconds maxApprovalTtlSeconds) * 1000
   let approvalFile := System.FilePath.mk (← getObjString approval "control_file")
   let toolsJson ← (← json.getObjVal? "tools").getArr?
   let tools ← toolsJson.toList.mapM parseToolRule
-  pure { approvalTtl, approvalFile, tools }
+  pure { approvalTtlMs, approvalFile, tools }
 
 def loadPolicy (path : System.FilePath) : IO Policy := do
   let text ← IO.FS.readFile path
