@@ -5,20 +5,147 @@
 [![Lean 4](https://img.shields.io/badge/Lean-4-blueviolet.svg)](https://lean-lang.org/)
 [![MCP](https://img.shields.io/badge/MCP-stdio-lightgrey.svg)](https://modelcontextprotocol.io/)
 
-`mcp-seal` is a verified MCP approval-gate sidecar. The `seal` binary sits between an MCP host and a real MCP server, forwards ordinary JSON-RPC traffic unchanged, and blocks configured `tools/call` actions until a human approval exists for the exact target hash.
+`mcp-seal` is a verified MCP approval-gate sidecar. The `seal` binary sits between an MCP host and a real MCP server, forwards ordinary JSON-RPC traffic unchanged, and blocks configured `tools/call` actions until a human approval exists for the exact request.
 
 The claim is deliberately narrow: this is a provably-correct policy monitor, not a proven-safe agent.
 
-## Why It Exists
+## In Plain English
 
-Agents are useful because they can call tools. They are risky for the same reason. `seal` puts a small, auditable boundary in front of those tools: initialize, tools/list, resources/read, notifications, and responses pass through byte-for-byte; only `tools/call` is inspected.
+Think of `seal` as a bouncer on the door of your tools. An AI agent can ask to use any tool it likes, but every sensitive request has to stop at the door. The bouncer checks a guest list (an approval file) that only a human is allowed to write to. No matching ticket on the list, no entry.
 
-For guarded calls, `seal` computes a target from the runtime JSON policy and asks the Lean-proven engine for a decision:
+Each ticket is single-use. One approved tool call spends it, and the very next identical request is stopped again until a human adds another ticket. The agent cannot forge a ticket or add itself to the list: tickets only count when they arrive through the trusted file, never through the agent's own traffic.
 
-- `ALLOW`: forward the original request upstream.
-- `BLOCK`: return a JSON-RPC `isError: true` result with `approval required`, without touching upstream.
+What makes `seal` different from an ordinary check is that the bouncer is mathematically proven, in Lean, to follow four rules without exception: never let an unticketed guest through, never reuse a spent ticket, never accept a ticket made for a different guest, and never wave anyone past without looking. The rest of this README shows you how to watch that bouncer work, then how it is built.
 
-The v1 transport is a stdio wrapper, so adoption is a one-line host config change: launch `seal` instead of the real MCP server, and let `seal` spawn the real server.
+## Try It in Five Minutes
+
+You do not need any of the demo stack to see `seal` work. You can drop it in front of a real MCP server your host already talks to and watch it gate live tool calls. This walkthrough uses a remote HTTP MCP server ([Alpha Vantage](https://mcp.alphavantage.co), free stock and economics data) bridged to stdio, but the shape is identical for any server.
+
+**What you will see:** a tool that works normally suddenly refuses to run. You add one line to a file. The same tool runs exactly once, then refuses again. That one-line-equals-one-call behaviour, with a mathematical proof underneath it, is the whole product.
+
+### The mental model: one approval row = one tool call
+
+This is the single most important thing to understand before testing:
+
+- A `guarded` tool is **blocked by default**. It is allowed only when a matching approval record is already present in the control file.
+- Each approval is a **one-shot ticket**. The first matching `tools/call` *consumes* it (the engine erases it from state). The next identical call is blocked again.
+- An unused approval also dies on **TTL expiry** (`ttl_seconds`, e.g. 120s), whether or not it was ever spent.
+
+So the relationship is literal and one-to-one:
+
+```
+N approval rows in the control file  =  N authorized tool calls
+```
+
+One `seal` instance gates an unlimited number of tools and holds an unlimited number of live approvals at once. What is "once only" is each individual approval *record*, not the gate. Think single-use tickets at a turnstile, not a one-time keyswitch: the gate runs forever, every passage spends one ticket, and you (the human) mint tickets by appending lines to the control file.
+
+| approvals appended for `TOOL_X` | calls to `TOOL_X` that succeed |
+|---|---|
+| 1 | 1, then blocked |
+| 5 | 5, then blocked |
+| 0 | blocked every time (pure deny) |
+
+### 1. Build seal
+
+```bash
+lake build          # produces .lake/build/bin/seal
+```
+
+### 2. Write a policy
+
+Two ready-made policies ship in `config/`:
+
+- [`config/policy.deny-all.json`](config/policy.deny-all.json): `"tools": []`. Every `tools/call` hits default-deny and is blocked unconditionally. No approval can ever open it (there is no rule to match). This is the pure-block test.
+- [`config/policy.alphavantage.json`](config/policy.alphavantage.json): marks the server's meta-tools (`TOOL_LIST`, `TOOL_GET`, `TOOL_CALL`) as `guarded` with `"match": { "type": "always" }` and an empty `target`. Guarded means each call is blocked until a matching approval exists, then allowed exactly once.
+
+A minimal guarded rule looks like:
+
+```json
+{ "name": "TOOL_LIST", "mode": "guarded", "match": { "type": "always" }, "target": [] }
+```
+
+#### What the target hash is, exactly
+
+A ticket on the guest list is a single number: the **target hash**. It is a fingerprint of the request you are approving, so an approval for one action cannot quietly unlock a different one.
+
+It is computed deterministically (a 64-bit FNV-1a hash, no crypto, no secret) over one string built from the tool name plus any chosen argument values, joined by `|`:
+
+```
+target = FNV-1a( toolName | part1 | part2 | ... )
+```
+
+- With `"target": []` (name only), the string is just the tool name, so every call to that tool shares one hash. Worked example: the tool `TOOL_LIST` always hashes to `13575275683051354052`, on any machine, every run. That is the number the block error hands you below.
+- With `"target": ["arguments.symbol"]`, the string becomes `TOOL_CALL|IBM`, so a ticket minted for `IBM` will not authorize a call for `MSFT`. Each distinct argument value gets its own hash and therefore its own ticket.
+
+So the hash is simply a stable, unguessable-by-accident name for "this exact request". That is why the block error hands you the hash directly: you are not decoding anything, you are reading the name of the thing you are choosing to let through, then writing that same name onto the guest list. Empty `target` is the coarsest grain (one ticket per tool); adding `target` parts drawn from the call arguments binds approvals to specific argument values for finer control.
+
+### 3. Point your host at seal
+
+`seal` is a stdio sidecar. If your real server is remote HTTP, bridge it to stdio with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) as seal's child. In your host config (e.g. `~/.claude.json`), replace the server entry:
+
+```jsonc
+"alphavantage": {
+  "command": "/abs/path/mcp-seal/.lake/build/bin/seal",
+  "args": [
+    "--policy", "/abs/path/mcp-seal/config/policy.alphavantage.json",
+    "--",
+    "npx", "-y", "mcp-remote@0.1.38", "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
+  ]
+}
+```
+
+Back up your config first. `seal` spawns the child, forwards `initialize` / `tools/list` / notifications byte-for-byte (so tools still appear in discovery), and gates only `tools/call`. Reload MCP (restart the host or reconnect) so the new stdio entry replaces the old one.
+
+### 4. Watch it block, then mint a ticket
+
+Call a guarded tool. It is blocked, and the error text **echoes the exact target hash you need**:
+
+```json
+{ "result": { "content": [ { "type": "text", "text": "approval required: 13575275683051354052" } ], "isError": true } }
+```
+
+Copy that hash and append one approval row to the control file named in your policy (`/tmp/seal-approvals.ndjson`):
+
+```bash
+echo '{"target":13575275683051354052}' >> /tmp/seal-approvals.ndjson
+```
+
+Call the tool again: it is **allowed once** and returns real data. Call a third time without re-minting: blocked again, because the ticket was consumed. Append five rows, get five calls. That is the whole gate.
+
+### 5. Sanity-check from a shell (no host reload)
+
+You can drive the full chain directly over stdio:
+
+```bash
+cd mcp-seal
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"sealtest","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"TOOL_LIST","arguments":{}}}' \
+| .lake/build/bin/seal --policy config/policy.alphavantage.json -- \
+    npx -y mcp-remote@0.1.38 "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
+```
+
+Expect: `initialize` and `tools/list` forwarded with real upstream replies; `id:2` returns a seal block (`isError: true`) because no approval exists yet. Append a `{"target":<hash>}` row for the echoed hash and re-run to see the same call allowed once.
+
+### Rollback
+
+Restore your backed-up host config entry and reload. Nothing else is touched.
+
+## How It Works
+
+Agents are useful because they can call tools. They are risky for the same reason. `seal` puts a small, auditable boundary in front of those tools: `initialize`, `tools/list`, `resources/read`, notifications, and responses pass through byte-for-byte; only `tools/call` is inspected.
+
+For a guarded call, `seal` computes the target hash from the runtime JSON policy and asks the Lean-proven engine for a decision:
+
+- `ALLOW`: forward the original request upstream unchanged.
+- `BLOCK`: return a JSON-RPC `isError: true` result carrying `approval required: <hash>`, without ever touching upstream.
+
+The v1 transport is a stdio wrapper, so adoption is a one-line host config change: launch `seal` instead of the real MCP server and let `seal` spawn the real server. To run it in front of any local stdio server directly:
+
+```bash
+.lake/build/bin/seal --policy config/policy.example.json -- python3 test/integration/mock_mcp_server.py
+```
 
 ## What Is Proven
 
@@ -56,10 +183,7 @@ Trusted, not proven:
 
 ## Performance
 
-A verified gate is worth little if it is slow. It is not. Per-call mediation
-overhead on the gate hot path (a guarded `tools/call` hitting default-deny:
-parse + classify + decide + emit), measured over ~1900 calls on commodity
-hardware:
+A verified gate is worth little if it is slow. It is not. Per-call mediation overhead on the gate hot path (a guarded `tools/call` hitting default-deny: parse + classify + decide + emit), measured over ~1900 calls on commodity hardware:
 
 | metric | latency |
 |---|---|
@@ -70,14 +194,23 @@ hardware:
 
 Sub-millisecond. The verified boundary is not where your latency goes.
 
-Honest scope: this is the **decision path**. An *allowed* call additionally
-forwards to the upstream server, whose latency is not seal's overhead. Reproduce
-it yourself:
+Honest scope: this is the **decision path**. An *allowed* call additionally forwards to the upstream server, whose latency is not seal's overhead. Reproduce it yourself:
 
 ```bash
 lake build
 python3 test/bench/latency_bench.py
 ```
+
+## Architecture
+
+`seal` has two separate layers:
+
+- **Rules as data**: `config/policy.example.json` classifies tool calls, target fields, deny rules, and approval control-file settings at runtime.
+- **Engine as code**: `SealCore` contains the compiled Lean automaton and the zero-`sorry` invariants.
+
+Approvals arrive only through the trusted control file as newline-delimited JSON records, re-read on each `tools/call` in v1. File permissions are the origin check. An approval sent as an ordinary agent tool call is ignored by the classifier and remains blocked by default.
+
+Runtime config is JSON via Lean's built-in parser, so policies are data, not baked into Lean source. Unknown tools, unmatched patterns, missing target fields, and explicit deny rules all block by default. See [config/policy.example.json](config/policy.example.json).
 
 ## v2: Verified Capability Pipeline (in progress)
 
@@ -99,46 +232,17 @@ lake exe v2_m4_axiom_check
 
 Claim discipline: `canonical_roundtrip` means seal self-consistency only. A2, target-parser equivalence, remains the per-server obligation, minimised by construction and by the differential fixture, not eliminated. The signed-approval path rejects non-canonical signed-message bytes instead of normalising them before signature verification.
 
-## Architecture
+## The Demos
 
-`seal` has two separate layers:
+Two demos ship with this repo. The first is a self-contained smoke test you can run in seconds with nothing else installed. The second is the flagship: a real agent, doing a real job, with `seal` catching a real attack. Read them as **what / why / where / when / how**.
 
-- **Rules as data**: `config/policy.example.json` classifies tool calls, target fields, deny rules, and approval control-file settings at runtime.
-- **Engine as code**: `SealCore` contains the compiled Lean automaton and the zero-`sorry` invariants.
+### Quick demo: prompt-injection smoke test
 
-Approvals arrive only through the trusted control file as newline-delimited JSON records. An approval sent as an ordinary agent tool call is ignored by the classifier and remains blocked by default.
-
-## Usage
-
-Build:
-
-```bash
-lake build
-```
-
-Run `seal` in front of a real stdio MCP server:
-
-```bash
-.lake/build/bin/seal --policy config/policy.example.json -- python3 test/integration/mock_mcp_server.py
-```
-
-Append a trusted approval record to the configured control file:
-
-```json
-{"target":7653913048106253087}
-```
-
-The control file is re-read on each `tools/call` in v1. File permissions are the origin check.
-
-## Config
-
-Runtime config is JSON via Lean's built-in parser. Policies are data, not baked into Lean source.
-
-Unknown tools, unmatched patterns, missing target fields, and explicit deny rules all block by default.
-
-See [config/policy.example.json](config/policy.example.json).
-
-## Tests And Demo
+- **What**: a scripted `tools/call` that tries to drop a production table, run three times against the verified core.
+- **Why**: to show the lifecycle of a single ticket end to end, with zero external dependencies.
+- **Where**: [`demo/langgraph_injection_demo.py`](demo) in this repo, against the mock MCP server.
+- **When**: first thing, to confirm your build works and to feel the gate before wiring anything real.
+- **How**:
 
 ```bash
 lake build
@@ -148,117 +252,21 @@ python3 test/integration/test_seal.py
 python3 demo/langgraph_injection_demo.py
 ```
 
-The demo shows a prompt-injected request to drop a production table: first blocked cold, then allowed once after a trusted human approval, then blocked again when the one-shot approval has been consumed.
+The destructive request is first blocked cold, then allowed once after a trusted human approval is appended, then blocked again once that one-shot approval has been consumed. Same shape as the five-minute walkthrough above, with no host to configure.
 
-## Try It Yourself: gate any remote MCP server
+### Flagship demo: seal x Canary
 
-You do not need the Canary stack to see `seal` work. You can drop it in front of any MCP server your host already talks to and watch it gate live tool calls. This walkthrough uses a remote HTTP MCP server ([Alpha Vantage](https://mcp.alphavantage.co)) bridged to stdio, but the shape is identical for any server.
-
-### The mental model: one approval row = one tool call
-
-This is the single most important thing to understand before testing:
-
-- A `guarded` tool is **blocked by default**. It is allowed only when a matching approval record is already present in the control file.
-- Each approval is a **one-shot ticket**. The first matching `tools/call` *consumes* it (the engine erases it from state). The next identical call is blocked again.
-- An unused approval also dies on **TTL expiry** (`ttl_seconds`, e.g. 120s), whether or not it was ever spent.
-
-So the relationship is literal and one-to-one:
-
-```
-N approval rows in the control file  =  N authorized tool calls
-```
-
-One `seal` instance gates an unlimited number of tools and holds an unlimited number of live approvals at once. What is "once only" is each individual approval *record*, not the gate. Think single-use tickets at a turnstile, not a one-time keyswitch: the gate runs forever, every passage spends one ticket, and you (the human) mint tickets by appending lines to the control file.
-
-| approvals appended for `TOOL_X` | calls to `TOOL_X` that succeed |
-|---|---|
-| 1 | 1, then blocked |
-| 5 | 5, then blocked |
-| 0 | blocked every time (pure deny) |
-
-### 1. Build seal
-
-```bash
-lake build          # produces .lake/build/bin/seal
-```
-
-### 2. Write a policy
-
-Two ready-made policies ship in `config/`:
-
-- [`config/policy.deny-all.json`](config/policy.deny-all.json) — `"tools": []`. Every `tools/call` hits default-deny and is blocked unconditionally. No approval can ever open it (there is no rule to match). This is the pure-block test.
-- [`config/policy.alphavantage.json`](config/policy.alphavantage.json) — marks the server's meta-tools (`TOOL_LIST`, `TOOL_GET`, `TOOL_CALL`) as `guarded` with `"match": { "type": "always" }` and an empty `target`. Guarded means each call is blocked until a matching approval exists, then allowed exactly once.
-
-A minimal guarded rule looks like:
-
-```json
-{ "name": "TOOL_LIST", "mode": "guarded", "match": { "type": "always" }, "target": [] }
-```
-
-With an empty `target: []`, the approval hash is computed over just the tool name, so every call to that tool shares one target hash. (Add `target` parts drawn from the call arguments to bind approvals to specific argument values instead.)
-
-### 3. Point your host at seal
-
-`seal` is a stdio sidecar. If your real server is remote HTTP, bridge it to stdio with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) as seal's child. In your host config (e.g. `~/.claude.json`), replace the server entry:
-
-```jsonc
-"alphavantage": {
-  "command": "/abs/path/mcp-seal/.lake/build/bin/seal",
-  "args": [
-    "--policy", "/abs/path/mcp-seal/config/policy.alphavantage.json",
-    "--",
-    "npx", "-y", "mcp-remote@0.1.38", "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
-  ]
-}
-```
-
-Back up your config first. `seal` spawns the child, forwards `initialize` / `tools/list` / notifications byte-for-byte (so tools still appear in discovery), and gates only `tools/call`. Reload MCP (restart the host or reconnect) so the new stdio entry replaces the old one.
-
-### 4. Watch it block, then mint a ticket
-
-Call a guarded tool. It is blocked, and the error text **echoes the exact target hash you need**:
-
-```json
-{ "result": { "content": [ { "type": "text", "text": "approval required: 13575275683051354052" } ], "isError": true } }
-```
-
-Copy that hash and append one approval row to the control file named in your policy (`/tmp/seal-approvals.ndjson`):
-
-```bash
-echo '{"target":13575275683051354052}' >> /tmp/seal-approvals.ndjson
-```
-
-Call the tool again: it is **allowed once** and returns real data. Call a third time without re-minting: blocked again — the ticket was consumed. Append five rows, get five calls. That is the whole gate.
-
-### 5. Sanity-check from a shell (no host reload)
-
-You can drive the full chain directly over stdio:
-
-```bash
-cd mcp-seal
-printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"sealtest","version":"0"}}}' \
-  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"TOOL_LIST","arguments":{}}}' \
-| .lake/build/bin/seal --policy config/policy.alphavantage.json -- \
-    npx -y mcp-remote@0.1.38 "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
-```
-
-Expect: `initialize` and `tools/list` forwarded with real upstream replies; `id:2` returns a seal block (`isError: true`) because no approval exists yet. Append a `{"target":<hash>}` row for the echoed hash and re-run to see the same call allowed once.
-
-### Rollback
-
-Restore your backed-up host config entry and reload. Nothing else is touched.
-
-## End-to-End Demo (seal x Canary)
-
-The flagship demo wraps `seal` in front of a real LangGraph agent ([Canary](https://github.com/velvetmonkey/canary), an ESG regulatory-change pipeline) writing to an MCP vault server. It runs Canary through `seal` (the legitimate report `note/create` is approved and succeeds), then proves a destructive `note/delete` dies at the gate: deleted without `seal`, blocked and the file survives byte-identical with `seal`.
+- **What**: `seal` wrapped in front of a real LangGraph agent ([Canary](https://github.com/velvetmonkey/canary), an ESG regulatory-change pipeline) that writes to an MCP vault server. Canary's legitimate report `note/create` is approved and succeeds; a destructive `note/delete` then dies at the gate. Without `seal` the file is deleted; with `seal` it is blocked and the file survives byte-identical.
+- **Why**: a unit test proves the gate in the lab. This proves it on a real agent doing a real task, which is the difference between "the maths works" and "it works where it matters". It is the artefact for a pitch or an ARIA reviewer.
+- **Where**: the runner lives in the [Canary](https://github.com/velvetmonkey/canary) repo (`demo/run_p3.py`) and orchestrates three repositories: Canary (the host), `seal` (this repo), and [flywheel-memory](https://github.com/velvetmonkey/flywheel-memory) (the MCP server being gated).
+- **When**: when you want the full story rather than the mechanism, or when you need a reproducible, key-free run on a fresh machine.
+- **How**: see the run instructions below.
 
 > Scope note: a single container (in the Canary repo) bundles all three repos so the multi-repo *demo* runs reproducibly with one command. That container is a demo harness only. `seal` itself is a single native binary with no container or runtime dependencies; adoption is a one-line host config change.
 
-Honest claim: a default-deny gate blocks the destructive action at a verified boundary the model cannot influence, and every allowed action is explicitly approved. This does **not** claim prompt-injection prevention or additive-only containment. The model can still be fooled; the demo shows the action dies.
+**Honest claim**: a default-deny gate blocks the destructive action at a verified boundary the model cannot influence, and every allowed action is explicitly approved. This does **not** claim prompt-injection prevention or additive-only containment. The model can still be fooled; the demo shows the action dies anyway.
 
-### Dependencies (fresh machine)
+#### Dependencies (fresh machine)
 
 The demo spans three repositories and runs fully offline (no LLM key):
 
@@ -279,9 +287,9 @@ The demo spans three repositories and runs fully offline (no LLM key):
    cd canary && uv sync
    ```
    Python deps (resolved by `uv`): langgraph, langchain-anthropic, langchain-mcp-adapters, mcp, beautifulsoup4, lxml, pydantic, pyyaml, httpx, tenacity.
-5. **No API key, no network.** The demo runs fully offline. The regulation corpus is frozen on disk (`canary/demo/corpus`), and Canary's [[extraction]] step is replayed from a frozen fixture (`CANARY_FIXTURE_EXTRACTION`, set automatically by the runner), so no `ANTHROPIC_API_KEY` and no EUR-Lex fetch are required. The seal kill/restore proof never touches an LLM in the first place.
+5. **No API key, no network.** The demo runs fully offline. The regulation corpus is frozen on disk (`canary/demo/corpus`), and Canary's extraction step is replayed from a frozen fixture (`CANARY_FIXTURE_EXTRACTION`, set automatically by the runner), so no `ANTHROPIC_API_KEY` and no EUR-Lex fetch are required. The seal kill/restore proof never touches an LLM in the first place.
 
-### Run
+#### Run
 
 ```bash
 cd canary
@@ -290,13 +298,13 @@ uv run python demo/run_p3.py
 
 The runner rebuilds a disposable workspace under `/tmp/seal-demo-p3` (fresh vault, policy, approvals control file, change-detection DB), runs Canary through `seal`, performs the kill/restore proof, and prints `P3-REPORT.md` ending in a PASS/FAIL line.
 
-### Portability
+#### Portability
 
 `run_p3.py` resolves its dependencies at runtime, so it is not bound to any one machine. It checks environment overrides first, then falls back to the sibling repos and `PATH`:
 
-- `SEAL_BIN` — the `seal` binary (default: `../mcp-seal/.lake/build/bin/seal`)
-- `FLYWHEEL_SERVER` — the flywheel-memory `dist/index.js` (default: `../flywheel-memory/packages/mcp-server/dist/index.js`)
-- `NODE_BIN` — the node binary (default: `node` on `PATH`)
+- `SEAL_BIN`: the `seal` binary (default: `../mcp-seal/.lake/build/bin/seal`)
+- `FLYWHEEL_SERVER`: the flywheel-memory `dist/index.js` (default: `../flywheel-memory/packages/mcp-server/dist/index.js`)
+- `NODE_BIN`: the node binary (default: `node` on `PATH`)
 
 It exits with a clear message if a dependency cannot be found. Verified: full PASS with all overrides and `ANTHROPIC_API_KEY` unset, every path resolved by discovery. The verified core and seal's gating behaviour are additionally proven on clean GitHub `ubuntu-latest` runners every commit (`lake build`, axiom checks, and `test/integration/test_seal.py`).
 
@@ -304,9 +312,9 @@ It exits with a clear message if a dependency cannot be found. Verified: full PA
 
 Part of the velvetmonkey verified-cognition stack:
 
-- **mcp-seal** (this repo) — the verified MCP approval-gate sidecar.
-- [canary](https://github.com/velvetmonkey/canary) — a LangGraph compliance pipeline that hosts the end-to-end [seal x Canary demo](#end-to-end-demo-seal-x-canary).
-- [flywheel-memory](https://github.com/velvetmonkey/flywheel-memory) — the knowledge-graph MCP server that `seal` gates in that demo.
+- **mcp-seal** (this repo): the verified MCP approval-gate sidecar.
+- [canary](https://github.com/velvetmonkey/canary): a LangGraph compliance pipeline that hosts the flagship [seal x Canary demo](#flagship-demo-seal-x-canary).
+- [flywheel-memory](https://github.com/velvetmonkey/flywheel-memory): the knowledge-graph MCP server that `seal` gates in that demo.
 
 ## License
 
