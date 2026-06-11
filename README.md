@@ -39,11 +39,31 @@ N approval rows in the control file  =  N authorized tool calls
 
 One `seal` instance gates an unlimited number of tools and holds an unlimited number of live approvals at once. What is "once only" is each individual approval *record*, not the gate. Think single-use tickets at a turnstile, not a one-time keyswitch: the gate runs forever, every passage spends one ticket, and you (the human) mint tickets by appending lines to the control file.
 
-| approvals appended for `TOOL_X` | calls to `TOOL_X` that succeed |
-|---|---|
-| 1 | 1, then blocked |
-| 5 | 5, then blocked |
-| 0 | blocked every time (pure deny) |
+### See it, do not just read it: `demo/ttl_demo.py`
+
+Rather than take the table on faith, run the policy demo. It drives the real `seal` binary in front of server-everything, prints the exact policy JSON it uses, and checks every approval and TTL behaviour live:
+
+```bash
+lake build                  # produces .lake/build/bin/seal
+python3 demo/ttl_demo.py    # needs only node/npx; no key, no network beyond one npx fetch
+```
+
+It exercises four scenarios and exits non-zero if any misbehaves:
+
+```
+=== Policy A (ttl_seconds = 120): default-deny + one-shot ticket ===
+  [PASS] 1. default-deny (no approval): got BLOCK ...
+  [PASS] 2a. one ticket -> first call allowed: got ALLOW ...
+  [PASS] 2b. same ticket -> second call blocked (consumed): got BLOCK
+=== Policy B (ttl_seconds = 2): an unused ticket expires by the clock ===
+  [PASS] 3. unused ticket blocked after TTL elapsed: got BLOCK
+=== Policy C (ttl_seconds = 60): issuedAt binds TTL to mint time ===
+  [PASS] 4a. stale mint (issuedAt = now-120s) blocked on first use: got BLOCK
+  [PASS] 4b. fresh mint (issuedAt = now) allowed: got ALLOW
+  PASS: 6/6 checks passed
+```
+
+That is default-deny, the one-shot ticket, wall-clock expiry, and mint-time `issuedAt`, all demonstrated against the shipped binary. The rest of this section is the same behaviour, by hand.
 
 ### 1. Build seal
 
