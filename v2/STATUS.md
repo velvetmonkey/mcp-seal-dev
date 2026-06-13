@@ -141,7 +141,7 @@ decide_emit_unique :
 
 ## Signed-approval canonicality closure
 
-Status: implemented; one theorem is intentionally left for Aristotle.
+Status: implemented and proven. The canonicality theorem `signed_parse_canonical` is discharged in Lean (axiom-clean), so the signed path has no remaining proof obligation.
 
 The general JSON-RPC parser remains whitespace-tolerant. The signed-approval path is stricter:
 
@@ -154,11 +154,11 @@ signedMessageRawFor : SignedMessage -> RawBytes
 
 This closes the reviewed bypass where non-canonical bytes could be accepted by parsing, normalised to canonical bytes, and then verified over the normalised payload. Non-canonical witnesses such as trailing whitespace, leading whitespace, and interior insignificant whitespace are rejected by the signed path and make `decide` return `Block`.
 
-Deferred proof obligation:
+Discharged proof obligation (proven):
 
 ```lean
 signed_parse_canonical :
   signedParse raw = some ast -> raw = serializeAst ast
 ```
 
-This theorem is intentionally tagged in Lean for Aristotle as the remaining proof obligation.
+This theorem is **proven** in `SealV2/ValidationTheorems.lean` (complete proof, no `sorry`), and its axiom footprint is locked to `[propext, Classical.choice, Quot.sound]` by a build-breaking `#guard_msgs` check in `Test/V2M4Axioms.lean`. The signed path has no remaining proof obligation.
