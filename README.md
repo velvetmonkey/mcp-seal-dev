@@ -104,15 +104,15 @@ The second run returns `Echo: hello seal`; a third run (ticket consumed) blocks 
 
 The trailing `stdio` argument matters: without it the launcher prints a banner that corrupts the JSON-RPC stream. `seal` forwards `initialize` / `tools/list` / notifications byte-for-byte (tools still appear in discovery) and gates only `tools/call`. Reload MCP to pick up the change. To roll back, restore your backed-up config entry and reload; nothing else is touched. (A remote HTTP server works too: bridge it to stdio with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) as seal's child instead of the `npx` line.)
 
-### Demo 3: prompt-injection smoke test
+### Demo 3: scripted block smoke test (zero deps)
 
-A scripted `tools/call` that tries to drop a production table, run three times against the verified core, with zero external dependencies. It shows the full lifecycle of a single ticket: blocked cold, allowed once after a trusted human approval is appended, then blocked again once that one-shot approval is consumed.
+A scripted malicious `tools/call` that tries to drop a production table, run three times against the verified core, with zero external dependencies. (Scripted JSON-RPC, no LLM and no LangGraph — the live-agent case is Demo 4.) It shows the full lifecycle of a single ticket: blocked cold, allowed once after a trusted human approval is appended, then blocked again once that one-shot approval is consumed.
 
 ```bash
 lake exe automaton_tests
 lake exe axiom_check
 python3 test/integration/test_seal.py
-python3 demo/langgraph_injection_demo.py
+python3 demo/blocked_call_smoke.py
 ```
 
 ### Demo 4: flagship, seal x Canary
