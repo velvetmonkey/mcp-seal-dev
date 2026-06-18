@@ -1,0 +1,6 @@
+OUTCOME CASE
+Allow  fresh token (real sig)
+Block  replay same nonce
+Allow  consumed nonce recorded
+Block  expired (valid sig, now>expiry)
+Block  ttl over cap

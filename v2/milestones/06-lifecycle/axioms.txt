@@ -1,0 +1,5 @@
+'SealV2.consume_records_nonce' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.replay_denied' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.consume_preserves_live' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.consume_only_unexpired' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.live_within_ttl_cap' depends on axioms: [propext, Classical.choice, Quot.sound]

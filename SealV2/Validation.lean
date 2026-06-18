@@ -72,10 +72,14 @@ structure Approval where
   deriving Repr, BEq
 
 /-- The namespace a consumed nonce lives in: a replay is only a replay within the
-    same public key, target, session, and policy version. -/
+    same public key, target, session, and policy version. The target is held as its
+    canonical string key (`serializeTargetKey`) rather than the structured `Target`, so
+    `ReplayNamespace` equality is over `String`s only — decidable, reducible, and with a
+    lawful `BEq` (the structured `AST` arguments do not leak a non-reducing derived BEq
+    onto the replay-detection path). -/
 structure ReplayNamespace where
   publicKey : PublicKey
-  target : Target
+  targetKey : String
   session : SessionId
   policyVersion : String
   deriving Repr, BEq
@@ -245,9 +249,17 @@ def defaultMaxApprovalTtl : Nat := 300
 def pruneConsumedNonces (now : Nat) (entries : List ConsumedNonce) : List ConsumedNonce :=
   entries.filter (fun e => now <= e.expiresAt)
 
+/-- A total, deterministic canonical string key for a target. Two targets share a key
+    iff they agree on tool / action / version / manifest digest and on the canonical
+    serialisation of their arguments. Uses the M3 total value serialiser. -/
+def serializeTargetKey (target : Target) : String :=
+  String.intercalate " "
+    [target.tool, target.action, target.toolVersion, target.manifestDigest,
+     serializeAstValue target.arguments]
+
 def replayNamespace (state : ApprovalState) (target : Target) : ReplayNamespace :=
   { publicKey := state.publicKey,
-    target := target,
+    targetKey := serializeTargetKey target,
     session := state.session,
     policyVersion := state.policyVersion }
 

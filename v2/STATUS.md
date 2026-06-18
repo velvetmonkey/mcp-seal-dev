@@ -210,3 +210,47 @@ construction.
 `v2_verify_line`: **2 accepted, 6 rejected** — valid sig, bad sig, wrong key, tampered
 byte, wrong-length, e2e accept, expired-valid-sig, wrong-key e2e. Filed under
 `v2/milestones/05-sign/`; reproduce with `bash v2/milestones/05-sign/run.sh`.
+
+## M6 lifecycle / TTL
+
+Status: complete; merged to `main`. Five named invariants proven over the replay store
+state-machine (`validateAndConsumeWithStore` against the reference `listReplayStore`), all
+axiom-clean. Zero `sorry`/`admit`/`native_decide`.
+
+```lean
+-- SealV2/LifecycleTheorems.lean
+consume_records_nonce   -- atomicity: success records the nonce in the returned store
+replay_denied           -- single-use: re-presenting a consumed token to the post-state denies
+consume_preserves_live  -- state monotonicity: live consumed entries are preserved
+consume_only_unexpired  -- expiry: a consumed approval is unexpired (origin ≠ authorization)
+live_within_ttl_cap     -- TTL cap: a live approval is within the cap
+```
+
+### Replay-namespace re-key (design note)
+
+`ReplayNamespace` now keys on the canonical string `serializeTargetKey target` (the M3 total value
+serialiser) rather than the structured `Target`. The structured `AST` arguments carry a WF-recursive
+derived `BEq` that does not reduce, making `(ns == ns) = true` on the replay path unprovable; keying on
+the canonical string makes namespace equality `String`-only and reflexive. Semantically equivalent by
+M3 canonicality; M1–M5 proofs and the full axiom footprint re-verified unchanged.
+
+### Axiom footprint (verified)
+
+`v2_m6_axiom_check` build-locks the five theorems to `[propext, Classical.choice, Quot.sound]`
+(captured in `v2/milestones/06-lifecycle/axioms.txt`). The full M1–M6 set re-verified with no drift.
+
+### Honesty boundary (A4, A5)
+
+- **A4** — the invariants hold GIVEN serialized/locked store access (host obligation). Model atomicity
+  is by construction; OS-level TOCTOU-freedom is NOT proven in Lean.
+- **A5** — proofs are over the concrete reference `listReplayStore`; the deployed host store (M7) must
+  refine its semantics, NOT yet proven (carried as an explicit M7 obligation).
+- Expiry blocks even a valid signature (origin ≠ authorization). Never "eliminated"; A2 per-server,
+  minimised by construction.
+
+### Acceptance
+
+`Test/V2Lifecycle.lean` (`v2_lifecycle_tests`) over the real store machine: **2 allowed, 3 blocked** —
+fresh token (real M5 Ed25519 signature), replay → Block, consumed-nonce recorded, expired-valid-sig →
+Block, ttl-over-cap → reject. Filed under `v2/milestones/06-lifecycle/`; reproduce with
+`bash v2/milestones/06-lifecycle/run.sh`.

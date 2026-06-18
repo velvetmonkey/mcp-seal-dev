@@ -1,0 +1,1 @@
+M6 lifecycle corpus passed: 2 allowed, 3 blocked (real store machine)
