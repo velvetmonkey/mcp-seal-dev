@@ -82,3 +82,7 @@ root = "Test.V2M4Axioms"
 [[lean_exe]]
 name = "v2_serialize_line"
 root = "Test.V2SerializeLine"
+
+[[lean_exe]]
+name = "v2_decide_line"
+root = "Test.V2DecideLine"

@@ -1,0 +1,1 @@
+M4 adversarial MCP fixture passed: 15 blocked, 1 allowed

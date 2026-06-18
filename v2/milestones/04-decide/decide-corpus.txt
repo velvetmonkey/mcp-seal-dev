@@ -1,0 +1,17 @@
+DECISION EXPECT CASE
+Allow  Allow  legitimate mediated call
+Block  Block  truncated json
+Block  Block  not json
+Block  Block  empty
+Block  Block  trailing bytes
+Block  Block  trailing-zero fraction
+Block  Block  integer-as-decimal 1.0
+Block  Block  exponent form
+Block  Block  leading zero
+Block  Block  unknown tool
+Block  Block  unknown action
+Block  Block  target table mismatch
+Block  Block  target db mismatch
+Block  Block  amount mismatch
+Block  Block  missing action
+Block  Block  wrong method

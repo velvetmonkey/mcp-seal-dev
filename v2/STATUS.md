@@ -102,7 +102,7 @@ The parser remains fail-closed and does not normalise. Non-canonical numeric for
 
 ## M4 mediated decide and non-bypass
 
-Status: complete on `feat/v2-m4-nonbypass`. All M4 obligations are discharged with zero `sorry`, no `admit`, no `native_decide`, and the axiom gate is green.
+Status: complete; merged to `main`. All M4 obligations are discharged with zero `sorry`, no `admit`, no `native_decide`, and the axiom gate is green. Milestone artifacts are filed under `v2/milestones/04-decide/` (`run.sh`, `axioms.txt`, `fixture-run.txt`, `decide-corpus.txt`); reproduce with `bash v2/milestones/04-decide/run.sh`.
 
 M4 adds the single mediated decision path:
 
@@ -137,7 +137,11 @@ decide_emit_unique :
 
 ### M4 axiom footprint (verified)
 
-`lake exe v2_m4_axiom_check` is now a build-breaking guard, not just a printer. It locks `canonical_roundtrip`, `serialize_validCapability_roundtrip`, `decide_emit_unique`, `non_bypass`, and `default_deny` to `[propext, Classical.choice, Quot.sound]`.
+`lake exe v2_m4_axiom_check` is now a build-breaking guard, not just a printer. It locks `canonical_roundtrip`, `serialize_validCapability_roundtrip`, `decide_emit_unique`, `non_bypass`, `default_deny`, and `signed_parse_canonical` to `[propext, Classical.choice, Quot.sound]`. The captured footprint is in `v2/milestones/04-decide/axioms.txt`.
+
+### M4 end-to-end acceptance
+
+`test/v2/m4_adversarial_mcp_fixture.py` drives the public `decide` entrypoint (via the `v2_decide_line` exe) against the fixture approval state: the single legitimate mediated call returns `Allow`; 15 adversarial / malformed / non-canonical / near-miss lines each return `Block`. This is seal-internal complete mediation, demonstrating `default_deny` and `non_bypass` operationally — NOT the A2 parser-differential, which stays a per-server obligation, minimised by construction.
 
 ## Signed-approval canonicality closure
 
