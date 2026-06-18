@@ -254,3 +254,37 @@ M3 canonicality; M1–M5 proofs and the full axiom footprint re-verified unchang
 fresh token (real M5 Ed25519 signature), replay → Block, consumed-nonce recorded, expired-valid-sig →
 Block, ttl-over-cap → reject. Filed under `v2/milestones/06-lifecycle/`; reproduce with
 `bash v2/milestones/06-lifecycle/run.sh`.
+
+## M7 Rust host glue
+
+Status: complete; merged to `main`. C FFI export of the verified core + a Rust host driving it
+end-to-end (raw bytes → Decision), store and approver-key custody host-driven. CORE axiom footprint
+UNCHANGED — `Ffi.lean` is IO glue with no theorems and adds no axioms.
+
+C ABI surface (string-in/string-out JSON, mirrors seal-host): `Ffi.lean` holds the session in
+`initialize stateRef : IO.Ref (Option ApprovalState)` and exports `seal_v2_init` / `seal_v2_add_approval`
+(reconstructs an `Approval` via the verified `signedParse`+`signedMessageFromAst?`) / `seal_v2_decide`
+(verified `parse → validateAndConsumeWithStore listReplayStore → serialize`). Self-contained
+`libsealv2ffi.so` hand-linked by `scripts/build_ffi_so.sh` (core objects + `ffi_shim.c` +
+`c/build/libsealcrypto.o`, against dynamic `libleanshared`). Rust host in `rust/` (`src/lean.rs`
+runtime init + A4 Mutex; `src/main.rs` selftest + stdio `serve`).
+
+### A5 discharged; A4 carries M6; A6 new
+
+- **A5 DISCHARGED (live process)**: the deployed store IS the verified `listReplayStore` in the Lean
+  `IO.Ref`, mutated only via `validateAndConsumeWithStore`. No separate store to refine — the M6
+  invariants apply to the running store. (Reference-note A5 line: discharged at M7, store IS listReplayStore.)
+- **A4 load-bearing**: the host `Mutex` makes read→consume→write atomic, which is what makes M6's
+  single-use hold in deployment. Test-covered by a 16-thread concurrency probe (exactly 1 Allow).
+- **A6 (new, durability)**: `stateRef` is in-memory; restart re-Allows pre-blocked nonces. Stated, not
+  hidden. Persistence must restore through the consume path.
+- **A3 grows**: Rust transport + C ABI + JSON marshalling + key custody are trusted glue (documented).
+
+Claim discipline: **complete mediation modulo A1–A4, A6 stated**. Never "eliminated".
+
+### Acceptance (end-to-end through the C ABI)
+
+`rust/src/main.rs selftest` (real M5 test vector): fresh token **Allow**, replay **Block**, expired
+(valid sig, now>expiry) **Block**, tampered signature **Block**, malformed + target-mismatch **Block**,
+A4 probe **16 concurrent → 1 Allow**. Filed under `v2/milestones/07-host/`; reproduce with
+`bash v2/milestones/07-host/run.sh`.

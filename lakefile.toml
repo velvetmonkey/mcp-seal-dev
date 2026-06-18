@@ -96,6 +96,18 @@ root = "Test.V2SerializeLine"
 name = "v2_decide_line"
 root = "Test.V2DecideLine"
 
+# M7: exe-shaped shared-object target. Forces Ffi.lean (the @[export] surface) to
+# compile + emit its objects; the self-contained .so is hand-linked by
+# scripts/build_ffi_so.sh (full transitive object set + ffi_shim + ed25519 leaf).
+# M7: the Ffi @[export] surface. A NORMAL exe target (root Ffi, has `def main`) so
+# `lake build ffi_shared` triggers C codegen of Ffi → emits Ffi.c.o.export and links
+# cleanly. The self-contained .so is then hand-linked by scripts/build_ffi_so.sh against
+# the DYNAMIC libleanshared (the static runtime's TLS relocs cannot enter a -shared object,
+# so we never link the exe with -shared — the exe is a throwaway to force codegen).
+[[lean_exe]]
+name = "ffi_shared"
+root = "Ffi"
+
 [[lean_exe]]
 name = "v2_signed_bytes"
 root = "Test.V2SignedBytes"

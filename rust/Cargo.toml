@@ -1,0 +1,8 @@
+[package]
+name = "seal-v2-host"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "seal-v2-host"
+path = "src/main.rs"

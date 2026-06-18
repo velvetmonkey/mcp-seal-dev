@@ -7,3 +7,6 @@ __pycache__/
 
 # M5: built C crypto objects (rebuilt by c/build.sh / run.sh)
 c/build/
+
+# M7: Rust host build artifacts
+rust/target/
