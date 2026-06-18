@@ -54,7 +54,11 @@ cc -shared -o "$OUT" \
   -Wl,-rpath,"$LEAN_PREFIX/lib/lean"
 
 echo "built $OUT"
-for sym in seal_v2_init seal_v2_add_approval seal_v2_decide seal_v2_echo seal_v2_crypto_probe; do
-  nm -D "$OUT" | grep -qE " T ${sym}\$" || { echo "FATAL: export $sym missing" >&2; exit 1; }
+# Capture nm output ONCE, then grep the in-memory copy. (Piping `nm bigfile | grep -q`
+# under set -o pipefail flakily fails: grep -q closes the pipe early -> nm gets SIGPIPE
+# -> pipefail reports the pipeline as failed even though the symbol was found.)
+SYMS="$(nm -D "$OUT")"
+for sym in seal_v2_init seal_v2_add_approval seal_v2_decide seal_v2_challenge seal_v2_echo seal_v2_crypto_probe; do
+  printf '%s\n' "$SYMS" | grep -qE " T ${sym}\$" || { echo "FATAL: export $sym missing" >&2; exit 1; }
 done
 echo "all exports present"

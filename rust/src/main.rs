@@ -86,19 +86,70 @@ fn selftest() {
     println!("M7 host selftest passed: e2e Allow/replay/expired/tampered/forged + A4 concurrency (1 of {n}).");
 }
 
+/// Minimal standard-alphabet base64 decode (std-only; payloads on the serve command
+/// protocol are base64 so the raw bytes the verified parser sees are exact).
+fn b64_decode(s: &str) -> Option<Vec<u8>> {
+    fn val(c: u8) -> Option<u32> {
+        Some(match c {
+            b'A'..=b'Z' => (c - b'A') as u32,
+            b'a'..=b'z' => (c - b'a' + 26) as u32,
+            b'0'..=b'9' => (c - b'0' + 52) as u32,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        })
+    }
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut acc, mut nbits): (u32, u32) = (0, 0);
+    for c in s.bytes() {
+        if c == b'=' {
+            continue;
+        }
+        acc = (acc << 6) | val(c)?;
+        nbits += 6;
+        if nbits >= 8 {
+            nbits -= 8;
+            out.push((acc >> nbits) as u8);
+        }
+    }
+    Some(out)
+}
+
+/// serve: init from cfg, then a line command protocol on stdin. One process, one store
+/// (the consumed-nonce store lives in the Lean IO.Ref). Commands (payloads base64):
+///   decide <now> <b64raw>
+///   challenge <issuedAt> <expiry> <nonceHex> <b64raw>
+///   add_approval <sigHex> <b64signed>
+/// The reply is the host's JSON, one line per command.
 fn serve(cfg_path: &str) {
     let host = lean::LeanHost::new();
     let cfg = std::fs::read_to_string(cfg_path).expect("read config");
     let r = host.init(&cfg);
-    if !is_ok(&r) { eprintln!("init failed: {r}"); std::process::exit(1); }
-    // Approvals would arrive on a back-channel; for the relay, read request lines.
+    if !is_ok(&r) {
+        eprintln!("init failed: {r}");
+        std::process::exit(1);
+    }
+    let bad = || "{\"ok\":false,\"error\":\"bad base64/utf8\"}".to_string();
+    let decode = |b64: &str| b64_decode(b64).and_then(|b| String::from_utf8(b).ok());
+
     use std::io::BufRead;
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs().to_string()).unwrap_or_else(|_| "0".into());
     for line in std::io::stdin().lock().lines() {
         let line = line.unwrap_or_default();
-        if line.is_empty() { continue; }
-        println!("{}", host.decide(&line, &now));
+        if line.trim().is_empty() {
+            continue;
+        }
+        let t: Vec<&str> = line.split_whitespace().collect();
+        let resp = match t.as_slice() {
+            ["decide", now, b64] => decode(b64).map(|raw| host.decide(&raw, now)).unwrap_or_else(bad),
+            ["challenge", issued, expiry, nonce, b64] => {
+                decode(b64).map(|raw| host.challenge(&raw, issued, expiry, nonce)).unwrap_or_else(bad)
+            }
+            ["add_approval", sig, b64] => {
+                decode(b64).map(|signed| host.add_approval(&signed, sig)).unwrap_or_else(bad)
+            }
+            _ => "{\"ok\":false,\"error\":\"unknown command\"}".to_string(),
+        };
+        println!("{resp}");
     }
 }
 

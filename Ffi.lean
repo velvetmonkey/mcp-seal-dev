@@ -120,6 +120,37 @@ private def decideImpl (rawRequest nowText : String) : IO String := do
               stateRef.set (some { st with consumedNonces := store' })
               pure (decisionJson "Allow" (some (serialize checked)))
 
+/-- Mint the canonical signed-message bytes for a pending approval challenge, via the
+    VERIFIED serializer. Given a raw request + chosen issuedAt/expiry/nonce, build the
+    bound `Target` (verified `parse → requestFromAst → findToolSpec → targetFor`) and
+    return `signedMessageRawFor` (= `serializeAst (signedMessageAst …)`). STATELESS — does
+    not touch the store. This is the ONLY sanctioned source of the canonical bytes the
+    off-box signer signs (rule 3: those bytes are never re-encoded in glue). -/
+private def challengeImpl (rawRequest issuedAtText expiryText nonceHex : String) : IO String := do
+  match ← stateRef.get with
+  | none => pure (errJson "not initialized")
+  | some st =>
+      match parse rawRequest with
+      | none => pure (errJson "parse failed")
+      | some ast =>
+          match requestFromAst ast with
+          | none => pure (errJson "not a tools/call request")
+          | some req =>
+              match findToolSpec st req with
+              | none => pure (errJson "no matching tool/action")
+              | some spec =>
+                  if h : isCanonicalNonceString nonceHex = true then
+                    let msg : SignedMessage := {
+                      target := targetFor st req spec, session := st.session,
+                      issuedAt := (issuedAtText.toNat?).getD 0,
+                      expiry := (expiryText.toNat?).getD 0,
+                      nonce := { value := nonceHex, canonical := h }
+                    }
+                    pure (Json.mkObj [("ok", Json.bool true),
+                      ("signed_bytes", Json.str (signedMessageRawFor msg))]).compress
+                  else
+                    pure (errJson "nonce must be 64 lowercase hex chars")
+
 /-- Bring-up echo (kept for the FFI self-test). -/
 private def echoImpl (s : String) : IO String := pure s
 
@@ -142,6 +173,10 @@ unsafe def sealV2AddApproval (rawSigned sigHex : String) : String :=
 @[export seal_v2_decide]
 unsafe def sealV2Decide (rawRequest nowText : String) : String :=
   unsafeBaseIO <| (decideImpl rawRequest nowText).catchExceptions (fun e => pure (errJson (toString e)))
+
+@[export seal_v2_challenge]
+unsafe def sealV2Challenge (rawRequest issuedAt expiry nonceHex : String) : String :=
+  unsafeBaseIO <| (challengeImpl rawRequest issuedAt expiry nonceHex).catchExceptions (fun e => pure (errJson (toString e)))
 
 @[export seal_v2_echo]
 unsafe def sealV2Echo (s : String) : String :=

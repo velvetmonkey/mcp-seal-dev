@@ -30,6 +30,7 @@ extern "C" {
     fn seal_v2_init(config: LeanObj) -> LeanObj;
     fn seal_v2_add_approval(raw: LeanObj, sig: LeanObj) -> LeanObj;
     fn seal_v2_decide(req: LeanObj, now: LeanObj) -> LeanObj;
+    fn seal_v2_challenge(req: LeanObj, issued: LeanObj, expiry: LeanObj, nonce: LeanObj) -> LeanObj;
     fn seal_v2_echo(input: LeanObj) -> LeanObj;
     fn seal_v2_crypto_probe(pk: LeanObj, msg: LeanObj, sig: LeanObj) -> LeanObj;
 }
@@ -104,6 +105,22 @@ impl LeanHost {
         let _g = self.lock.lock().unwrap();
         unsafe {
             let r = seal_v2_decide(to_lean_string(raw_request), to_lean_string(now));
+            let out = from_lean_string(r);
+            lean_dec(r);
+            out
+        }
+    }
+
+    /// Mint the canonical signed-message bytes for a pending challenge (stateless).
+    pub fn challenge(&self, raw_request: &str, issued: &str, expiry: &str, nonce: &str) -> String {
+        let _g = self.lock.lock().unwrap();
+        unsafe {
+            let r = seal_v2_challenge(
+                to_lean_string(raw_request),
+                to_lean_string(issued),
+                to_lean_string(expiry),
+                to_lean_string(nonce),
+            );
             let out = from_lean_string(r);
             lean_dec(r);
             out
