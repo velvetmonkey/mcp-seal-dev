@@ -288,3 +288,31 @@ Claim discipline: **complete mediation modulo A1–A4, A6 stated**. Never "elimi
 (valid sig, now>expiry) **Block**, tampered signature **Block**, malformed + target-mismatch **Block**,
 A4 probe **16 concurrent → 1 Allow**. Filed under `v2/milestones/07-host/`; reproduce with
 `bash v2/milestones/07-host/run.sh`.
+
+## M8 threat model — v2 build COMPLETE
+
+Status: complete; merged to `main`. The bid-facing capstone. Adds NO theorems — it WRITES
+`v2/milestones/08-threat-model/THREAT-MODEL.md` (the document the ARIA bid quotes) and re-verifies the
+M1–M7 footprint it rests on. Five parts: adversary; trust boundary (verified core vs trusted glue A3);
+every named theorem with its GUARANTEE and NON-guarantee (both `non_bypass` and `canonical_roundtrip`
+explicitly do NOT close A2); the A1–A6 residual ledger; the claim.
+
+### Footprint (re-verified, not asserted)
+
+All 16 named theorems carry `[propext, Classical.choice, Quot.sound]` only; `ed25519Verify` depends on
+no axioms; zero `sorry`/`admit`/`native_decide`. Captured from a live `#print axioms` run in
+`v2/milestones/08-threat-model/axioms.txt`; the `v2_m*_axiom_check` `#guard_msgs` gates are
+build-breaking (M5's `signed_parse_canonical` is locked inside the m4 gate).
+
+### The claim (canonical string — byte-identical across THREAT-MODEL / NOTES / STATUS)
+
+> complete mediation modulo A1-A4, with A2 minimised by construction; A6 (durability) stated, not hidden.
+
+Framing: **We do not prove the agent is safe; we prove the environment is safe from the agent.**
+A1–A6: A1 channel exclusivity (stated); A2 server-parse equivalence (minimised by construction, NEVER
+closed); A3 TCB (Lean + TweetNaCl Ed25519 leaf + key custody + host glue); A4 store atomicity (host
+Mutex; concurrency-tested); A5 host-store refinement (DISCHARGED by construction at M7); A6 durability
+(in-memory by design; stated, not hidden). Origin ≠ authorization named (the human-oracle limit).
+Reproduce with `bash v2/milestones/08-threat-model/run.sh`.
+
+**seal v2 build COMPLETE: M1–M8 landed, axiom-clean, claim-disciplined.**
