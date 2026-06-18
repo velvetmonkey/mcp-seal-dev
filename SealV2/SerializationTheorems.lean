@@ -115,7 +115,7 @@ theorem takeDigits_all_digits_append (cs : List Char) (c : Char) (rest : List Ch
 
 theorem digit_not_ws (c : Char) (h : isDigit c = true) : isWs c = false := by
   unfold isDigit at h; simp +decide at h; unfold isWs
-  split <;> simp_all <;> omega
+  split <;> simp_all
 
 theorem nonZeroDigit_isDigit (c : Char) (h : isNonZeroDigit c = true) : isDigit c = true := by
   unfold isDigit isNonZeroDigit at *; grind
@@ -132,7 +132,7 @@ theorem parseIntegerDigits_canonical (intDigits : String) (rest : List Char)
     by_cases hc0 : c = '0' ∧ cs = []
     · obtain ⟨rfl, rfl⟩ := hc0
       have hid : intDigits = "0" := by rw [← String.toList_inj]; simp [hlist]; decide
-      rcases hrest with rfl | ⟨d, rest', rfl, hd⟩ <;> simp [parseIntegerDigits, hid, *]
+      rcases hrest with rfl | ⟨d, rest', rfl, hd⟩ <;> simp [parseIntegerDigits, *]
     · have hNZC : isNonZeroDigitChar c = true ∧ cs.all isDigitChar = true := by
         split at hcan
         · exact absurd (List.cons_eq_cons.mp ‹_›) hc0
@@ -257,7 +257,7 @@ theorem parseNumberUnchecked_serializeDecimal (value : Decimal) (rest : List Cha
     have hser : (serializeDecimal ⟨false, intDigits, fracDigits⟩).toList
         = (ic :: ics) ++ ftail := by
       rw [hftail]; cases fracDigits <;>
-        simp [serializeDecimal, String.toList_append, hdash, hdot, hic, List.append_nil]
+        simp [serializeDecimal, String.toList_append, hdot, hic, List.append_nil]
     rw [hser, List.cons_append]
     unfold parseNumberUnchecked
     simp [hicNotDash, List.cons.injEq, false_and, List.cons_append,
@@ -299,7 +299,7 @@ theorem parseStringCharsUnchecked_acc (acc : String) (value : String) (rest : Li
       intro heq; subst heq; unfold isAsciiStringChar at hc; simp +decide at hc
     simp only [List.cons_append]
     unfold parseStringCharsUnchecked
-    simp [hc, hc_ne_quote]
+    simp [hc]
     rw [push_eq_append_singleton]
     rw [ih (acc ++ String.singleton c) hcs']
     congr 1; congr 1
@@ -588,7 +588,7 @@ theorem parseArrayFuelUnchecked_roundtrip
   induction items generalizing acc fuel rest with
   | nil =>
     -- serializeArrayValue [] = "", so input is ']' :: rest
-    simp only [serializeArrayValue, String.toList, List.nil_append, List.append_nil]
+    simp only [serializeArrayValue, String.toList, List.append_nil]
     obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
     rw [parseArrayFuelUnchecked.eq_def]
     simp [skipWs, isWs]
@@ -624,7 +624,7 @@ theorem parseArrayFuelUnchecked_roundtrip
         simp [skipWs, isWs]
         show isCanonicalArray (acc.reverse ++ [x]) = true
         rw [isCanonicalArray_append]
-        simp [isCanonicalArray_reverse, hcan_acc, isCanonicalArray_cons, hcan_x, isCanonicalArray]
+        simp [isCanonicalArray_reverse, hcan_acc, hcan_x, isCanonicalArray]
     | cons y ys =>
       -- cons-cons: serializeArrayValue (x :: y :: ys)
       rw [serializeArrayValue_cons_cons_toList]
@@ -641,7 +641,7 @@ theorem parseArrayFuelUnchecked_roundtrip
           rw [hser', List.length_append, List.length_append, List.length_cons, List.length_nil] at hfuel; omega
         rw [show c :: (cs ++ ([','] ++ ((serializeArrayValue (y :: ys)).toList ++ (']' :: rest))))
           = (serializeAstValue x).toList ++ (',' :: ((serializeArrayValue (y :: ys)).toList ++ (']' :: rest)))
-          by rw [hcs]; simp [List.cons_append, List.append_assoc]]
+          by rw [hcs]; simp [List.cons_append]]
         rw [ih_value x List.mem_cons_self _ fuel' hcan_x hfuel_x (GoodRest_cons_comma _)]
         simp only [] -- reduce Option.some match
         -- skipWs on ',' :: ...
@@ -751,7 +751,7 @@ theorem parseObjectFuelUnchecked_roundtrip
       = some (.object (acc.reverse ++ fields), rest) := by
   induction fields generalizing acc fuel rest with
   | nil =>
-    simp only [serializeObjectValue, String.toList, List.nil_append, List.append_nil]
+    simp only [serializeObjectValue, String.toList, List.append_nil]
     obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
     rw [parseObjectFuelUnchecked.eq_def]
     simp [skipWs, isWs]
@@ -850,7 +850,7 @@ theorem parseObjectFuelUnchecked_roundtrip
 /-! ## Value-level roundtrip by strong induction -/
 
 private theorem value_roundtrip_worker_null (rest : List Char) (fuel : Nat)
-    (hfuel : fuel ≥ (serializeAstValue .null).toList.length + 1) (hrest : GoodRest rest) :
+    (hfuel : fuel ≥ (serializeAstValue .null).toList.length + 1) (_hrest : GoodRest rest) :
     parseValueFuelUnchecked fuel ((serializeAstValue .null).toList ++ rest) = some (.null, rest) := by
   rcases fuel with ( _ | _ | fuel ) <;> simp_all +arith +decide [ parseValueFuelUnchecked ];
   rfl
@@ -898,7 +898,7 @@ private theorem value_roundtrip_worker_number (v : Decimal) (rest : List Char) (
     have hlb : c ≠ '[' := fun he => absurd (he ▸ hc) (by decide)
     have hcb : c ≠ '{' := fun he => absurd (he ▸ hc) (by decide)
     have hdash : c ≠ '-' := fun he => absurd (he ▸ hc) (by decide)
-    simp only [hn, ht, hf, hq, hlb, hcb, hdash, hc, if_true]
+    simp only [hc, if_true]
     rw [ show parseNumber ( c :: cs ) = guardCanonicalResult ( parseNumberUnchecked ( c :: cs ) ) from rfl ];
     rw [ show parseNumberUnchecked ( c :: cs ) = some ( AST.number v, rest ) from by
       rw [ w.1 ]; exact parseNumberUnchecked_serializeDecimal v rest hcan hrest ];
@@ -907,7 +907,7 @@ private theorem value_roundtrip_worker_number (v : Decimal) (rest : List Char) (
 
 private theorem value_roundtrip_worker_string (s : String) (rest : List Char) (fuel : Nat)
     (hcan : isCanonicalString s = true)
-    (hfuel : fuel ≥ (serializeAstValue (.string s)).toList.length + 1) (hrest : GoodRest rest) :
+    (hfuel : fuel ≥ (serializeAstValue (.string s)).toList.length + 1) (_hrest : GoodRest rest) :
     parseValueFuelUnchecked fuel ((serializeAstValue (.string s)).toList ++ rest) = some (.string s, rest) := by
   obtain ⟨c, cs, h⟩ : ∃ c cs, (serializeAstValue (AST.string s)).toList = c :: cs := by
     exact?;
