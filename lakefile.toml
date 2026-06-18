@@ -2,6 +2,11 @@ name = "mcp-seal"
 version = "0.1.0"
 defaultTargets = ["seal", "v2_m4_axiom_check"]
 
+# M5: link the vendored Ed25519 (TweetNaCl) + FFI shim into every exe. SealV2 now
+# references the @[extern] `lean_seal_ed25519_verify`, so all exes importing SealV2
+# need this object. Build it first with `bash c/build.sh` (run.sh / CI does this).
+moreLinkArgs = ["c/build/libsealcrypto.o"]
+
 [[require]]
 name = "batteries"
 git = "https://github.com/leanprover-community/batteries.git"
@@ -86,3 +91,11 @@ root = "Test.V2SerializeLine"
 [[lean_exe]]
 name = "v2_decide_line"
 root = "Test.V2DecideLine"
+
+[[lean_exe]]
+name = "v2_signed_bytes"
+root = "Test.V2SignedBytes"
+
+[[lean_exe]]
+name = "v2_verify_line"
+root = "Test.V2VerifyLine"

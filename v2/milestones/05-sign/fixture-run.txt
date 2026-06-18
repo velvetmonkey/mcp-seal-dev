@@ -1,0 +1,1 @@
+M5 Ed25519 fixture passed: 2 accepted, 6 rejected (real signatures over canonical bytes)

@@ -56,24 +56,37 @@ def unsignedApproval : Approval :=
     nonce := nonceA
   }
 
-def signedApproval (approval : Approval) : Approval :=
-  { approval with signature := stubSignatureFor "pubkey-1" (signedMessage approval) }
+-- M5 real-Ed25519 test vector. The keypair is derived from the FIXED, documented
+-- test seed `0x000102…1f` (NOT a real key) via Python `cryptography`; regenerate
+-- with v2/milestones/05-sign/run.sh. Signatures are over the canonical
+-- signed-message bytes produced by the M3 serialiser (`signedMessageRawFor`).
+def testPublicKeyHex : PublicKey :=
+  "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8"
 
-/-- Re-derive both the signed-message bytes and the stub signature from an approval's
-    own fields, so callers can vary issuedAt / expiresAt / nonce and stay self-consistent. -/
-def signApprovalFully (approval : Approval) : Approval :=
+/-- Ed25519 signature over the base message (M_A: issuedAt 0, expiry 120, nonce A). -/
+def sigOverBaseMessage : Signature :=
+  "ffbe15d60ae3d19a0f97465889f5e4927cdb3f36beebe649f546f9639fc3282966ecab0a0f7564af9cc1daa51a2903029f83f6b2668b710a7cb17dd20deeaf03"
+
+/-- Ed25519 signature over the over-cap message (M_B: issuedAt 0, expiry 400, nonce B),
+    used by the TTL-cap reject test so it rejects on TTL, not on a bad signature. -/
+def sigOverTtlMessage : Signature :=
+  "228b3400facb2bac68a54971754d70329885be7debfb99664303f784fdf38f19092652f51cd0bf5df7072136059c39c074024ff803bb7cee19b7cc3df1a1bb02"
+
+/-- Set an approval's signed-message bytes to its OWN canonical message and attach
+    an externally-produced Ed25519 signature hex over exactly those bytes. -/
+def approvalWithSig (approval : Approval) (sig : Signature) : Approval :=
   { approval with
     signedMessageRaw := signedMessageRawFor (signedMessage approval),
-    signature := stubSignatureFor "pubkey-1" (signedMessage approval) }
+    signature := sig }
 
 def validApproval : Approval :=
-  signedApproval unsignedApproval
+  approvalWithSig unsignedApproval sigOverBaseMessage
 
 def baseState : ApprovalState :=
   {
     session := "session-1",
     now := 10,
-    publicKey := "pubkey-1",
+    publicKey := testPublicKeyHex,
     manifestDigest := "manifest-001",
     tools := [toolSpec],
     approvals := [validApproval],

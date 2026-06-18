@@ -23,14 +23,16 @@ def expectNoneValidate (name raw : String) (state : ApprovalState) : IO Unit := 
       | some _ => throw <| IO.userError s!"{name}: expected validation failure"
 
 def approvalSignedOverRaw (raw : RawBytes) : Approval :=
+  -- These cases drive non-canonical `raw` through the signed path, which is rejected
+  -- at `signedParse` BEFORE the signature check, so the signature value is irrelevant.
   { unsignedApproval with
     signedMessageRaw := raw,
-    signature := s!"stub-ed25519:pubkey-1:{raw}"
+    signature := ""
   }
 
 -- An approval whose claimed lifetime (issuedAt..expiresAt) exceeds the 300s default cap.
 def approvalTtlExceedsCap : Approval :=
-  signApprovalFully { unsignedApproval with issuedAt := 0, expiresAt := 400, nonce := nonceB }
+  approvalWithSig { unsignedApproval with issuedAt := 0, expiresAt := 400, nonce := nonceB } sigOverTtlMessage
 
 -- The replay namespace the valid request lands in under baseState.
 def baseNamespace : ReplayNamespace :=
@@ -71,7 +73,7 @@ def main : IO UInt32 := do
   expectNoneValidate "no approval" validRaw { baseState with approvals := [] }
   expectNoneValidate "target mismatch" (requestRaw "db.execute" "write" "{\"database\":\"prod\",\"table\":\"payments\",\"amount\":12.34}") baseState
   expectNoneValidate "session mismatch" validRaw { baseState with session := "session-2" }
-  expectNoneValidate "consumed approval" validRaw { baseState with approvals := [signedApproval { unsignedApproval with consumed := true }] }
+  expectNoneValidate "consumed approval" validRaw { baseState with approvals := [approvalWithSig { unsignedApproval with consumed := true } sigOverBaseMessage] }
   expectNoneValidate "expired approval" validRaw { baseState with now := 121 }
   expectNoneValidate "bad stub signature" validRaw { baseState with approvals := [{ unsignedApproval with signature := "bad-signature" }] }
   expectSignedPathRejects "signed trailing whitespace" (validApproval.signedMessageRaw ++ " ")

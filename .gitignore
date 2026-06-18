@@ -4,3 +4,6 @@
 __pycache__/
 *.pyc
 .juno_task/
+
+# M5: built C crypto objects (rebuilt by c/build.sh / run.sh)
+c/build/

@@ -41,11 +41,12 @@ def expectValidateSerializeRoundtrip : IO Unit := do
 def expectSignatureUsesCanonicalBytes : IO Unit := do
   let expectedPayload :=
     "{\"target\":{\"tool\":\"db.execute\",\"action\":\"write\",\"toolVersion\":\"v1\",\"manifestDigest\":\"manifest-001\",\"arguments\":{\"database\":\"prod\",\"table\":\"users\",\"amount\":12.34}},\"session\":\"session-1\",\"issuedAt\":0,\"expiry\":120,\"nonce\":\"" ++ hex64a ++ "\"}"
-  let expectedSignature := s!"stub-ed25519:pubkey-1:{expectedPayload}"
-  if validApproval.signedMessageRaw == expectedPayload && validApproval.signature == expectedSignature then
+  -- The approval's signed bytes ARE the M3 canonical serialisation, and the real
+  -- Ed25519 signature verifies over exactly those bytes under the test public key.
+  if validApproval.signedMessageRaw == expectedPayload && verifySignature baseState.publicKey validApproval then
     pure ()
   else
-    throw <| IO.userError s!"signature did not use canonical bytes: {validApproval.signedMessageRaw} / {validApproval.signature}"
+    throw <| IO.userError s!"signature did not use canonical bytes / did not verify: {validApproval.signedMessageRaw}"
 
 def main : IO UInt32 := do
   expectParsedRoundtrip "null" "null"

@@ -166,3 +166,47 @@ signed_parse_canonical :
 ```
 
 This theorem is **proven** in `SealV2/ValidationTheorems.lean` (complete proof, no `sorry`), and its axiom footprint is locked to `[propext, Classical.choice, Quot.sound]` by a build-breaking `#guard_msgs` check in `Test/V2M4Axioms.lean`. The signed path has no remaining proof obligation.
+
+## M5 Ed25519 origin seam
+
+Status: complete; merged to `main`. The M2 signature **stub** is replaced by **real
+Ed25519** verification over EXACTLY the canonical `(target, session, issuedAt, expiry,
+nonce)` bytes from the M3 serialiser. Zero `sorry`/`admit`/`native_decide`; axiom
+footprint unchanged.
+
+```lean
+-- SealV2/Crypto.lean
+@[extern "lean_seal_ed25519_verify"]
+opaque ed25519Verify (publicKey message signature : ByteArray) : Bool
+```
+
+`verifySignature` hex-decodes the public key and signature and calls `ed25519Verify`
+over `approval.signedMessageRaw.toUTF8` (fail-closed on malformed hex). The real
+verification is performed by vendored TweetNaCl (`c/tweetnacl.*`, version 20140427,
+SHA-256 pinned in `v2/milestones/05-sign/NOTES.md`) behind the FFI shim
+`c/seal_ed25519.c`, linked via package `moreLinkArgs`.
+
+### Axiom footprint (verified)
+
+`opaque` + `@[extern]` add **no axiom**. The six named theorems still depend only on
+`[propext, Classical.choice, Quot.sound]`, and `ed25519Verify` itself depends on no
+axioms (captured in `v2/milestones/05-sign/axioms.txt`). The proofs consume
+`verifySignature` only as a runtime `Bool` hypothesis, so the swap is proof-transparent.
+
+### Claim discipline (origin authenticated, NOT proven)
+
+Now allowed: **"origin authenticated via Ed25519 over the canonical
+`(target, session, expiry)` bytes."** Origin is **NOT proven in Lean** — it rests on
+the channel (the signature) and on the explicit TCB assumption **A3 = "the vendored
+Ed25519 verify is correct."** The PROOF guarantees ordering/canonicality and
+seal-internal mediation; the CHANNEL guarantees origin. Authenticating origin is not
+authorizing intent: the M5 corpus shows a VALID signature on an EXPIRED approval is
+still Blocked. Never "eliminated"; A2 stays a per-server obligation, minimised by
+construction.
+
+### Acceptance
+
+`test/v2/m5_sign_fixture.py` (real Ed25519 via Python `cryptography`) drives
+`v2_verify_line`: **2 accepted, 6 rejected** — valid sig, bad sig, wrong key, tampered
+byte, wrong-length, e2e accept, expired-valid-sig, wrong-key e2e. Filed under
+`v2/milestones/05-sign/`; reproduce with `bash v2/milestones/05-sign/run.sh`.

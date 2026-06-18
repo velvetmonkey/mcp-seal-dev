@@ -1,0 +1,9 @@
+RESULT EXPECT CASE
+true   true   valid signature
+false  false  bad signature
+false  false  wrong key
+false  false  tampered message
+false  false  wrong-length signature
+Allow  Allow  e2e accept (valid sig, live)
+Block  Block  expired (valid sig, now>expiry)
+Block  Block  wrong key e2e

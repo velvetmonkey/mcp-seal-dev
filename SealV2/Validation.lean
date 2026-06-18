@@ -1,6 +1,7 @@
 /- SPDX-License-Identifier: Apache-2.0 -/
 
 import SealV2.Serialization
+import SealV2.Crypto
 
 namespace SealV2
 
@@ -177,15 +178,19 @@ def signedMessageRawFor (message : SignedMessage) : RawBytes :=
   | some ast => serializeAst ast
   | none => "<noncanonical>"
 
-def stubSignatureFor (publicKey : PublicKey) (message : SignedMessage) : Signature :=
-  s!"stub-ed25519:{publicKey}:{signedMessageRawFor message}"
-
 def verifySignature (publicKey : PublicKey) (approval : Approval) : Bool :=
   match signedParse approval.signedMessageRaw with
   | some ast =>
       (signedMessageFromAst? ast.val == some (signedMessage approval)) &&
         ast.val == signedMessageAst (signedMessage approval) &&
-        approval.signature == s!"stub-ed25519:{publicKey}:{approval.signedMessageRaw}"
+        -- M5: real Ed25519 over EXACTLY the canonical signed-message bytes
+        -- (`signedMessageRaw`, pinned canonical by `signed_parse_canonical`). The
+        -- public key and signature are hex; fail-closed if either is malformed.
+        -- Crypto correctness is the TCB(A3) assumption — see SealV2/Crypto.lean.
+        (match hexDecode? publicKey, hexDecode? approval.signature with
+         | some pkBytes, some sigBytes =>
+             ed25519Verify pkBytes approval.signedMessageRaw.toUTF8 sigBytes
+         | _, _ => false)
   | none => false
 
 structure SignatureVerified (publicKey : PublicKey) (approval : Approval) : Prop where
