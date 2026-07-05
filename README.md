@@ -274,16 +274,16 @@ The `approval` block sets the control file and `ttl_seconds` (default 120, cappe
 
 ### What the target hash is, exactly
 
-A ticket on the guest list is a single number: the **target hash**. It is a fingerprint of the request you are approving, so an approval for one action cannot quietly unlock a different one.
+A ticket on the guest list is a single 64-hex fingerprint: the **target hash**. It is a commitment to the request you are approving, so an approval for one action cannot quietly unlock a different one.
 
-It is computed deterministically (a 64-bit FNV-1a hash, no crypto, no secret) over one string built from the tool name plus any chosen argument values, joined by `|`:
+It is computed deterministically (SHA-256, no secret) over a **self-delimiting** encoding of the tool name plus any chosen argument values. Each part is framed `<charCount>:<part>` and the frames are concatenated, so distinct part-lists can never collide at the encoding layer:
 
 ```
-target = FNV-1a( toolName | part1 | part2 | ... )
+target = SHA-256( "<len>:<toolName>" ++ "<len>:<part1>" ++ ... )   // lowercase 64-hex
 ```
 
-- With `"target": []` (name only), the string is just the tool name, so every call to that tool shares one hash. Worked example: the tool `echo` always hashes to `13354254271524378478`, on any machine, every run. That is the number the block error hands you.
-- With `"target": ["arguments.message"]`, the string becomes `echo|hello`, so a ticket minted for the message `hello` will not authorize an `echo` of `goodbye`. Each distinct argument value gets its own hash and therefore its own ticket.
+- With `"target": []` (name only), the encoding is just the framed tool name, so every call to that tool shares one hash. Worked example: the tool `echo` (encoded `"4:echo"`) always hashes to `d75d9cecde13d161ae07ee440860ef7007ff664334f4d043eff81f95d4643c6f`, on any machine, every run. That is the value the block error hands you.
+- With `"target": ["arguments.message"]` and message `hello`, the encoding is `"4:echo5:hello"` → `e1785433529ec63e8edc69863be181cdaf37f1ad1fd7db306272778e0c0282e0`, so a ticket minted for `hello` will not authorize an `echo` of `goodbye`. Each distinct argument value gets its own hash and therefore its own ticket.
 
 So the hash is a stable, unguessable-by-accident name for "this exact request". The block error hands it to you directly: you are not decoding anything, you are reading the name of the thing you are choosing to let through, then writing that same name onto the guest list. Empty `target` is the coarsest grain (one ticket per tool); adding `target` parts drawn from the call arguments binds approvals to specific argument values for finer control.
 
