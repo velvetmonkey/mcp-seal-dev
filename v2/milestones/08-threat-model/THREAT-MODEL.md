@@ -132,7 +132,7 @@ footprint), build-locked by the `v2_m*_axiom_check` `#guard_msgs` gates.
 
 ### Origin seam (M5)
 - **Guarantees:** `validate` requires a real Ed25519 signature over EXACTLY the canonical
-  `(target, session, expiry)` bytes (`signed_parse_canonical` pins those bytes to the canonical form;
+  `(target, session, issuedAt, expiry, nonce)` bytes (`signed_parse_canonical` pins those bytes to the canonical form;
   a non-canonical signed message is rejected before verification). The verify primitive itself adds NO
   axioms to the core.
 - **Does NOT guarantee:** **origin, not intent.** Ed25519 proves *who signed*, not *what the human

@@ -47,7 +47,7 @@ compromise the Lean-compiled decision core, the host transport, or the OS.
 4. **Target binding.** An approval for target A cannot authorize target B.
 5. **Session binding.** An approval is scoped to its session.
 6. **Replay / one-shot.** A consumed approval cannot be reused; nonce + replay set + TTL cap reject replays (v2 A3).
-7. **Signature integrity (signed-approval path).** The signature is verified over the exact canonical byte shape, not a normalized substitute, so a parser-differential cannot launder a non-canonical signed message past verification.
+7. **Signature integrity (signed-approval path).** The signature is verified over the exact canonical `(target, session, issuedAt, expiry, nonce)` byte shape, not a normalized substitute, so a parser-differential cannot launder a non-canonical signed message past verification.
 
 ## Out of scope (trusted, not proven): stated plainly
 

@@ -22,7 +22,7 @@ bypassed."
 | Default-deny: output bytes are unreachable unless a `ValidCapability` term is built | `default_deny` | Lean theorem | as above | none | yes |
 | Canonical serialize/parse roundtrip is self-consistent and deterministic | `canonical_roundtrip` | Lean theorem | as above | round-trip fidelity in-core is NOT parse-equivalence to the target server (A2) | yes |
 | Approval lifecycle: issue -> target-bind -> one-shot consume -> TTL expiry, no replay after expiry | `LifecycleTheorems.lean` | Lean theorem | as above | A6 cross-restart durability | yes |
-| Ed25519 signature verification over canonical signed-message bytes | `SealV2/Crypto.lean` `ed25519Verify` (`@[extern]`, TweetNaCl leaf) | code + trusted crypto leaf | TweetNaCl correctness | none | yes |
+| Ed25519 signature verification over canonical `(target, session, issuedAt, expiry, nonce)` signed-message bytes | `SealV2/Crypto.lean` `ed25519Verify` (`@[extern]`, TweetNaCl leaf) | code + trusted crypto leaf | TweetNaCl correctness | none | yes |
 | This does NOT prove every deployed MCP server is mediated | n/a | n/a | n/a | n/a | this is a NON-claim, state it |
 
 ## The parser is a canonical mediation profile, NOT "the JSON parser"

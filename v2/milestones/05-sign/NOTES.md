@@ -38,7 +38,7 @@ cannot reduce `ed25519Verify`, so no proof can "compute" a crypto result.
 ## Claim discipline
 
 Now allowed: **"origin authenticated via Ed25519 over the canonical
-`(target, session, expiry)` bytes."** But origin is **NOT proven in Lean** — it rests
+`(target, session, issuedAt, expiry, nonce)` bytes."** But origin is **NOT proven in Lean** — it rests
 on the channel (the signature) and on A3 (trusted C primitive). The PROOF guarantees
 ordering/canonicality and seal-internal mediation; the CHANNEL guarantees origin.
 

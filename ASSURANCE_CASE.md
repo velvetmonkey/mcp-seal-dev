@@ -33,7 +33,7 @@ ARIA-relevant object; v1 is the shipped demonstrator.
 | 5 | **Session binding**: approval scoped to a session | `ValidCapability` witness binds session | Proven |
 | 6 | **One-shot consume + approval expiry**: a consumed (v1) or expired approval is rejected at validation | v1 one-shot consumption; `valid_capability_has_unexpired_approval` | Proven |
 | 6b | **Cross-message replay set + TTL cap**: a re-presented nonce is refused and stale approvals are capped | v2 A3 `validateAndConsumeWithStore`, `ttlWithinCap`, `nonceConsumed` over an in-memory, per-session fail-closed replay store (`listReplayStore`; cross-restart persistence is on the roadmap) | Host-enforced, fail-closed; the no-replay-after-consume lifecycle invariant (A5, state monotonicity) is on the sprint plan, not yet a theorem |
-| 7 | **Canonical signed approval**: signature over exact canonical bytes | `signed_parse_canonical` (byte-guard: `raw == serializeAst` + `eq_of_beq`) | Proven |
+| 7 | **Canonical signed approval**: signature over exact canonical `(target, session, issuedAt, expiry, nonce)` bytes | `signed_parse_canonical` (byte-guard: `raw == serializeAst` + `eq_of_beq`) | Proven |
 
 ### Note on "complete mediation" (property 1): stated plainly
 

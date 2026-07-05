@@ -59,10 +59,10 @@ Validation is constructive. A successful result carries a `ValidCapability` witn
 M2 defines the signed message as exactly:
 
 ```text
-(target, session, expiry)
+(target, session, issuedAt, expiry, nonce)
 ```
 
-The message is represented as a canonical AST-shaped value through `signedMessageAst`. M2's crypto is stubbed by `stubSignatureFor`, but it signs/verifies this message shape only. M3 must serialize this same canonical message value; M5 must verify Ed25519 over those canonical bytes, not over a separate ad-hoc encoding.
+The message is represented as a canonical AST-shaped value through `signedMessageAst`. M2's crypto was stubbed by `stubSignatureFor`, but the shape is this five-field value. M3 serializes the same canonical message value; M5 verifies Ed25519 over those canonical bytes, not over a separate ad-hoc encoding.
 
 M3 scaffold strengthening: `ValidCapability` now carries `ast_canonical : IsCanonical ast`. This is additive to M2's witness facts; the six M2 witness lemmas remain unchanged. The strengthening is required so `serialize` can be proof-gated without making canonicality circular through `parse` or `serialize`.
 
@@ -154,7 +154,7 @@ signedParse : RawBytes -> Option {ast // IsCanonical ast}
 signedMessageRawFor : SignedMessage -> RawBytes
 ```
 
-`signedParse` parses the raw signed-message bytes and then rejects unless `raw == serializeAst parsedAst`. `Approval` now carries `signedMessageRaw`, and `verifySignature` checks the signature against that exact raw field only after `signedParse` accepts it and the parsed signed-message AST matches `(target, session, expiry)`.
+`signedParse` parses the raw signed-message bytes and then rejects unless `raw == serializeAst parsedAst`. `Approval` now carries `signedMessageRaw`, and `verifySignature` checks the signature against that exact raw field only after `signedParse` accepts it and the parsed signed-message AST matches `(target, session, issuedAt, expiry, nonce)`.
 
 This closes the reviewed bypass where non-canonical bytes could be accepted by parsing, normalised to canonical bytes, and then verified over the normalised payload. Non-canonical witnesses such as trailing whitespace, leading whitespace, and interior insignificant whitespace are rejected by the signed path and make `decide` return `Block`.
 
@@ -196,7 +196,7 @@ axioms (captured in `v2/milestones/05-sign/axioms.txt`). The proofs consume
 ### Claim discipline (origin authenticated, NOT proven)
 
 Now allowed: **"origin authenticated via Ed25519 over the canonical
-`(target, session, expiry)` bytes."** Origin is **NOT proven in Lean** — it rests on
+`(target, session, issuedAt, expiry, nonce)` bytes."** Origin is **NOT proven in Lean** — it rests on
 the channel (the signature) and on the explicit TCB assumption **A3 = "the vendored
 Ed25519 verify is correct."** The PROOF guarantees ordering/canonicality and
 seal-internal mediation; the CHANNEL guarantees origin. Authenticating origin is not

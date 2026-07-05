@@ -34,7 +34,7 @@ Theme: **the model is untrusted; the tool boundary is trusted only if proved.**
 
 **Sprint 1, Boundary hardening.** Production host integration beyond stdio; harden the policy loader; lock the canonical arg-tree hash + tool-version + manifest-digest. Deliver the v2 core as the enforced path.
 
-**Sprint 2, Signed approvals end to end.** Ed25519 over (target, session, expiry, nonce); key management story; the full canonical signed-message path in production, not just the proof.
+**Sprint 2, Signed approvals end to end.** Ed25519 over (target, session, issuedAt, expiry, nonce); key management story; the full canonical signed-message path in production, not just the proof.
 
 **Sprint 3, A2 differential harness (headline research output).** The hardest honest problem at this boundary, and we lead with it rather than defer it. `seal` classifies bytes; the upstream server executes bytes. If those interpretations diverge (the HTTP-request-smuggling / parser-differential family), the non-bypass theorem holds while the mediated event is the wrong event. This is the one residual a formal-methods referee will press, so it is a primary deliverable, not a footnote:
 - **Measure** the differential: a fuzzing rig that feeds adversarial / ambiguous / non-canonical payloads to `seal`'s strict-subset parser and to real upstream MCP servers (Python, Node), and diffs the resulting target interpretation.

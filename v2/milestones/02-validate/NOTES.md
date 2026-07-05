@@ -26,10 +26,10 @@ Success returns a proof-carrying witness. Failure returns `none`, so parse-valid
 The signed message is exactly:
 
 ```text
-(target, session, expiry)
+(target, session, issuedAt, expiry, nonce)
 ```
 
-M2 represents that message as `SignedMessage` and `signedMessageAst`. The M2 signature check is a stub, but it verifies only this message shape. M3 must reuse the single canonical serializer for `signedMessageAst`; M5 must verify real Ed25519 over those canonical bytes.
+M2 represents that message as `SignedMessage` and `signedMessageAst`. The M2 signature check is a stub, but it verifies only this five-field message shape. M3 must reuse the single canonical serializer for `signedMessageAst`; M5 must verify real Ed25519 over those canonical bytes.
 
 ## M6 carry-forward
 
