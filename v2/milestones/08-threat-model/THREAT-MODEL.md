@@ -91,7 +91,7 @@ footprint), build-locked by the `v2_m*_axiom_check` `#guard_msgs` gates.
   `none` unconditionally, and `decide` maps every `none` to `Block` (`Decision` has only `Block` and
   `Allow` — no third constructor) — there is no input for which the core "falls through". Moreover,
   every SUCCESSFUL public parse yields a CANONICAL AST: the accepted language is the strict,
-  unambiguous subset (no duplicate keys, strict numeric bounds, ASCII-only), so a non-canonical form
+  unambiguous subset (no duplicate keys, strict numeric bounds, canonical lowercase-escaped Unicode), so a non-canonical form
   cannot enter the pipeline.
 - **Does NOT guarantee:** this covers the Lean CORE only — the host glue's own fail-closed behaviour is
   an engineered obligation (**A3**), not a theorem. And canonicality is seal-INTERNAL structure: it
@@ -170,7 +170,7 @@ NOTES. None is described as "eliminated" or "entirely closed".
   out of scope. *Status:* stated, deployment precondition.
 - **A2 — server-parse equivalence (THE parser-differential).** The target interprets `serialize(ast)`
   as seal's schema intends. *Status:* **minimised by construction — NOT closed.** Mitigation: a strict,
-  unambiguous canonical subset (no duplicate keys, strict numeric bounds, ASCII-only), manifest pinning
+  unambiguous canonical subset (no duplicate keys, strict numeric bounds, canonical lowercase-escaped Unicode), manifest pinning
   at session start, and a target hash (canonicalised argument tree + tool-version + manifest-digest).
   This shrinks the differential to a per-server discharge obligation; it is **unprovable in general**
   and must never be called closed.

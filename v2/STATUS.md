@@ -10,7 +10,7 @@ M1 adds the v2 parser beside the shipped v1 sidecar. The v1 `seal` binary remain
 parse : RawBytes -> Option AST
 ```
 
-The parser is total and fail-closed into `Option`. Malformed, ambiguous, duplicate-key, non-ASCII, partial, trailing-byte, or non-canonical numeric inputs return `none`.
+The parser is total and fail-closed into `Option`. Malformed, ambiguous, duplicate-key, partial, trailing-byte, non-canonical-numeric, literal-non-ASCII, and non-canonical-escape inputs return `none`. Strings may denote any Unicode scalar sequence when written in SealV2's canonical lowercase escape form (`\uXXXX` or short escapes), with exactly one canonical byte representation per string.
 
 ### Canonical decimal grammar
 

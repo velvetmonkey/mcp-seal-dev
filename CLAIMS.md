@@ -28,9 +28,14 @@ bypassed."
 ## The parser is a canonical mediation profile, NOT "the JSON parser"
 
 `SealV2/Parser.lean` accepts a **strict canonical subset**, not arbitrary JSON:
-printable-ASCII strings only; numbers reject exponent notation, trailing-zero
-fractions, leading-zero forms, and negative zero; no duplicate keys. Malformed
-or ambiguous bytes evaluate to `none` (fail-closed).
+strings may denote any Unicode scalar sequence, but non-ASCII and control
+characters must use SealV2's canonical lowercase escape form (`\uXXXX` plus the
+short escapes), with exactly one canonical byte representation per string;
+numbers reject exponent notation, trailing-zero fractions, leading-zero forms,
+and negative zero; no duplicate keys. Literal non-ASCII bytes, non-canonical
+escapes (uppercase hex, long form where a short or literal form is required,
+lone or misordered surrogates), and malformed or ambiguous bytes evaluate to
+`none` (fail-closed).
 
 Call it the **canonical mediation profile**. If you call it "the JSON parser" a
 reviewer will throw Unicode, escapes, exponent numbers, duplicate keys, or

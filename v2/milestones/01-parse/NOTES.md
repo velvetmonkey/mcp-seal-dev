@@ -11,7 +11,7 @@ The parser accepts a strict JSON subset and rejects malformed or ambiguous raw b
 ## Strict subset
 
 - Objects reject duplicate keys.
-- Strings are printable ASCII only and reject escapes.
+- Strings were printable ASCII only in M1; Wave 2 (SealV2/Escape.lean) extended this to a canonical lowercase escape form admitting all Unicode with one byte representation each.
 - Arrays and objects reject trailing commas.
 - Top-level trailing bytes reject.
 - Whitespace is allowed between JSON tokens.
