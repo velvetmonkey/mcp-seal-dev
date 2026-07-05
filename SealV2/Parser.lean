@@ -1,5 +1,7 @@
 /- SPDX-License-Identifier: Apache-2.0 -/
 
+import SealV2.Escape
+
 namespace SealV2
 
 abbrev RawBytes := String
@@ -23,8 +25,14 @@ inductive AST where
 def isPrintableAsciiStringChar (c : Char) : Bool :=
   0x20 ≤ c.toNat && c.toNat ≤ 0x7e && c != '"' && c != '\\'
 
-def isCanonicalString (value : String) : Bool :=
-  value.toList.all isPrintableAsciiStringChar
+/-- Every abstract string is admissible: the canonical escape form
+    (`SealV2/Escape.lean`) encodes ALL Unicode strings with exactly one byte
+    representation, so canonicality is a property of BYTES, enforced
+    structurally by the escape-aware string parser — not a filter on values.
+    (Previously this restricted values to printable ASCII; the predicate is
+    kept so the guard plumbing and canonical-AST structure are unchanged.) -/
+def isCanonicalString (_ : String) : Bool :=
+  true
 
 def isDigitChar (c : Char) : Bool :=
   '0'.toNat ≤ c.toNat && c.toNat ≤ '9'.toNat
@@ -135,10 +143,51 @@ def parseLiteral (literal : List Char) (value : AST) (chars : List Char) :
   else
     none
 
+/-- Escape-aware canonical string content parser. Accepts EXACTLY the output
+    of `escapeList` (`SealV2/Escape.lean`) up to the closing quote:
+
+    * literal printable ASCII (minus `"` `\`) — unchanged from the ASCII-only
+      grammar; literal non-ASCII bytes REJECT (they must be `\u`-escaped);
+    * `\u` + exactly four LOWERCASE hex digits — accepted only for scalars
+      whose canonical form is the long form (`uEscapeScalarOk`); a high
+      surrogate additionally requires an immediately following low-surrogate
+      escape (astral pair), anything else (lone/misordered surrogate,
+      uppercase hex, long form where a literal/short form is required)
+      REJECTS;
+    * `\` + one short-escape letter (`" \ n t r b f`) — the five controls and
+      the two specials; every other `\x` (including `\/` and truncated `\u`)
+      REJECTS.
+
+    Structural recursion on the character list (no fuel): every recursive
+    call is on a strict pattern suffix. -/
 def parseStringCharsUnchecked (acc : String) (chars : List Char) :
     Option (String × List Char) :=
   match chars with
   | '"' :: rest => some (acc, rest)
+  | '\\' :: 'u' :: h1 :: h2 :: h3 :: h4 :: rest =>
+      match fromHex4? h1 h2 h3 h4 with
+      | none => none
+      | some n =>
+          if uEscapeScalarOk n then
+            parseStringCharsUnchecked (acc ++ String.singleton (Char.ofNat n)) rest
+          else if 0xd800 ≤ n ∧ n ≤ 0xdbff then
+            match rest with
+            | '\\' :: 'u' :: k1 :: k2 :: k3 :: k4 :: rest2 =>
+                match fromHex4? k1 k2 k3 k4 with
+                | none => none
+                | some m =>
+                    if 0xdc00 ≤ m ∧ m ≤ 0xdfff then
+                      parseStringCharsUnchecked
+                        (acc ++ String.singleton
+                          (Char.ofNat (0x10000 + (n - 0xd800) * 1024 + (m - 0xdc00))))
+                        rest2
+                    else none
+            | _ => none
+          else none
+  | '\\' :: c :: rest =>
+      match unescapeShort? c with
+      | some d => parseStringCharsUnchecked (acc ++ String.singleton d) rest
+      | none => none
   | c :: rest =>
       if isAsciiStringChar c then
         parseStringCharsUnchecked (acc ++ String.singleton c) rest

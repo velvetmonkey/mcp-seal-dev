@@ -278,33 +278,225 @@ theorem serializeDecimal_firstChar_pos (value : Decimal)
     grind
   unfold serializeDecimal; aesop
 
-theorem parseStringCharsUnchecked_acc (acc : String) (value : String) (rest : List Char)
-    (hcan : isCanonicalString value = true) :
-    parseStringCharsUnchecked acc (value.toList ++ '"' :: rest) = some (acc ++ value, rest) := by
-  suffices h : ∀ (acc : String) (cs : List Char),
-      cs.all isAsciiStringChar = true →
-      parseStringCharsUnchecked acc (cs ++ '"' :: rest) = some (acc ++ String.ofList cs, rest) by
-    specialize h acc value.toList hcan
-    simp [String.ofList_toList] at h
-    exact h
-  intro acc cs hcs
+theorem escapeString_toList (s : String) :
+    (escapeString s).toList = escapeList s.toList := by
+  simp [escapeString, String.toList_ofList]
+
+/-- Valid scalars in the long-form `\u` classes satisfy the canonicality
+    check. The five short-escape controls, printable ASCII, and (by `Char`
+    validity) the surrogate gap are excluded by hypothesis. -/
+private theorem uEscapeScalarOk_of_class (n : Nat)
+    (hval : n < 0xd800 ∨ (0xdfff < n ∧ n < 0x110000))
+    (hnp : ¬(0x20 ≤ n ∧ n ≤ 0x7e))
+    (ha : n ≠ 0xa) (ht : n ≠ 0x9) (hr : n ≠ 0xd) (hb : n ≠ 0x8) (hf : n ≠ 0xc)
+    (hlt : n < 0x10000) :
+    uEscapeScalarOk n = true := by
+  unfold uEscapeScalarOk
+  by_cases h1 : n < 0x20
+  · rw [if_pos h1]; unfold shortEscapeLetter?
+    rw [if_neg ha, if_neg ht, if_neg hr, if_neg hb, if_neg hf]; rfl
+  · rw [if_neg h1]
+    by_cases h2 : n = 0x7f
+    · rw [if_pos h2]
+    · rw [if_neg h2]
+      by_cases h3 : 0x80 ≤ n ∧ n < 0xd800
+      · rw [if_pos h3]
+      · rw [if_neg h3, if_pos (show 0xe000 ≤ n ∧ n ≤ 0xffff from ⟨by omega, by omega⟩)]
+
+/-- The parser consumes one literal (non-quote, non-backslash, printable
+    ASCII) character and appends it. The three coverage obligations left by the
+    match compiler (the quote and the two backslash arms) close against the
+    class hypotheses. -/
+private theorem parse_lit_step (c : Char) (acc : String) (tail : List Char)
+    (hq : c ≠ '"') (hbk : c ≠ '\\') (hascii : isAsciiStringChar c = true) :
+    parseStringCharsUnchecked acc (c :: tail)
+      = parseStringCharsUnchecked (acc ++ String.singleton c) tail := by
+  rw [parseStringCharsUnchecked]
+  simp only [hq, hbk, hascii]
+  all_goals first
+    | rfl
+    | simp only [if_true]
+    | exact hq
+    | (intro h; exact absurd h hq)
+    | (intro _ _ _ _ _ h _; exact absurd h hbk)
+    | (intro _ _ h _; exact absurd h hbk)
+    | simp_all
+
+/-- **The per-character decode step.** The parser consumes exactly
+    `escapeChar c` and appends `c` — for EVERY `Char`, with any tail. -/
+private theorem parseStringCharsUnchecked_escapeChar (c : Char) (acc : String)
+    (tail : List Char) :
+    parseStringCharsUnchecked acc (escapeChar c ++ tail)
+      = parseStringCharsUnchecked (acc ++ String.singleton c) tail := by
+  have hval : c.toNat < 0xd800 ∨ (0xdfff < c.toNat ∧ c.toNat < 0x110000) := c.valid
+  by_cases hq : c = '"'
+  · rw [hq]; rfl
+  by_cases hbk : c = '\\'
+  · rw [hbk]; rfl
+  by_cases hpr : 0x20 ≤ c.toNat ∧ c.toNat ≤ 0x7e
+  · have hesc : escapeChar c = [c] := by simp [escapeChar, hq, hbk, hpr]
+    have hascii : isAsciiStringChar c = true := by
+      simp [isAsciiStringChar, hpr.1, hpr.2, hq, hbk]
+    rw [hesc]; exact parse_lit_step c acc tail hq hbk hascii
+  · by_cases hna : c.toNat = 0xa
+    · have hesc : escapeChar c = ['\\', 'n'] := by simp [escapeChar, hq, hbk, hpr, hna]
+      have hc : c = Char.ofNat 0xa := by rw [← hna, Char.ofNat_toNat]
+      rw [hesc, hc]
+      show parseStringCharsUnchecked acc ('\\' :: 'n' :: tail) = _
+      rw [parseStringCharsUnchecked]
+      all_goals first | rfl | (intro _ _ _ _ _ h _; exact absurd h (by decide))
+    by_cases hnt : c.toNat = 0x9
+    · have hesc : escapeChar c = ['\\', 't'] := by simp [escapeChar, hq, hbk, hpr, hna, hnt]
+      have hc : c = Char.ofNat 0x9 := by rw [← hnt, Char.ofNat_toNat]
+      rw [hesc, hc]
+      show parseStringCharsUnchecked acc ('\\' :: 't' :: tail) = _
+      rw [parseStringCharsUnchecked]
+      all_goals first | rfl | (intro _ _ _ _ _ h _; exact absurd h (by decide))
+    by_cases hnr : c.toNat = 0xd
+    · have hesc : escapeChar c = ['\\', 'r'] := by
+        simp [escapeChar, hq, hbk, hpr, hna, hnt, hnr]
+      have hc : c = Char.ofNat 0xd := by rw [← hnr, Char.ofNat_toNat]
+      rw [hesc, hc]
+      show parseStringCharsUnchecked acc ('\\' :: 'r' :: tail) = _
+      rw [parseStringCharsUnchecked]
+      all_goals first | rfl | (intro _ _ _ _ _ h _; exact absurd h (by decide))
+    by_cases hnb : c.toNat = 0x8
+    · have hesc : escapeChar c = ['\\', 'b'] := by
+        simp [escapeChar, hq, hbk, hpr, hna, hnt, hnr, hnb]
+      have hc : c = Char.ofNat 0x8 := by rw [← hnb, Char.ofNat_toNat]
+      rw [hesc, hc]
+      show parseStringCharsUnchecked acc ('\\' :: 'b' :: tail) = _
+      rw [parseStringCharsUnchecked]
+      all_goals first | rfl | (intro _ _ _ _ _ h _; exact absurd h (by decide))
+    by_cases hnf : c.toNat = 0xc
+    · have hesc : escapeChar c = ['\\', 'f'] := by
+        simp [escapeChar, hq, hbk, hpr, hna, hnt, hnr, hnb, hnf]
+      have hc : c = Char.ofNat 0xc := by rw [← hnf, Char.ofNat_toNat]
+      rw [hesc, hc]
+      show parseStringCharsUnchecked acc ('\\' :: 'f' :: tail) = _
+      rw [parseStringCharsUnchecked]
+      all_goals first | rfl | (intro _ _ _ _ _ h _; exact absurd h (by decide))
+    by_cases hbmp : c.toNat < 0x10000
+    · have hesc : escapeChar c = '\\' :: 'u' :: toHex4 c.toNat := by
+        simp [escapeChar, hq, hbk, hpr, hna, hnt, hnr, hnb, hnf, hbmp]
+      have hok : uEscapeScalarOk c.toNat = true :=
+        uEscapeScalarOk_of_class c.toNat hval hpr hna hnt hnr hnb hnf hbmp
+      rw [hesc]
+      show parseStringCharsUnchecked acc
+        ('\\' :: 'u' :: hexDigitChar (c.toNat / 4096 % 16) :: hexDigitChar (c.toNat / 256 % 16)
+          :: hexDigitChar (c.toNat / 16 % 16) :: hexDigitChar (c.toNat % 16) :: tail) = _
+      rw [parseStringCharsUnchecked, fromHex4?_toHex4 c.toNat hbmp]
+      simp only [hok, if_true, Char.ofNat_toNat]
+    · have hn : 0x10000 ≤ c.toNat := Nat.le_of_not_lt hbmp
+      have hcap : c.toNat < 0x110000 := by omega
+      have hmlt : (c.toNat - 0x10000) % 1024 < 1024 := Nat.mod_lt _ (by decide)
+      have hhi_lt : 0xd800 + (c.toNat - 0x10000) / 1024 < 0x10000 := by omega
+      have hlo_lt : 0xdc00 + (c.toNat - 0x10000) % 1024 < 0x10000 := by omega
+      have hesc : escapeChar c
+          = ('\\' :: 'u' :: toHex4 (0xd800 + (c.toNat - 0x10000) / 1024))
+            ++ ('\\' :: 'u' :: toHex4 (0xdc00 + (c.toNat - 0x10000) % 1024)) := by
+        simp [escapeChar, hq, hbk, hpr, hna, hnt, hnr, hnb, hnf, hbmp]
+      have hok_hi : uEscapeScalarOk (0xd800 + (c.toNat - 0x10000) / 1024) = false := by
+        unfold uEscapeScalarOk
+        rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+      rw [hesc]
+      show parseStringCharsUnchecked acc
+        ('\\' :: 'u' :: hexDigitChar ((0xd800 + (c.toNat - 0x10000) / 1024) / 4096 % 16)
+          :: hexDigitChar ((0xd800 + (c.toNat - 0x10000) / 1024) / 256 % 16)
+          :: hexDigitChar ((0xd800 + (c.toNat - 0x10000) / 1024) / 16 % 16)
+          :: hexDigitChar ((0xd800 + (c.toNat - 0x10000) / 1024) % 16)
+          :: ('\\' :: 'u' :: hexDigitChar ((0xdc00 + (c.toNat - 0x10000) % 1024) / 4096 % 16)
+            :: hexDigitChar ((0xdc00 + (c.toNat - 0x10000) % 1024) / 256 % 16)
+            :: hexDigitChar ((0xdc00 + (c.toNat - 0x10000) % 1024) / 16 % 16)
+            :: hexDigitChar ((0xdc00 + (c.toNat - 0x10000) % 1024) % 16) :: tail)) = _
+      rw [parseStringCharsUnchecked, fromHex4?_toHex4 (0xd800 + (c.toNat - 0x10000) / 1024) hhi_lt]
+      simp only [hok_hi, Bool.false_eq_true, if_false]
+      rw [if_pos (show 0xd800 ≤ 0xd800 + (c.toNat - 0x10000) / 1024
+        ∧ 0xd800 + (c.toNat - 0x10000) / 1024 ≤ 0xdbff from ⟨by omega, by omega⟩)]
+      simp only [fromHex4?_toHex4 (0xdc00 + (c.toNat - 0x10000) % 1024) hlo_lt]
+      rw [if_pos (show 0xdc00 ≤ 0xdc00 + (c.toNat - 0x10000) % 1024
+        ∧ 0xdc00 + (c.toNat - 0x10000) % 1024 ≤ 0xdfff from ⟨by omega, by omega⟩)]
+      have hscalar : 0x10000 + (0xd800 + (c.toNat - 0x10000) / 1024 - 0xd800) * 1024
+          + (0xdc00 + (c.toNat - 0x10000) % 1024 - 0xdc00) = c.toNat := by
+        have := Nat.div_add_mod (c.toNat - 0x10000) 1024
+        omega
+      rw [hscalar, Char.ofNat_toNat]
+private theorem escapeList_cons (c : Char) (cs : List Char) :
+    escapeList (c :: cs) = escapeChar c ++ escapeList cs := by
+  simp [escapeList, List.flatMap_cons]
+
+/-- The parser decodes a whole escaped character list up to the closing
+    quote — for EVERY list, no canonicity hypothesis (the encoding is total). -/
+theorem parseStringCharsUnchecked_escapeList (cs : List Char) (acc : String)
+    (rest : List Char) :
+    parseStringCharsUnchecked acc (escapeList cs ++ '"' :: rest)
+      = some (acc ++ String.ofList cs, rest) := by
   induction cs generalizing acc with
-  | nil => simp [parseStringCharsUnchecked]
-  | cons c cs' ih =>
-    have hc : isAsciiStringChar c = true :=
-      List.all_eq_true.mp hcs c (List.mem_cons_self ..)
-    have hcs' : cs'.all isAsciiStringChar = true :=
-      List.all_eq_true.mpr (fun x hx => List.all_eq_true.mp hcs x (List.mem_cons_of_mem c hx))
-    have hc_ne_quote : c ≠ '"' := by
-      intro heq; subst heq; unfold isAsciiStringChar at hc; simp +decide at hc
-    simp only [List.cons_append]
-    unfold parseStringCharsUnchecked
-    simp [hc]
-    rw [push_eq_append_singleton]
-    rw [ih (acc ++ String.singleton c) hcs']
-    congr 1; congr 1
+  | nil =>
+    show parseStringCharsUnchecked acc ('"' :: rest) = _
+    rw [parseStringCharsUnchecked]
+    congr 2
     rw [← String.toList_inj]
-    simp [String.toList_append, String.toList_ofList]
+    simp
+  | cons c cs' ih =>
+    rw [escapeList_cons, List.append_assoc,
+      parseStringCharsUnchecked_escapeChar c acc (escapeList cs' ++ '"' :: rest),
+      ih (acc ++ String.singleton c)]
+    congr 2
+    rw [← String.toList_inj]
+    simp [String.toList_append]
+
+/-- **The decode of a serialized string body.** Escaped form in, abstract
+    string out — total, no canonicity hypothesis. -/
+theorem parseStringCharsUnchecked_acc (acc : String) (value : String) (rest : List Char) :
+    parseStringCharsUnchecked acc (escapeList value.toList ++ '"' :: rest)
+      = some (acc ++ value, rest) := by
+  have h := parseStringCharsUnchecked_escapeList value.toList acc rest
+  rwa [String.ofList_toList] at h
+
+/- ============================================================
+   Injectivity of the canonical escape (the one-representation rule).
+   ============================================================ -/
+
+/-- The canonical char-list escape is injective: distinct content lists
+    escape to distinct byte lists. Proof is the parser left-inverse at
+    `rest := []` — the decoder recovers the content, so equal escapes force
+    equal content. -/
+theorem escapeList_injective (a b : List Char) (h : escapeList a = escapeList b) :
+    a = b := by
+  have ha := parseStringCharsUnchecked_escapeList a "" []
+  have hb := parseStringCharsUnchecked_escapeList b "" []
+  rw [h, hb] at ha
+  simp only [Option.some.injEq, Prod.mk.injEq] at ha
+  have hof : String.ofList a = String.ofList b := by
+    have := ha.1; simpa using this.symm
+  have := congrArg String.toList hof
+  rwa [String.toList_ofList, String.toList_ofList] at this
+
+/-- The canonical string escape is injective. -/
+theorem escapeString_injective (a b : String) (h : escapeString a = escapeString b) :
+    a = b := by
+  have hla : escapeList a.toList = escapeList b.toList := by
+    have hc := congrArg String.toList h
+    rwa [escapeString_toList, escapeString_toList] at hc
+  have hll := escapeList_injective a.toList b.toList hla
+  have h2 := congrArg String.ofList hll
+  rwa [String.ofList_toList, String.ofList_toList] at h2
+
+/-- The full quoted-string serialization `"\"" ++ escapeString s ++ "\""` is
+    injective: a serialized string body pins down its abstract string. -/
+theorem serializeString_injective (a b : String)
+    (h : ("\"" ++ escapeString a ++ "\"") = ("\"" ++ escapeString b ++ "\"")) :
+    a = b := by
+  have hc := congrArg String.toList h
+  simp only [String.toList_append] at hc
+  have hq : ("\"" : String).toList = ['"'] := rfl
+  rw [hq] at hc
+  simp only [List.append_assoc, List.cons_append, List.nil_append,
+    List.cons.injEq, List.append_cancel_right_eq] at hc
+  have htl : (escapeString a).toList = (escapeString b).toList := hc.2
+  have hes : escapeString a = escapeString b := by rw [← String.toList_inj]; exact htl
+  exact escapeString_injective a b hes
 
 /- ============================================================
    GROUP B: serializer/parser roundtrip, per type.
@@ -364,17 +556,17 @@ set_option maxHeartbeats 6400000 in
 theorem serialize_roundtrip_string (value : String)
     (h : IsCanonical (.string value)) :
     parse (serializeAst ⟨.string value, h⟩) = some (.string value) := by
-  have hcs : isCanonicalString value = true := h
-  change parse ("\"" ++ value ++ "\"") = some (.string value)
+  change parse ("\"" ++ escapeString value ++ "\"") = some (.string value)
   have hq : ("\"" : String).toList = ['"'] := by decide
   simp only [parse, parseValueFuel, guardCanonicalResult, String.toList_append, hq,
-    List.length_append, List.length_cons, List.length_nil, List.append_assoc]
+    escapeString_toList, List.length_append, List.length_cons, List.length_nil,
+    List.append_assoc]
   simp only [parseValueFuelUnchecked]
   simp only [List.cons_append, skipWs, isWs]
   simp +decide
   simp only [parseString, parseStringChars, guardCanonicalStringResult]
-  rw [parseStringCharsUnchecked_acc "" value [] hcs]
-  simp [hcs, IsCanonical, isCanonicalAst, skipWs]
+  rw [parseStringCharsUnchecked_acc "" value []]
+  simp [isCanonicalString, IsCanonical, isCanonicalAst, skipWs]
 
 /- ============================================================
    GROUP B2: Container roundtrip helpers
@@ -427,12 +619,12 @@ theorem isCanonicalObject_of_reverse (L : List (String × AST))
 
 /-! ## parseString roundtrip for keys -/
 
-theorem parseString_roundtrip (key : String) (afterKey : List Char)
-    (hcan : isCanonicalString key = true) :
-    parseString ('"' :: key.toList ++ '"' :: afterKey) = some (key, afterKey) := by
-  have h := parseStringCharsUnchecked_acc "" key afterKey hcan
+theorem parseString_roundtrip (key : String) (afterKey : List Char) :
+    parseString ('"' :: escapeList key.toList ++ '"' :: afterKey)
+      = some (key, afterKey) := by
+  have h := parseStringCharsUnchecked_acc "" key afterKey
   simp only [parseString, List.cons_append, parseStringChars, guardCanonicalStringResult, h]
-  simp [hcan]
+  simp [isCanonicalString]
 
 /-! ## First-character properties -/
 
@@ -515,7 +707,7 @@ private theorem serializeAstValue_nonempty (ast : AST) (hcan : isCanonicalAst as
         exact ⟨c, _, rfl⟩
   | .string s =>
     simp only [serializeAstValue, String.toList_append]
-    exact ⟨'"', s.toList ++ ['"'], by simp; rfl⟩
+    exact ⟨'"', (escapeString s).toList ++ ['"'], by simp; rfl⟩
   | .array items =>
     simp only [serializeAstValue, String.toList_append]
     exact ⟨'[', (serializeArrayValue items).toList ++ [']'], by simp; rfl⟩
@@ -681,22 +873,23 @@ theorem parseArrayFuelUnchecked_roundtrip
 
 private theorem serializeObjectValue_singleton_toList (k : String) (v : AST) :
     (serializeObjectValue [(k, v)]).toList =
-      ['"'] ++ k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList := by
-  show ("\"" ++ k ++ "\":" ++ serializeAstValue v).toList = _
+      ['"'] ++ escapeList k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList := by
+  show ("\"" ++ escapeString k ++ "\":" ++ serializeAstValue v).toList = _
   have h1 : ("\"" : String).toList = ['"'] := by decide
   have h2 : ("\":" : String).toList = ['"', ':'] := by decide
-  simp [String.toList_append, h1, h2]
+  simp [String.toList_append, h1, h2, escapeString_toList]
 
 private theorem serializeObjectValue_cons_cons_toList' (k : String) (v : AST)
     (k2 : String) (v2 : AST) (rest : List (String × AST)) :
     (serializeObjectValue ((k, v) :: (k2, v2) :: rest)).toList =
-      ['"'] ++ k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList ++
+      ['"'] ++ escapeList k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList ++
       [','] ++ (serializeObjectValue ((k2, v2) :: rest)).toList := by
-  show ("\"" ++ k ++ "\":" ++ serializeAstValue v ++ "," ++ serializeObjectValue ((k2, v2) :: rest)).toList = _
+  show ("\"" ++ escapeString k ++ "\":" ++ serializeAstValue v ++ ","
+    ++ serializeObjectValue ((k2, v2) :: rest)).toList = _
   have h1 : ("\"" : String).toList = ['"'] := by decide
   have h2 : ("\":" : String).toList = ['"', ':'] := by decide
   have h3 : ("," : String).toList = [','] := by decide
-  simp [String.toList_append, h1, h2, h3]
+  simp [String.toList_append, h1, h2, h3, escapeString_toList]
 
 private theorem serializeObjectValue_head_is_quote (kv : String × AST) (rest : List (String × AST)) :
     ∃ tail, (serializeObjectValue (kv :: rest)).toList = '"' :: tail := by
@@ -704,11 +897,12 @@ private theorem serializeObjectValue_head_is_quote (kv : String × AST) (rest : 
   cases rest with
   | nil =>
     rw [serializeObjectValue_singleton_toList]
-    exact ⟨k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList, by simp [List.cons_append]⟩
+    exact ⟨escapeList k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList,
+      by simp [List.cons_append]⟩
   | cons hd tl =>
     obtain ⟨k2, v2⟩ := hd
     rw [serializeObjectValue_cons_cons_toList' k v k2 v2 tl]
-    exact ⟨k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList ++ [','] ++
+    exact ⟨escapeList k.toList ++ ['"', ':'] ++ (serializeAstValue v).toList ++ [','] ++
       (serializeObjectValue ((k2, v2) :: tl)).toList, by simp [List.cons_append]⟩
 
 -- duplicateKey shift: if (k == k') = false and duplicateKey k' acc = false, then duplicateKey k' ((k,v)::acc) = false
@@ -775,7 +969,7 @@ theorem parseObjectFuelUnchecked_roundtrip
       simp only [] -- reduce Nat match
       split
       · rename_i h; have := (List.cons.inj h).1; contradiction
-      · have hps := parseString_roundtrip k (':' :: (String.toList (serializeAstValue v) ++ '}' :: rest)) hcan_k
+      · have hps := parseString_roundtrip k (':' :: (String.toList (serializeAstValue v) ++ '}' :: rest))
         simp only [List.cons_append] at hps
         rw [hps]
         simp only []
@@ -801,7 +995,7 @@ theorem parseObjectFuelUnchecked_roundtrip
       simp only [] -- reduce Nat match
       split
       · rename_i h; have := (List.cons.inj h).1; contradiction
-      · have hps := parseString_roundtrip k (':' :: (String.toList (serializeAstValue v) ++ ',' :: ((serializeObjectValue ((k2, v2) :: tl2)).toList ++ '}' :: rest))) hcan_k
+      · have hps := parseString_roundtrip k (':' :: (String.toList (serializeAstValue v) ++ ',' :: ((serializeObjectValue ((k2, v2) :: tl2)).toList ++ '}' :: rest)))
         simp only [List.cons_append] at hps
         rw [hps]
         simp only []
@@ -906,40 +1100,23 @@ private theorem value_roundtrip_worker_number (v : Decimal) (rest : List Char) (
     simp [guardCanonicalResult, hcanAst]
 
 private theorem value_roundtrip_worker_string (s : String) (rest : List Char) (fuel : Nat)
-    (hcan : isCanonicalString s = true)
+    (_hcan : isCanonicalString s = true)
     (hfuel : fuel ≥ (serializeAstValue (.string s)).toList.length + 1) (_hrest : GoodRest rest) :
     parseValueFuelUnchecked fuel ((serializeAstValue (.string s)).toList ++ rest) = some (.string s, rest) := by
-  obtain ⟨c, cs, h⟩ : ∃ c cs, (serializeAstValue (AST.string s)).toList = c :: cs := by
-    exact?;
-  rcases fuel with ( _ | fuel ) <;> simp_all +decide [ parseValueFuelUnchecked ];
-  -- Since `c` is not a whitespace character, `skipWs` will return `c :: (cs ++ rest)`.
-  have h_skipWs : skipWs (c :: (cs ++ rest)) = c :: (cs ++ rest) := by
-    apply skipWs_cons_of_not_ws;
-    have := serializeAstValue_head_not_ws ( AST.string s ) ( by
-      exact? ) c cs h; aesop;
-  have h_c : c = '"' := by
-    replace h := congrArg List.head? h; simp_all +decide [ serializeAstValue ] ;
-    cases h ; trivial;
-  rw [ h_skipWs, h_c ];
-  rw [ show cs = s.toList ++ ['\"'] from ?_ ];
-  · rw [ show parseString ( '\"' :: ( s.toList ++ ['\"'] ++ rest ) ) = some ( s, rest ) from ?_ ];
-    · rfl;
-    · have hassoc : s.toList ++ ['\"'] ++ rest = s.toList ++ '\"' :: rest := by
-        simp [ List.append_assoc ];
-      rw [ hassoc ];
-      show parseStringChars "" ( s.toList ++ '\"' :: rest ) = some ( s, rest );
-      unfold parseStringChars;
-      rw [ parseStringCharsUnchecked_acc "" s rest hcan ];
-      have hempty : ( "" : String ) ++ s = s := by simp;
-      rw [ hempty ];
-      simp [ guardCanonicalStringResult, hcan ];
-  · have hquote : "\"".toList = ['"'] := rfl
-    have hser : (serializeAstValue (AST.string s)).toList = '"' :: (s.toList ++ ['"']) := by
-      show ("\"" ++ s ++ "\"").toList = '"' :: (s.toList ++ ['"'])
-      simp [String.toList_append, hquote]
-    rw [hser] at h
-    simp only [List.cons.injEq] at h
-    exact h.2.symm
+  have hquote : ("\"" : String).toList = ['"'] := rfl
+  have hser : (serializeAstValue (AST.string s)).toList
+      = '"' :: (escapeList s.toList ++ ['"']) := by
+    show ("\"" ++ escapeString s ++ "\"").toList = _
+    simp [String.toList_append, hquote, escapeString_toList]
+  rcases fuel with _ | fuel
+  · exact absurd hfuel (by simp)
+  rw [hser]
+  simp only [parseValueFuelUnchecked, List.cons_append, skipWs, isWs]
+  simp +decide
+  show (match parseString ('"' :: escapeList s.toList ++ '"' :: rest) with
+    | some (v, r) => some (AST.string v, r)
+    | none => none) = some (AST.string s, rest)
+  rw [parseString_roundtrip s rest]
 
 -- skipWs over a serialized container body + close delimiter is the identity: the
 -- head is either the close delimiter (empty case) or the first char of a serialized
@@ -1106,5 +1283,56 @@ theorem serialize_validCapability_roundtrip {state : ApprovalState}
     parse (serialize ⟨ast, witness⟩) = some ast := by
   unfold serialize
   exact canonical_roundtrip ⟨ast, witness.ast_canonical⟩
+
+/- ============================================================
+   GROUP E: canonical-escape non-vacuity witnesses (kernel-checked,
+   NOT `#guard`). Positive: `café ☕` is canonical, round-trips, and its
+   escape distinguishes it from a near neighbour. Negative: the four
+   non-canonical encodings of a scalar (uppercase hex, long form where a
+   short escape is required, a literal non-ASCII byte, a lone high
+   surrogate) all parse-reject.
+   ============================================================ -/
+
+/-- Witness string exercising literal ASCII, a non-ASCII BMP char (`é`), and a
+    non-ASCII BMP symbol (`☕`). Built via `String.ofList` to avoid kernel
+    UTF-8 literal evaluation. -/
+def cafeWitness : String := String.ofList ['c','a','f','é',' ','☕']
+
+theorem cafeWitness_isCanonical : IsCanonical (.string cafeWitness) := by
+  simp [IsCanonical, isCanonicalAst, isCanonicalString]
+
+theorem cafeWitness_roundtrips :
+    parse (serializeAst ⟨.string cafeWitness, cafeWitness_isCanonical⟩)
+      = some (.string cafeWitness) :=
+  serialize_roundtrip_string cafeWitness cafeWitness_isCanonical
+
+/-- Astral scalar `😀` (U+1F600) escapes to its UTF-16 surrogate pair. -/
+theorem escapeChar_astral_witness :
+    escapeChar '😀' = ['\\','u','d','8','3','d','\\','u','d','e','0','0'] := by decide
+
+theorem escapeChar_bmp_witness_eacute : escapeChar 'é' = ['\\','u','0','0','e','9'] := by decide
+
+theorem escapeChar_bmp_witness_coffee : escapeChar '☕' = ['\\','u','2','6','1','5'] := by decide
+
+/-- The escape distinguishes `é` from its `e` neighbour (injectivity, concretely). -/
+theorem escapeList_distinguishes_eacute_e :
+    escapeList ['c','a','f','é',' ','☕'] ≠ escapeList ['c','a','f','e',' ','☕'] := by decide
+
+/-- Uppercase hex in a `\u` escape parse-rejects (canonical form is lowercase). -/
+theorem reject_uppercase_hex :
+    parseString ('"' :: '\\' :: 'u' :: '0' :: '0' :: 'E' :: '9' :: '"' :: []) = none := by decide
+
+/-- The four-digit long form of newline (0x0a), whose canonical form is the
+    short escape, parse-rejects. -/
+theorem reject_longform_control :
+    parseString ('"' :: '\\' :: 'u' :: '0' :: '0' :: '0' :: 'a' :: '"' :: []) = none := by decide
+
+/-- A literal non-ASCII byte parse-rejects (it must be `\u`-escaped). -/
+theorem reject_literal_nonascii :
+    parseString ('"' :: 'é' :: '"' :: []) = none := by decide
+
+/-- A lone high surrogate escape (no following low surrogate) parse-rejects. -/
+theorem reject_lone_high_surrogate :
+    parseString ('"' :: '\\' :: 'u' :: 'd' :: '8' :: '3' :: 'd' :: '"' :: []) = none := by decide
 
 end SealV2

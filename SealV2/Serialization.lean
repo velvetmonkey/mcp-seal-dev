@@ -18,7 +18,7 @@ def serializeAstValue : AST → CanonicalBytes
   | .bool true => "true"
   | .bool false => "false"
   | .number value => serializeDecimal value
-  | .string value => "\"" ++ value ++ "\""
+  | .string value => "\"" ++ escapeString value ++ "\""
   | .array items => "[" ++ serializeArrayValue items ++ "]"
   | .object fields => "{" ++ serializeObjectValue fields ++ "}"
 
@@ -29,9 +29,10 @@ def serializeArrayValue : List AST → String
 
 def serializeObjectValue : List (String × AST) → String
   | [] => ""
-  | [(key, value)] => "\"" ++ key ++ "\":" ++ serializeAstValue value
+  | [(key, value)] => "\"" ++ escapeString key ++ "\":" ++ serializeAstValue value
   | (key, value) :: rest =>
-      "\"" ++ key ++ "\":" ++ serializeAstValue value ++ "," ++ serializeObjectValue rest
+      "\"" ++ escapeString key ++ "\":" ++ serializeAstValue value ++ ","
+        ++ serializeObjectValue rest
 
 end
 

@@ -36,7 +36,8 @@ def accepted : List (String × String) := [
   ("negative fraction", "-0.5"),
   ("leading fractional zero", "0.05"),
   ("object", "{\"tool\":\"db.execute\",\"amount\":12.34}"),
-  ("array", "[null,true,\"x\",-12.34]")
+  ("array", "[null,true,\"x\",-12.34]"),
+  ("short escape", "\"prod\\nusers\"")
 ]
 
 def rejected : List (String × String) := [
@@ -45,7 +46,6 @@ def rejected : List (String × String) := [
   ("trailing bytes", "{\"a\":1}x"),
   ("duplicate keys", "{\"a\":1,\"a\":2}"),
   ("non-ascii string", "\"prod.ü\""),
-  ("escaped string", "\"prod\\nusers\""),
   ("unterminated string", "\"prod"),
   ("negative zero", "-0"),
   ("negative zero fraction", "-0.0"),
