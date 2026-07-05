@@ -10,14 +10,14 @@ namespace SealCore
     its deadline. The deadline is stamped by the runtime when the approval is
     ingested (`now + ttlMs`); the engine never trusts a caller-supplied time. -/
 structure State where
-  approved : Std.HashMap Hash Nat := ∅
+  approved : Std.HashMap TargetHash Nat := ∅
   deriving Repr
 
 def State.empty : State := {}
 
 /-- A target is live iff it has an approval whose deadline has not yet passed
     at time `now`. -/
-def live (s : State) (target : Hash) (now : Nat) : Bool :=
+def live (s : State) (target : TargetHash) (now : Nat) : Bool :=
   match s.approved[target]? with
   | some deadline => now < deadline
   | none => false
@@ -25,7 +25,7 @@ def live (s : State) (target : Hash) (now : Nat) : Bool :=
 /-- Drop every approval whose deadline is at or before `now`. Memory hygiene
     only: lazy `live` already refuses expired entries, so pruning changes no
     decision. -/
-def prune (now : Nat) (approved : Std.HashMap Hash Nat) : Std.HashMap Hash Nat :=
+def prune (now : Nat) (approved : Std.HashMap TargetHash Nat) : Std.HashMap TargetHash Nat :=
   approved.fold (init := ∅) fun acc target deadline =>
     if now < deadline then acc.insert target deadline else acc
 

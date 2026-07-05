@@ -13,8 +13,11 @@ instance : ToString Decision where
   | .allow => "allow"
   | .block => "block"
 
-def targetA : Hash := 1001
-def targetB : Hash := 2002
+def targetA : SealCore.TargetHash :=
+  (Sha256.Digest256.parseHex? "0000000000000000000000000000000000000000000000000000000000000001").get!
+
+def targetB : SealCore.TargetHash :=
+  (Sha256.Digest256.parseHex? "0000000000000000000000000000000000000000000000000000000000000002").get!
 
 def main : IO UInt32 := do
   let now := 0

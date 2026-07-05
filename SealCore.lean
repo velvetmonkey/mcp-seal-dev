@@ -3,3 +3,4 @@
 import SealCore.Event
 import SealCore.Automaton
 import SealCore.Safety
+import SealCore.Sha256

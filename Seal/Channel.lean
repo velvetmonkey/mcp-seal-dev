@@ -2,6 +2,7 @@
 
 import Lean.Data.Json
 import SealCore.Event
+import SealCore.Sha256
 import Seal.JsonUtil
 
 namespace Seal
@@ -14,6 +15,11 @@ private def jsonToNat? (j : Json) : Option Nat :=
   match j with
   | .num n => (toString n).toNat?
   | .str s => s.toNat?
+  | _ => none
+
+private def jsonToTargetHash? (j : Json) : Option SealCore.TargetHash :=
+  match j with
+  | .str s => Sha256.Digest256.parseHex? s
   | _ => none
 
 /-- Parse one approval record and resolve its absolute expiry deadline (epoch ms).
@@ -29,11 +35,11 @@ private def parseApprovalRecord (now ttlMs : Nat) (line : String) : Option Event
   if trimmed.isEmpty then none else
     match Json.parse trimmed with
     | .ok json =>
-        match (json.getObjVal? "target").toOption.bind jsonToNat? with
+        match (json.getObjVal? "target").toOption.bind jsonToTargetHash? with
         | some target =>
             let issuedAt := (json.getObjVal? "issuedAt").toOption.bind jsonToNat?
             let base := min (issuedAt.getD now) now
-            some (.approval (UInt64.ofNat target) (base + ttlMs))
+            some (.approval target (base + ttlMs))
         | none => none
     | .error _ => none
 

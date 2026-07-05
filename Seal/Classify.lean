@@ -48,7 +48,7 @@ def classifyToolCall (policy : Policy) (toolName : String) (args : Json) : HostE
             match evalTargetParts rule.target args with
             | some parts =>
                 let target := stableHashParts (toolName :: parts)
-                .event (.guarded target) (toString target.toNat)
+                .event (.guarded target) target.toHex
             | none => .event .defaultDeny s!"missing target field: {toolName}"
 
 def toolsCall? (json : Json) : Option (String × Json) := do
