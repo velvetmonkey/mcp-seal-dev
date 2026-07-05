@@ -18,12 +18,12 @@ bypassed."
 
 | Claim | Artifact | Proof status | Trusted assumptions | Known residuals | Say publicly? |
 |---|---|---|---|---|---|
-| An `Allow` implies a parsed AST + a `ValidCapability` witness, and the output is the canonical serialization of that witness | `SealV2/DecideTheorems.lean` non_bypass | Lean theorem, axiom-gated `{propext, Classical.choice, Quot.sound}` | Lean kernel/runtime | — | yes (for the v2 canonical core only) |
-| Default-deny: output bytes are unreachable unless a `ValidCapability` term is built | `default_deny` | Lean theorem | as above | — | yes |
+| An `Allow` implies a parsed AST + a `ValidCapability` witness, and the output is the canonical serialization of that witness | `SealV2/DecideTheorems.lean` non_bypass | Lean theorem, axiom-gated `{propext, Classical.choice, Quot.sound}` | Lean kernel/runtime | none | yes (for the v2 canonical core only) |
+| Default-deny: output bytes are unreachable unless a `ValidCapability` term is built | `default_deny` | Lean theorem | as above | none | yes |
 | Canonical serialize/parse roundtrip is self-consistent and deterministic | `canonical_roundtrip` | Lean theorem | as above | round-trip fidelity in-core is NOT parse-equivalence to the target server (A2) | yes |
 | Approval lifecycle: issue -> target-bind -> one-shot consume -> TTL expiry, no replay after expiry | `LifecycleTheorems.lean` | Lean theorem | as above | A6 cross-restart durability | yes |
-| Ed25519 signature verification over canonical signed-message bytes | `SealV2/Crypto.lean` `ed25519Verify` (`@[extern]`, TweetNaCl leaf) | code + trusted crypto leaf | TweetNaCl correctness | — | yes |
-| This does NOT prove every deployed MCP server is mediated | — | — | — | — | this is a NON-claim, state it |
+| Ed25519 signature verification over canonical signed-message bytes | `SealV2/Crypto.lean` `ed25519Verify` (`@[extern]`, TweetNaCl leaf) | code + trusted crypto leaf | TweetNaCl correctness | none | yes |
+| This does NOT prove every deployed MCP server is mediated | n/a | n/a | n/a | n/a | this is a NON-claim, state it |
 
 ## The parser is a canonical mediation profile, NOT "the JSON parser"
 
