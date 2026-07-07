@@ -34,8 +34,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SEAL_BIN = os.environ.get("SEAL_BIN", os.path.join(HERE, "..", ".lake", "build", "bin", "seal"))
 SERVER_CMD = ["npx", "-y", "@modelcontextprotocol/server-everything", "stdio"]
 
-# FNV-1a (64-bit) of the bare tool name "echo": the target hash seal will print.
-ECHO_HASH = 13354254271524378478
+# echo's target hash is derived at runtime from seal's own default-deny block
+# message (seal emits a 64-hex SHA-256 target), so this demo never goes stale
+# against a kernel hash change.
 BOOT_SECONDS = 3.0  # cold npx start; the child must be ready before the first call
 
 
@@ -141,13 +142,14 @@ def main():
     a = Seal(pol_a)
     a.initialize()
 
-    got, _ = a.call(2, "echo", message="hi")
+    got, text = a.call(2, "echo", message="hi")
+    echo_hash = text.split(": ", 1)[1].strip() if ": " in text else text.strip()
     check("1. default-deny (no approval)", got, "BLOCK",
-          f"-> approval required: {ECHO_HASH}")
+          f"-> approval required: {echo_hash}")
 
     with open(ctrl_a, "a") as f:
-        f.write(json.dumps({"target": ECHO_HASH}) + "\n")
-    print(f"  minted one ticket: {{\"target\": {ECHO_HASH}}}")
+        f.write(json.dumps({"target": echo_hash}) + "\n")
+    print(f"  minted one ticket: {{\"target\": {echo_hash}}}")
     got, text = a.call(3, "echo", message="hi")
     check("2a. one ticket -> first call allowed", got, "ALLOW", f"-> {text!r}")
     got, _ = a.call(4, "echo", message="hi")
@@ -162,7 +164,7 @@ def main():
     b = Seal(pol_b)
     b.initialize()
     with open(ctrl_b, "a") as f:
-        f.write(json.dumps({"target": ECHO_HASH}) + "\n")
+        f.write(json.dumps({"target": echo_hash}) + "\n")
     # Ingest the echo ticket WITHOUT consuming it, by calling a different
     # guarded tool. This stamps echo's deadline at now + 2s.
     b.call(2, "add", a=1, b=2)
@@ -179,7 +181,7 @@ def main():
     # Stale mint: issued 2 minutes ago under a 60s TTL.
     ctrl_c1 = os.path.join(tmp, "approvals_c1.ndjson")
     with open(ctrl_c1, "w") as f:
-        f.write(json.dumps({"target": ECHO_HASH, "issuedAt": now_ms - 120_000}) + "\n")
+        f.write(json.dumps({"target": echo_hash, "issuedAt": now_ms - 120_000}) + "\n")
     pol_c1 = write_policy(tmp, 60, ctrl_c1)
     c1 = Seal(pol_c1)
     c1.initialize()
@@ -189,7 +191,7 @@ def main():
     # Fresh mint.
     ctrl_c2 = os.path.join(tmp, "approvals_c2.ndjson")
     with open(ctrl_c2, "w") as f:
-        f.write(json.dumps({"target": ECHO_HASH, "issuedAt": now_ms}) + "\n")
+        f.write(json.dumps({"target": echo_hash, "issuedAt": now_ms}) + "\n")
     pol_c2 = write_policy(tmp, 60, ctrl_c2)
     c2 = Seal(pol_c2)
     c2.initialize()

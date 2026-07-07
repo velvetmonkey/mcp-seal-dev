@@ -55,8 +55,8 @@ def main() -> int:
         first = json.loads(proc.stdout.readline())
         print(json.dumps(first, indent=2))
 
-        target = first["result"]["content"][0]["text"].split(": ", 1)[1]
-        approvals.write_text(json.dumps({"target": int(target)}) + "\n", encoding="utf-8")
+        target = first["result"]["content"][0]["text"].split(": ", 1)[1].strip()
+        approvals.write_text(json.dumps({"target": target}) + "\n", encoding="utf-8")
 
         proc.stdin.write(msg(2, "drop table users") + "\n")
         proc.stdin.flush()
