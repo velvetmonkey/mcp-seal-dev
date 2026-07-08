@@ -57,6 +57,8 @@ For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.
 
 ## The Seal family
 
+_All Seal-family repositories are currently private; these links resolve only for authorised evaluators._
+
 - [seal](https://github.com/velvetmonkey/seal): the private umbrella story, product map, and evaluator path.
 - [mcp-seal-dev](https://github.com/velvetmonkey/mcp-seal-dev): The rulebook, proven.
 - [seal-host](https://github.com/velvetmonkey/seal-host): The guard at the door.
