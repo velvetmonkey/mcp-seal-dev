@@ -1,1 +1,1 @@
-M1 adversarial MCP fixture passed: 9 rejected, 1 accepted
+M1 adversarial MCP fixture passed: 8 rejected, 2 accepted (1 reclassified allow after grammar extension 0b2c1f4)

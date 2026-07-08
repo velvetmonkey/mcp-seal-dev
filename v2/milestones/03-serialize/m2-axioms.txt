@@ -1,18 +1,6 @@
-⚠ [8/20] Replayed SealV2.SerializationTheorems
-warning: SealV2/SerializationTheorems.lean:82:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:86:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:90:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:95:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:100:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:105:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:110:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:116:8: declaration uses `sorry`
-warning: SealV2/SerializationTheorems.lean:123:8: declaration uses `sorry`
-ℹ [18/20] Built Test.V2M2Axioms (769ms)
-info: Test/V2M2Axioms.lean:5:0: 'SealV2.validate_none_no_witness_result' depends on axioms: [propext, Classical.choice, Quot.sound]
-info: Test/V2M2Axioms.lean:6:0: 'SealV2.valid_capability_has_unused_approval' depends on axioms: [propext, Classical.choice, Quot.sound]
-info: Test/V2M2Axioms.lean:7:0: 'SealV2.valid_capability_has_unexpired_approval' depends on axioms: [propext, Classical.choice, Quot.sound]
-info: Test/V2M2Axioms.lean:8:0: 'SealV2.valid_capability_has_signature_verified' depends on axioms: [propext, Classical.choice, Quot.sound]
-info: Test/V2M2Axioms.lean:9:0: 'SealV2.valid_capability_target_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
-info: Test/V2M2Axioms.lean:10:0: 'SealV2.valid_capability_session_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
-✔ [20/20] Built v2_m2_axiom_check:exe (519ms)
+'SealV2.validate_none_no_witness_result' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_has_unused_approval' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_has_unexpired_approval' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_has_signature_verified' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_target_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_session_bound' depends on axioms: [propext, Classical.choice, Quot.sound]

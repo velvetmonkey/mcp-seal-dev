@@ -1,1 +1,1 @@
-M1 parser corpus passed: 12 accepted, 27 rejected
+M1 parser corpus passed: 13 accepted, 26 rejected

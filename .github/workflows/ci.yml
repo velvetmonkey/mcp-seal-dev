@@ -52,3 +52,15 @@ jobs:
           LEAN_LIB_DIR="$LEANPREFIX/lib/lean" \
           LD_LIBRARY_PATH="$ROOT/.lake/build/lib:$LEANPREFIX/lib/lean" \
           cargo run --quiet
+      - name: snapshot-drift gate (committed evidence must match a fresh run)
+        run: |
+          for d in 01-parse 02-validate 03-serialize 04-decide 05-sign 06-lifecycle 07-host; do
+            bash "v2/milestones/$d/run.sh" > /dev/null
+          done
+          if [ -n "$(git status --porcelain -- v2/milestones/)" ]; then
+            echo "snapshot drift: committed evidence does not match a fresh run:"
+            git status --porcelain -- v2/milestones/
+            git --no-pager diff -- v2/milestones/ | head -80
+            exit 1
+          fi
+          echo "snapshot-drift gate: evidence is fresh"

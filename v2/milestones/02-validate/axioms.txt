@@ -1,7 +1,6 @@
-ℹ [7/14] Replayed Test.V2M2Axioms
-info: Test/V2M2Axioms.lean:5:0: 'SealV2.validate_none_no_witness_result' depends on axioms: [propext]
-info: Test/V2M2Axioms.lean:6:0: 'SealV2.valid_capability_has_unused_approval' depends on axioms: [propext]
-info: Test/V2M2Axioms.lean:7:0: 'SealV2.valid_capability_has_unexpired_approval' depends on axioms: [propext]
-info: Test/V2M2Axioms.lean:8:0: 'SealV2.valid_capability_has_signature_verified' depends on axioms: [propext]
-info: Test/V2M2Axioms.lean:9:0: 'SealV2.valid_capability_target_bound' depends on axioms: [propext]
-info: Test/V2M2Axioms.lean:10:0: 'SealV2.valid_capability_session_bound' depends on axioms: [propext]
+'SealV2.validate_none_no_witness_result' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_has_unused_approval' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_has_unexpired_approval' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_has_signature_verified' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_target_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+'SealV2.valid_capability_session_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
