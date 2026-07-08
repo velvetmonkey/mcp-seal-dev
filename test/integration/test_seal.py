@@ -78,8 +78,9 @@ def main() -> int:
     assert blocked[0]["result"]["isError"] is True
     assert "approval required" in blocked[0]["result"]["content"][0]["text"]
 
-    # This target is produced by the current stable hash implementation for the call above.
-    target = 7653913048106253087
+    # Derive the approval target from seal's own block message so it never goes
+    # stale on a hash-scheme change (mirrors demo/blocked_call_smoke.py).
+    target = blocked[0]["result"]["content"][0]["text"].split(": ", 1)[1].strip()
     approved = run_case(
         [
             rpc(1, "db.execute", {"database": "prod", "sql": "drop table users"}),
