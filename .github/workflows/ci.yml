@@ -64,3 +64,12 @@ jobs:
             exit 1
           fi
           echo "snapshot-drift gate: evidence is fresh"
+
+  claims:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/claims-drift.mjs
