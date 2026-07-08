@@ -44,3 +44,11 @@ jobs:
       - run: python3 test/v2/m5_sign_fixture.py
       - run: lake build ffi_shared
       - run: bash scripts/build_ffi_so.sh
+      - run: |
+          cd rust
+          ROOT="$(cd .. && pwd)"
+          LEANPREFIX="$(cd .. && lean --print-prefix)"
+          SEAL_FFI_LIB_DIR="$ROOT/.lake/build/lib" \
+          LEAN_LIB_DIR="$LEANPREFIX/lib/lean" \
+          LD_LIBRARY_PATH="$ROOT/.lake/build/lib:$LEANPREFIX/lib/lean" \
+          cargo run --quiet
