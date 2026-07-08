@@ -68,3 +68,7 @@ and adversarial red-teaming, not hidden.
 See [ASSURANCE_CASE.md](ASSURANCE_CASE.md) for the evidence behind each in-scope
 property and [ROADMAP_ARIA_TA2.md](ROADMAP_ARIA_TA2.md) for how the residuals are
 driven down over the grant period.
+
+This file is the canonical threat model for `mcp-seal-dev`.
+`docs/THREAT-MODEL.md` and the M8 milestone snapshot
+(`v2/milestones/08-threat-model/THREAT-MODEL.md`) defer to it.

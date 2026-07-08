@@ -1,6 +1,10 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # seal v2 — Threat Model
 
+> **Milestone snapshot** (M8, the document the ARIA bid quotes). The canonical,
+> maintained threat model is [`THREAT_MODEL.md`](../../../THREAT_MODEL.md) at the
+> repository root.
+
 > **We do not prove the agent is safe; we prove the environment is safe from the agent.**
 
 seal v2 is a **verified compiler for capability payloads, not a filter.** It does not forward the

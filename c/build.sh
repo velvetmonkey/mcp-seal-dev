@@ -5,7 +5,8 @@
 # exes link via `moreLinkArgs`. Uses `leanc` (the Lean C compiler wrapper) so the
 # lean.h include path is correct. Rebuilds from source every time — no stale blob.
 #
-# Output: c/build/libsealcrypto.o  (git-ignored; regenerated here and by run.sh).
+# Output: c/build/libsealcrypto.o  (git-ignored; run this script before `lake build`
+# — the README verify block and ci.yml both do).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."   # repo root

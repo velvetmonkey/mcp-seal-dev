@@ -15,6 +15,7 @@ jobs:
         with:
           use-github-cache: false
           build: false
+      - run: bash c/build.sh
       - run: lake build
       - run: lake exe automaton_tests
       - run: lake exe axiom_check 2>&1 | tee /tmp/axioms.txt

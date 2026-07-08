@@ -20,7 +20,10 @@ prevention, or end-to-end runtime verification.
 Decompose G0 into the seven security properties below. Discharge each by a Lean
 theorem (machine-checked, axiom-gated in CI) or name it as a trust assumption.
 The v2 proof-carrying core (`parse -> validate -> serialize -> decide`) is the
-ARIA-relevant object; v1 is the shipped demonstrator.
+ARIA-relevant object; v1 is the shipped demonstrator. Theorem names and
+file:line locations are indexed in
+[docs/PROOF-REFERENCE.md](docs/PROOF-REFERENCE.md); the repo layout in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Sub-claims and evidence
 

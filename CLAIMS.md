@@ -6,6 +6,9 @@ Single source of truth for the v2 verified canonical core. Scoped to
 Nothing in any demo, README, or pitch may exceed a row marked
 "can say publicly = yes".
 
+Repo layout: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Theorem index with
+file and line locations: [docs/PROOF-REFERENCE.md](docs/PROOF-REFERENCE.md).
+
 ## The one line
 
 > Policy-covered, unapproved request-effects cannot execute through the

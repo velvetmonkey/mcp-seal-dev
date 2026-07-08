@@ -20,7 +20,9 @@ This repository is where that rulebook lives. It is not the deployed host; it is
 
 Seal's proof story is intentionally narrow. The Lean theorems cover the mediation kernel and selected model properties. The binaries and browser artifacts are connected to that proof by reproducible conformance tests, not by a theorem about every compiled instruction.
 
-Start with [docs/PROOF-REFERENCE.md](docs/PROOF-REFERENCE.md) for theorem names and file locations, [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for the byte-identity claim, and [docs/TCB.md](docs/TCB.md) for what remains trusted.
+Two proof lines live in this repo. `SealV2/` is the **verified canonical core**: the proof-carrying `parse -> validate -> serialize -> decide` pipeline that [CLAIMS.md](CLAIMS.md) and [ASSURANCE_CASE.md](ASSURANCE_CASE.md) describe, with theorems `SealV2.non_bypass`, `SealV2.default_deny`, `SealV2.canonical_roundtrip`, and `SealV2.signed_parse_canonical`. `Seal/` plus `SealCore/` are the v1 target-commitment automaton that ships as the stdio `seal` binary. The milestone-by-milestone build record for v2 is [v2/STATUS.md](v2/STATUS.md).
+
+Start with [docs/PROOF-REFERENCE.md](docs/PROOF-REFERENCE.md) for theorem names and file locations (v2 and v1), [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for the byte-identity claim, [THREAT_MODEL.md](THREAT_MODEL.md) for the adversary and residuals, and [docs/TCB.md](docs/TCB.md) for what remains trusted.
 
 Mandatory non-claims:
 
@@ -38,8 +40,11 @@ Mandatory non-claims:
 ```sh
 bash c/build.sh
 lake build
-lake exe automaton_tests
-lake exe axiom_check
+lake exe automaton_tests    # v1 automaton behaviour
+lake exe axiom_check        # v1 safety theorems: axiom footprint
+lake exe v2_parse_tests && lake exe v2_validate_tests && lake exe v2_serialize_tests && lake exe v2_lifecycle_tests
+lake exe v2_m4_axiom_check  # v2 core: non_bypass, default_deny, decide_emit_unique, canonical_roundtrip, signed_parse_canonical
+lake exe v2_m6_axiom_check  # v2 approval lifecycle: replay_denied, consume/TTL theorems
 ```
 
 For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.lean`: `stableHashParts` is SHA-256 over `encodeParts`, and the old UInt64 audit path is explicitly named `auditHashParts`.
@@ -56,7 +61,7 @@ For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Threat model](docs/THREAT-MODEL.md)
+- [Threat model](THREAT_MODEL.md)
 - [Assumptions](docs/ASSUMPTIONS.md)
 - [Proof reference](docs/PROOF-REFERENCE.md)
 - [Conformance](docs/CONFORMANCE.md)

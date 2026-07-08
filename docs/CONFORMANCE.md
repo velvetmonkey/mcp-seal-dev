@@ -21,8 +21,11 @@ Local checks for this repo:
 ```sh
 bash c/build.sh
 lake build
-lake exe automaton_tests
-lake exe axiom_check
+lake exe automaton_tests    # v1 automaton behaviour
+lake exe axiom_check        # v1 safety theorems: axiom footprint
+lake exe v2_parse_tests && lake exe v2_validate_tests && lake exe v2_serialize_tests && lake exe v2_lifecycle_tests
+lake exe v2_m4_axiom_check  # v2 core: non_bypass, default_deny, decide_emit_unique, canonical_roundtrip, signed_parse_canonical
+lake exe v2_m6_axiom_check  # v2 approval lifecycle: replay_denied, consume/TTL theorems
 ```
 
 For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.lean`: `stableHashParts` is SHA-256 over `encodeParts`, and the old UInt64 audit path is explicitly named `auditHashParts`.

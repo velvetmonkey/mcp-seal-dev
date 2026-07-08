@@ -4,7 +4,8 @@ defaultTargets = ["seal", "v2_m4_axiom_check"]
 
 # M5: link the vendored Ed25519 (TweetNaCl) + FFI shim into every exe. SealV2 now
 # references the @[extern] `lean_seal_ed25519_verify`, so all exes importing SealV2
-# need this object. Build it first with `bash c/build.sh` (run.sh / CI does this).
+# need this object. Build it first with `bash c/build.sh` (the README verify block
+# and ci.yml run it before `lake build`).
 moreLinkArgs = ["c/build/libsealcrypto.o"]
 
 [[require]]
