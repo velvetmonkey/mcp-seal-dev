@@ -56,9 +56,12 @@ cc -shared -o "$OUT" \
 echo "built $OUT"
 # Capture nm output ONCE, then grep the in-memory copy. (Piping `nm bigfile | grep -q`
 # under set -o pipefail flakily fails: grep -q closes the pipe early -> nm gets SIGPIPE
-# -> pipefail reports the pipeline as failed even though the symbol was found.)
+# -> pipefail reports the pipeline as failed even though the symbol was found. The same
+# early-exit bites `printf bigstring | grep -q`, so grep must consume the whole stream:
+# no -q, redirect to /dev/null instead.)
 SYMS="$(nm -D "$OUT")"
-for sym in seal_v2_init seal_v2_add_approval seal_v2_decide seal_v2_challenge seal_v2_echo seal_v2_crypto_probe; do
-  printf '%s\n' "$SYMS" | grep -qE " T ${sym}\$" || { echo "FATAL: export $sym missing" >&2; exit 1; }
+for sym in seal_v2_init seal_v2_add_approval seal_v2_decide seal_v2_challenge seal_v2_echo seal_v2_crypto_probe \
+           seal_v2_ffi_initialize seal_lean_string_cstr seal_lean_io_result_is_ok seal_lean_dec seal_lean_mk_string; do
+  printf '%s\n' "$SYMS" | grep -E " T ${sym}\$" >/dev/null || { echo "FATAL: export $sym missing" >&2; exit 1; }
 done
 echo "all exports present"

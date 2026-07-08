@@ -24,8 +24,9 @@ Two proof lines live in this repo. `SealV2/` is the **verified canonical core**:
 
 Start with [docs/PROOF-REFERENCE.md](docs/PROOF-REFERENCE.md) for theorem names and file locations (v2 and v1), [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for the byte-identity claim, [THREAT_MODEL.md](THREAT_MODEL.md) for the adversary and residuals, and [docs/TCB.md](docs/TCB.md) for what remains trusted.
 
-Mandatory non-claims:
+Mandatory non-claims (canonical copy: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)):
 
+<!-- Canonical copy: docs/LIMITATIONS.md. Edit there first, then mirror here verbatim. -->
 - Seal proves properties of the mediation KERNEL, not of the whole deployed system.
 - Seal does NOT prove SHA-256 collision resistance in Lean; it is a named, scoped cryptographic assumption (A-CR).
 - The deployed Rust / wasm / JS are NOT proven bug-free; they are tied to the proof by byte-exact conformance testing over a corpus, not for every possible input.
@@ -49,6 +50,11 @@ lake exe v2_m6_axiom_check  # v2 approval lifecycle: replay_denied, consume/TTL 
 
 For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.lean`: `stableHashParts` is SHA-256 over `encodeParts`, and the old UInt64 audit path is explicitly named `auditHashParts`.
 
+## Demos
+
+- `python3 demo/blocked_call_smoke.py` — block, approve, allow-once, block again, against a mock MCP server. Needs only python3 and a built `seal` (`bash c/build.sh && lake build`).
+- `python3 demo/ttl_demo.py` — default-deny, one-shot tickets, and TTL expiry live against the official MCP reference server. Additionally needs Node/npx (fetches `@modelcontextprotocol/server-everything` once).
+
 ## The Seal family
 
 - [seal](https://github.com/velvetmonkey/seal): the private umbrella story, product map, and evaluator path.
@@ -65,6 +71,8 @@ For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.
 - [Assumptions](docs/ASSUMPTIONS.md)
 - [Proof reference](docs/PROOF-REFERENCE.md)
 - [Conformance](docs/CONFORMANCE.md)
+- [Policy format, v1 binary](docs/POLICY.md)
+- [FFI surface, v2 core](docs/FFI.md)
 - [Trusted computing base](docs/TCB.md)
 - [Glossary](docs/GLOSSARY.md)
 - [Limitations](docs/LIMITATIONS.md)

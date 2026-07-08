@@ -68,6 +68,9 @@ Validated against the pinned manifest entry:
 (`Ffi.lean` request extraction; `Test/V2ValidationFixtures.lean` request shape.)
 An unknown `(tool, action)` pair validates to `none` (fail-closed).
 
+The v1 shipped binary uses a different, simpler policy format (tool rules +
+target parts + control-file approvals): [docs/POLICY.md](docs/POLICY.md).
+
 ## Residuals
 
 - **A2** numeric/parse fidelity minimised by construction; per-server equivalence obligation remains.

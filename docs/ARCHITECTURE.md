@@ -12,11 +12,11 @@
 
 ## v1 and v2
 
-Two proof lines share this repo. **v1** (`SealCore/` + `Seal/`) is the target-commitment automaton that ships today as the stdio `seal` binary: policy-selected parts, SHA-256 target commitment, one-shot approvals. **v2** (`SealV2/`) is the verified canonical core that [CLAIMS.md](../CLAIMS.md) and [ASSURANCE_CASE.md](../ASSURANCE_CASE.md) describe: a proof-carrying `parse -> validate -> serialize -> decide` pipeline whose `Allow` path is a theorem, exported over C FFI (`Ffi.lean`, `rust/`) to the Rust host. The milestone-by-milestone v2 build record is [v2/STATUS.md](../v2/STATUS.md); theorem names and locations are indexed in [PROOF-REFERENCE.md](PROOF-REFERENCE.md).
+Two proof lines share this repo. **v1** (`SealCore/` + `Seal/`) is the target-commitment automaton that ships today as the stdio `seal` binary: policy-selected parts, SHA-256 target commitment, one-shot approvals. **v2** (`SealV2/`) is the verified canonical core that [CLAIMS.md](../CLAIMS.md) and [ASSURANCE_CASE.md](../ASSURANCE_CASE.md) describe: a proof-carrying `parse -> validate -> serialize -> decide` pipeline whose `Allow` path is a theorem, exported over C FFI (`Ffi.lean`, `rust/`; surface documented in [FFI.md](FFI.md)) to the Rust host. The milestone-by-milestone v2 build record is [v2/STATUS.md](../v2/STATUS.md); theorem names and locations are indexed in [PROOF-REFERENCE.md](PROOF-REFERENCE.md).
 
 ## Data flow
 
-1. A policy chooses target parts from an MCP tool call.
+1. A policy chooses target parts from an MCP tool call (format: [POLICY.md](POLICY.md)).
 2. `Seal.encodeParts` frames those parts as `<charCount>:<part>` strings.
 3. `Seal.stableHashParts` hashes the encoded string as UTF-8 with SHA-256 and returns `TargetHash`.
 4. `SealCore.step` compares that target against live approvals and returns allow or block.
