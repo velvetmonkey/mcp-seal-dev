@@ -26,6 +26,22 @@ These are the theorems [CLAIMS.md](../CLAIMS.md) and [ASSURANCE_CASE.md](../ASSU
 | The signature is checked over exactly the canonical signed-message bytes | `SealV2.signed_parse_canonical` | `SealV2/ValidationTheorems.lean:39` | `{propext, Classical.choice, Quot.sound}` |
 | Approval lifecycle: nonce recorded on consume, replay denied, consume preserves liveness of others, only unexpired consumed, TTL capped | `SealV2.consume_records_nonce`, `SealV2.replay_denied`, `SealV2.consume_preserves_live`, `SealV2.consume_only_unexpired`, `SealV2.live_within_ttl_cap` | `SealV2/LifecycleTheorems.lean` (printed by `v2_m6_axiom_check`) | `{propext, Classical.choice, Quot.sound}` |
 
+## Golden-path spec (scaffolder + shell reference cell + tamper fail-closed)
+
+The theorem set behind [GOLDEN-PATH-SPEC.md](GOLDEN-PATH-SPEC.md); all printed by `lake exe axiom_check`.
+
+| Claim | Theorem | Location | Axiom footprint |
+|---|---|---|---|
+| A scaffolded policy classifies every guarded-mode manifest tool `.guarded` for all arguments (never benign) | `Seal.scaffold_safety`, `Seal.scaffold_safety_not_benign` | `Seal/Scaffold.lean` | `{propext, Classical.choice, Quot.sound}` |
+| Destructive / unknown / absent / conflicting annotations scaffold to guarded; scaffolder never emits deny | `Seal.dangerous_annotation_guarded`, `Seal.scaffoldMode_ne_deny` | `Seal/Scaffold.lean` | `{propext}` |
+| Exact names only: a tool absent from the manifest is default-denied | `Seal.scaffold_unknown_tool_default_deny` | `Seal/Scaffold.lean` | `{propext, Classical.choice, Quot.sound}` |
+| Readonly-annotated tools classify benign (golden-path liveness) | `Seal.scaffold_readonly_flows` | `Seal/Scaffold.lean` | `{propext, Classical.choice, Quot.sound}` |
+| Shell cell: a destructive `shell_exec` call cannot reach the wire without a live approval for exactly its target | `Seal.shell_exec_requires_live_approval`, `Seal.shell_rm_rf_requires_live_approval` | `Seal/GoldenPath.lean` | `{propext, Classical.choice, Quot.sound}` |
+| Shell cell: blocked on fresh state; flows after a matching unexpired approval; readonly leg never waits | `Seal.shell_rm_rf_blocks_on_fresh_state`, `Seal.shell_rm_rf_allows_with_fresh_approval`, `Seal.shell_read_flows` | `Seal/GoldenPath.lean` | `{propext, Classical.choice, Quot.sound}` |
+| A policy whose signature does not verify classifies every call default-deny and blocks at the wire | `Seal.tampered_policy_fail_closed`, `Seal.tampered_policy_blocks` | `Seal/SignedPolicy.lean` | `{propext, Classical.choice, Quot.sound}` |
+| With only unverifiable approvals in state, `decide` blocks every request | `SealV2.tampered_approvals_deny` | `SealV2/TamperTheorems.lean` | `{propext, Classical.choice, Quot.sound}` |
+| Every Allow carries a witness approval whose signature verified — a tampered token can never be the passing witness | `SealV2.allow_implies_witness_signature_verified` | `SealV2/TamperTheorems.lean` | `{propext, Classical.choice, Quot.sound}` |
+
 ## Host-level theorems
 
 Host-level theorems such as `Host.step_forward_non_bypass`, `Host.Record.tamper_evident`, `Host.Encoding.encodeParts_injective`, `Host.CapabilityAdequacy.approval_authorizes_only_its_target'`, `Host.NonInterference.observe_noninterference`, and `Host.ReplayIsolation.replay_isolation_trace` live in `seal-host`; their line references are recorded in that repository's `docs/PROOF-REFERENCE.md`.
