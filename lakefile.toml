@@ -42,6 +42,10 @@ name = "automaton_tests"
 root = "Test.Automaton"
 
 [[lean_exe]]
+name = "policy_v2_tests"
+root = "Test.PolicyV2"
+
+[[lean_exe]]
 name = "axiom_check"
 root = "Test.Axioms"
 

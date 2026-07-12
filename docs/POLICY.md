@@ -1,5 +1,10 @@
 # Policy format (v1 shipped binary)
 
+The compositional language with explicit safe ALLOW, deny/guard precedence,
+server identity, and full-arguments targets is documented in
+[POLICY-V2.md](POLICY-V2.md). The remainder of this file describes the v1
+binary compatibility format.
+
 This is the policy JSON consumed by the **v1 stdio `seal` binary** (`seal --policy <file> -- <server cmd>`).
 It is a different schema from the v2 manifest / `action` binding described in
 [CLAIMS.md](../CLAIMS.md); the v2 config crosses the FFI seam as a JSON envelope

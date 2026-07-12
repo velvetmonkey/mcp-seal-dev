@@ -21,35 +21,85 @@ def HostEvent.toEvent : HostEvent → Event
 def HostEvent.targetText : HostEvent → String
   | .event _ targetText => targetText
 
-def matchRule (rule : ToolRule) (args : Json) : Bool :=
-  match rule.matcher with
+partial def matchSpec (spec : MatchSpec) (args : Json) : Bool :=
+  match spec with
   | .always => true
+  | .equals path expected =>
+      (atPath args path >>= jsonScalarToString).any (· == expected)
+  | .startsWith path prefixValue =>
+      (atPath args path >>= jsonScalarToString).any (·.startsWith prefixValue)
   | .containsAnyCi path needles =>
       match atPath args path >>= jsonScalarToString with
       | some value => containsAnyCi value needles
       | none => false
+  | .all specs => specs.all (fun child => matchSpec child args)
+  | .any specs => specs.any (fun child => matchSpec child args)
+
+def matchRule (rule : ToolRule) (args : Json) : Bool :=
+  matchSpec rule.matcher args
 
 def evalTargetParts (parts : List TargetPart) (args : Json) : Option (List String) :=
   parts.mapM fun part =>
     match part with
     | .literal value => some value
     | .argPath path => atPath args path >>= jsonScalarToString
+    | .fullArguments => some args.compress
+
+def targetPrefix (policy : Policy) (toolName : String) : List String :=
+  if policy.serverIdentity.isEmpty then [toolName]
+  else [policy.serverIdentity, toolName]
+
+inductive RuleDecision where
+  | allow
+  | guard (target : TargetHash) (targetText : String)
+  | deny (reason : String)
+  | invalid (reason : String)
+  deriving Repr, BEq
+
+def evaluateRule (policy : Policy) (toolName : String) (args : Json)
+    (rule : ToolRule) : Option RuleDecision :=
+  if rule.name != toolName || !matchRule rule args then none
+  else match rule.mode with
+    | .allow => some .allow
+    | .deny => some (.deny s!"flat deny: {toolName}")
+    | .guarded =>
+        match evalTargetParts rule.target args with
+        | some parts =>
+            let target := stableHashParts (targetPrefix policy toolName ++ parts)
+            some (.guard target target.toHex)
+        | none => some (.invalid s!"missing target field: {toolName}")
+
+def firstBlocking? : List RuleDecision → Option String
+  | [] => none
+  | .deny reason :: _ => some reason
+  | .invalid reason :: _ => some reason
+  | _ :: rest => firstBlocking? rest
+
+def guardDecisions (decisions : List RuleDecision) : List (TargetHash × String) :=
+  decisions.filterMap fun decision => match decision with
+    | .guard target text => some (target, text)
+    | _ => none
+
+def hasExplicitAllow (decisions : List RuleDecision) : Bool :=
+  decisions.any (· == .allow)
+
+def sameGuardTarget (first : TargetHash × String) (rest : List (TargetHash × String)) : Bool :=
+  rest.all (fun next => next.1 == first.1)
+
+def resolveRuleDecisions (decisions : List RuleDecision) : HostEvent :=
+  match firstBlocking? decisions with
+  | some reason => .event .defaultDeny reason
+  | none =>
+      match guardDecisions decisions with
+      | first :: rest =>
+          if sameGuardTarget first rest then .event (.guarded first.1) first.2
+          else .event .defaultDeny "ambiguous guard target"
+      | [] =>
+          if hasExplicitAllow decisions then .event .benign "explicit policy allow"
+          else .event .defaultDeny "no matching policy rule"
 
 def classifyToolCall (policy : Policy) (toolName : String) (args : Json) : HostEvent :=
-  match policy.tools.find? (fun rule => rule.name == toolName) with
-  | none => .event .defaultDeny "unknown tool"
-  | some rule =>
-      if !matchRule rule args then
-        .event .defaultDeny s!"unmatched policy for {toolName}"
-      else
-        match rule.mode with
-        | .deny => .event .defaultDeny s!"flat deny: {toolName}"
-        | .guarded =>
-            match evalTargetParts rule.target args with
-            | some parts =>
-                let target := stableHashParts (toolName :: parts)
-                .event (.guarded target) target.toHex
-            | none => .event .defaultDeny s!"missing target field: {toolName}"
+  resolveRuleDecisions (policy.tools.filterMap (evaluateRule policy toolName args))
 
 def toolsCall? (json : Json) : Option (String × Json) := do
   let methodJson ← (json.getObjVal? "method").toOption
