@@ -73,17 +73,17 @@ def main : IO Unit := do
 
   -- Tamper ⇒ fail-closed (policy): malformed hex and wrong-key signatures
   -- both refuse; the signed-policy gate then default-denies everything.
-  if Seal.verifyPolicySignature "zz-not-hex" "{}" (String.mk (List.replicate 128 'a')) then
+  if Seal.verifyPolicySignature "zz-not-hex" "{}" (String.ofList (List.replicate 128 'a')) then
     throw <| IO.userError "malformed public key hex must fail verification"
-  if Seal.verifyPolicySignature (String.mk (List.replicate 64 'a')) "{}" "zz-not-hex" then
+  if Seal.verifyPolicySignature (String.ofList (List.replicate 64 'a')) "{}" "zz-not-hex" then
     throw <| IO.userError "malformed signature hex must fail verification"
   if Seal.verifyPolicySignature
-      (String.mk (List.replicate 64 'a')) "{\"tools\":[]}"
-      (String.mk (List.replicate 128 'b')) then
+      (String.ofList (List.replicate 64 'a')) "{\"tools\":[]}"
+      (String.ofList (List.replicate 128 'b')) then
     throw <| IO.userError "wrong-key signature must fail verification"
   let sealed := Seal.classifyUnderSignedPolicy
-    (String.mk (List.replicate 64 'a')) "{\"tools\":[]}"
-    (String.mk (List.replicate 128 'b')) "shell_exec" Seal.shellRmArgs
+    (String.ofList (List.replicate 64 'a')) "{\"tools\":[]}"
+    (String.ofList (List.replicate 128 'b')) "shell_exec" Seal.shellRmArgs
   unless sealed.toEvent == .defaultDeny do
     throw <| IO.userError s!"tampered policy must default-deny, got {repr sealed.toEvent}"
 

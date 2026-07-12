@@ -50,6 +50,10 @@ name = "scaffold_tests"
 root = "Test.Scaffold"
 
 [[lean_exe]]
+name = "scan_oracle"
+root = "Test.ScanOracle"
+
+[[lean_exe]]
 name = "axiom_check"
 root = "Test.Axioms"
 
