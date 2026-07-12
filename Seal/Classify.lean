@@ -21,7 +21,10 @@ def HostEvent.toEvent : HostEvent → Event
 def HostEvent.targetText : HostEvent → String
   | .event _ targetText => targetText
 
-partial def matchSpec (spec : MatchSpec) (args : Json) : Bool :=
+/-- Total (kernel-visible) match evaluation. `attach` threads the membership
+    witness so the nested `all`/`any` recursion is accepted without `partial`;
+    proofs about `classifyToolCall` may therefore unfold rule evaluation. -/
+def matchSpec (spec : MatchSpec) (args : Json) : Bool :=
   match spec with
   | .always => true
   | .equals path expected =>
@@ -32,8 +35,14 @@ partial def matchSpec (spec : MatchSpec) (args : Json) : Bool :=
       match atPath args path >>= jsonScalarToString with
       | some value => containsAnyCi value needles
       | none => false
-  | .all specs => specs.all (fun child => matchSpec child args)
-  | .any specs => specs.any (fun child => matchSpec child args)
+  | .all specs => specs.attach.all (fun child => matchSpec child.val args)
+  | .any specs => specs.attach.any (fun child => matchSpec child.val args)
+termination_by sizeOf spec
+decreasing_by
+  all_goals
+    have := List.sizeOf_lt_of_mem child.property
+    simp only [MatchSpec.all.sizeOf_spec, MatchSpec.any.sizeOf_spec]
+    omega
 
 def matchRule (rule : ToolRule) (args : Json) : Bool :=
   matchSpec rule.matcher args
