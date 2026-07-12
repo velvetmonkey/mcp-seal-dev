@@ -3,6 +3,10 @@
 import SealCore
 import Seal.PolicyV2Theorems
 import Seal.PolicyScan
+import Seal.Scaffold
+import Seal.GoldenPath
+import Seal.SignedPolicy
+import SealV2.TamperTheorems
 
 #print axioms SealCore.default_deny_never_allowed
 #print axioms SealCore.no_allow_guarded_without_matching_approval_in_state
@@ -16,5 +20,27 @@ import Seal.PolicyScan
 #print axioms SealCore.consumed_approval_not_live
 #print axioms SealCore.expired_not_live
 #print axioms SealCore.fresh_approval_live
+
+-- Golden-path spec: scaffolder soundness
+#print axioms Seal.scaffold_safety
+#print axioms Seal.scaffold_safety_not_benign
+#print axioms Seal.dangerous_annotation_guarded
+#print axioms Seal.scaffoldMode_ne_deny
+#print axioms Seal.scaffold_unknown_tool_default_deny
+#print axioms Seal.scaffold_readonly_flows
+
+-- Golden-path spec: shell reference cell
+#print axioms Seal.shell_exec_requires_live_approval
+#print axioms Seal.shell_rm_rf_requires_live_approval
+#print axioms Seal.shell_rm_rf_blocks_on_fresh_state
+#print axioms Seal.shell_rm_rf_allows_with_fresh_approval
+#print axioms Seal.shell_read_flows
+
+-- Golden-path spec: tamper ⇒ fail-closed
+#print axioms Seal.tampered_policy_fail_closed
+#print axioms Seal.tampered_policy_blocks
+#print axioms SealV2.tampered_approvals_validate_none
+#print axioms SealV2.tampered_approvals_deny
+#print axioms SealV2.allow_implies_witness_signature_verified
 
 def main : IO UInt32 := pure 0

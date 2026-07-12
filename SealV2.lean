@@ -9,4 +9,5 @@ import SealV2.ValidationTheorems
 import SealV2.SerializationTheorems
 import SealV2.Decide
 import SealV2.DecideTheorems
+import SealV2.TamperTheorems
 import SealV2.LifecycleTheorems
