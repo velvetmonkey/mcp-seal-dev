@@ -42,6 +42,35 @@ jobs:
       - run: python3 test/v2/m3_serialization_fixture.py
       - run: python3 test/v2/m4_adversarial_mcp_fixture.py
       - run: python3 test/v2/m5_sign_fixture.py
+      # The Lean half of the kit's scan differential. The kit's own CI proves
+      # JS ≡ pinned-oracle-output on every run (it ships no Lean toolchain);
+      # THIS step proves live Lean scanPass ≡ that same pin ≡ the corpus's
+      # expected verdicts, by running the kit's own bridge against this
+      # checkout. Together they are the full differential in automation —
+      # the warrant scan.cjs prints claims exactly this mechanism. The token
+      # is REQUIRED, not optional: a silently-skipped leg is precisely the
+      # never-fires pattern this step exists to kill.
+      - name: Require kit checkout access for the scan differential
+        env:
+          SEAL_CI_READ_TOKEN: ${{ secrets.SEAL_CI_READ_TOKEN }}
+        run: |
+          test -n "$SEAL_CI_READ_TOKEN" || {
+            echo "::error::SEAL_CI_READ_TOKEN is required; the scan differential was not run."
+            exit 1
+          }
+      - name: Check out seal-assurance-kit
+        uses: actions/checkout@v6.0.3
+        with:
+          repository: velvetmonkey/seal-assurance-kit
+          token: ${{ secrets.SEAL_CI_READ_TOKEN }}
+          path: seal-assurance-kit
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: kit scan differential (JS vs live Lean vs expected, + pin freshness)
+        run: |
+          cd seal-assurance-kit
+          SCAN_LEAN_ROOT="$GITHUB_WORKSPACE" node scripts/scan_bridge.mjs
       - run: lake build ffi_shared
       - run: bash scripts/build_ffi_so.sh
       - run: |
