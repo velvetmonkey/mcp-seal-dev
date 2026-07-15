@@ -1,5 +1,7 @@
 # mcp-seal-dev
 
+[![CI](https://github.com/velvetmonkey/mcp-seal-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetmonkey/mcp-seal-dev/actions/workflows/ci.yml)
+
 Private Lean workspace for the Seal mediation kernel: target commitments, approvals, and the safety rules that the rest of the product family must match. **Role:** The rulebook, proven.
 
 **Seal is the approval gateway for agentic tool use: it lets agents read and reason, but forces every protected external effect through an exact, recorded, checkable approval boundary.**
