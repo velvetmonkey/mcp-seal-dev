@@ -33,6 +33,10 @@ private def jsonToTargetHash? (j : Json) : Option SealCore.TargetHash :=
 private def parseApprovalRecord (now ttlMs : Nat) (line : String) : Option Event :=
   let trimmed := line.trimAscii.toString
   if trimmed.isEmpty then none else
+  -- Fail closed on a pathological numeric literal (e.g. `issuedAt` with a
+  -- monster exponent) before `Json.parse` aborts on it: reject the record, so
+  -- no approval is granted. Ignoring an approval only ever DENIES — fail-safe.
+  if !wireNumbersSafe trimmed then none else
     match Json.parse trimmed with
     | .ok json =>
         match (json.getObjVal? "target").toOption.bind jsonToTargetHash? with
