@@ -15,6 +15,10 @@ import SealV2.TamperTheorems
 #print axioms Seal.adding_guard_cannot_explicitly_allow
 #print axioms Seal.ambiguous_guard_targets_block
 #print axioms Seal.full_arguments_preimage_changes
+#print axioms Seal.evalTargetParts_congr
+#print axioms Seal.evalTargetParts_indep_of_unnamed_paths
+#print axioms Seal.evaluateRule_target_congr
+#print axioms Seal.p0_2_policy_target_ignores_unnamed
 #print axioms Seal.scan_pass_sound
 #print axioms Seal.scan_pass_no_orphan_allow
 #print axioms SealCore.consumed_approval_not_live
