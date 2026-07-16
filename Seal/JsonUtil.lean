@@ -98,4 +98,15 @@ def wireNumbersSafe (s : String) : Bool :=
 def splitPath (s : String) : List String :=
   s.splitOn "." |>.filter (fun part => part ≠ "")
 
+/-- Parser-boundary discipline: every key of `json` (which must be an object)
+    must be in `allowed`. A stray key is a hard error naming the key and the
+    context — a typo such as `temporral` must not silently leave a kernel
+    unconfigured. -/
+def expectObjKeys (json : Json) (allowed : List String) (ctx : String) :
+    Except String Unit := do
+  let obj ← json.getObj?
+  match obj.keys.filter (fun k => !allowed.contains k) with
+  | [] => pure ()
+  | k :: _ => throw s!"unknown key '{k}' in {ctx}"
+
 end Seal.JsonUtil

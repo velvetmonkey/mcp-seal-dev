@@ -3,6 +3,7 @@
 import Seal.Hash
 import Seal.JsonUtil
 import Seal.Policy
+import Seal.PolicyBundle
 import Seal.Classify
 import Seal.PolicyV2Theorems
 import Seal.PolicyScan

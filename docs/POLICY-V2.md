@@ -87,6 +87,80 @@ not a value change: `Lean.Json` canonicalizes object keys before `compress`.
 Concluding that the SHA-256 digest also changes uses the named
 collision-resistance assumption A-CR.
 
+## The 7-kernel bundle
+
+`Seal.parsePolicyBundle` (`Seal/PolicyBundle.lean`) parses the whole 7-kernel
+policy surface: the envelope above plus one optional declarative section per
+non-Safety kernel. The deployed host (seal-host) maps a parsed bundle onto its
+proven kernel registry; the `bundle_*_registered_iff` tripwires there pin that
+a bundle activates exactly the kernels it configures.
+
+Unknown keys are hard errors at the payload, section, and entry levels: a typo
+such as `temporral` must not silently leave a kernel off. The one interior the
+bundle parser does not police is each safety rule's body (`match`/`target`
+internals), which stays the authoring signer's boundary.
+
+Enable semantics, per kernel — honesty first:
+
+| Kernel | Presence | `enabled` | Off means |
+|---|---|---|---|
+| S Safety | required | rejected key | never off (`safety_always_registered`) |
+| T Temporal | optional | default `true` | vacuous (registered, empty policy list) |
+| C Consensus | optional | default `true` | unregistered |
+| V Convergence | optional | default `true` | unregistered |
+| K Calibration | optional | default **`false`** (EXPERIMENTAL) | present-but-disabled, a distinct pinned state |
+| L Linear | optional | default `true` | unregistered |
+| B Budget | optional | default `true` | unregistered |
+
+S and T are registered unconditionally by the host's proven registry
+selection; they are configurable but not de-registrable. `enabled: false` on
+any other section is equivalent to deleting the section (the `effective*`
+functions collapse it before the host mapping), except Calibration, whose
+present-but-disabled state is deliberately preserved (opt-in twice).
+
+Section shapes (wire keys are frozen; each also accepts `enabled`):
+
+```json
+{
+  "temporal": {"policies": [
+    {"name": "freeze-after-revoke", "type": "no_after",
+     "trigger": ["revoke"], "forbidden": ["write_item"]}]},
+  "consensus": {"roster": [1, 2, 3],
+    "votes_file": "/path/votes.ndjson", "high_stakes": ["deploy"]},
+  "convergence": {"tools": [
+    {"tool": "store.update", "op_arg": "operation.kind"}]},
+  "calibration": {"enabled": false, "delta_num": 1, "delta_den": 20,
+    "min_samples": 100, "records_file": "/path/forecasts.ndjson",
+    "gated_tools": ["auto_publish"]},
+  "linear": {"grants_file": "/path/grants.ndjson",
+    "tools": [{"tool": "spend", "cap_arg": "capability.id"}]},
+  "budget": {"budgets": [
+    {"name": "write-units", "cap": 100, "tools": ["write_item"],
+     "cost_arg": "usage.units"}]}
+}
+```
+
+Field semantics, guarantees per kernel, and authoring recipes are documented
+in `seal-host/CONFIG.md`; the parser is this repository's
+`Seal.parsePolicyBundle`, so there is one config vocabulary across the native,
+wasm, and model lanes.
+
+### Budget × Linear: pinned known gap
+
+Surfacing Budget (B) and Linear (L) here does not upgrade their composition
+claim. What is proven (seal-host `Host/Commit.lean`, pure two-phase commit
+model): a call denied by the composed verdict commits no decide-phase state —
+a Safety-denied call spends no budget and consumes no linear grant
+(`pureCommit_deny_no_decide_commit`, `budget_commitStep_deny`), and committed
+traces stay within caps (`budget_committed_trace_within_cap_of_consistent`,
+`linear_committed_trace_no_double_spend`), with the deployed loop body bound
+by the `phase1Held_*` lemmas. What is NOT proven: the IO realization of that
+commit discipline through the FFI boundary (mirrored, not proven), and any
+caller dimension — budget counters and linear grants are global, so one
+caller can exhaust another's allowance. The budget×linear proof is a queued
+follow-up goal; until it lands, treat B and L guarantees as per-config-global,
+not per-caller.
+
 ## Proven properties
 
 `Seal.PolicyV2Theorems` establishes:

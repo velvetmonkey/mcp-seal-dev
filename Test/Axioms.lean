@@ -2,6 +2,7 @@
 
 import SealCore
 import Seal.PolicyV2Theorems
+import Seal.PolicyBundle
 import Seal.NumberGuardTheorems
 import Seal.PolicyScan
 import Seal.Scaffold
@@ -21,6 +22,11 @@ import SealV2.TamperTheorems
 #print axioms Seal.evaluateRule_target_congr
 #print axioms Seal.p0_2_policy_target_ignores_unnamed
 #print axioms Seal.JsonUtil.numberScanStep_worst_le_of_no_digit
+#print axioms Seal.effectiveConsensus_isSome_iff
+#print axioms Seal.effectiveLinear_isSome_iff
+#print axioms Seal.effectiveTemporal_nil_of_disabled
+#print axioms Seal.effectiveConvergence_ne_nil_iff
+#print axioms Seal.effectiveBudget_ne_nil_iff
 #print axioms Seal.scan_pass_sound
 #print axioms Seal.scan_pass_no_orphan_allow
 #print axioms SealCore.consumed_approval_not_live
