@@ -49,7 +49,16 @@ private def processHostLine
     (childIn : IO.FS.Handle)
     (hostOut : IO.FS.Stream)
     (stdoutLock : Std.Mutex Unit) : IO Unit := do
-  let parsed := Json.parse hostLine.trimAscii.toString
+  let trimmed := hostLine.trimAscii.toString
+  -- Fail closed on a pathological numeric literal BEFORE `Json.parse` sees it:
+  -- a wire number with a monster decimal exponent makes `Json.parse` evaluate
+  -- `10^exponent` and abort (native + interpreter) — a one-line DoS. Do NOT
+  -- forward it to the child (a forward would be the fail-OPEN bypass) and do
+  -- NOT parse it; block the request. (See Seal.JsonUtil.wireNumbersSafe.)
+  if !JsonUtil.wireNumbersSafe trimmed then
+    writeLocked stdoutLock hostOut (blockResponseLine Json.null "unsafe numeric literal")
+    return
+  let parsed := Json.parse trimmed
   match parsed with
   | .error _ =>
       childIn.putStr hostLine
