@@ -145,20 +145,33 @@ in `seal-host/CONFIG.md`; the parser is this repository's
 `Seal.parsePolicyBundle`, so there is one config vocabulary across the native,
 wasm, and model lanes.
 
-### Budget × Linear: pinned known gap
+### Budget × Linear: composition proven; IO shell and caller dimension pinned
 
 Surfacing Budget (B) and Linear (L) here does not upgrade their composition
-claim. What is proven (seal-host `Host/Commit.lean`, pure two-phase commit
-model): a call denied by the composed verdict commits no decide-phase state —
-a Safety-denied call spends no budget and consumes no linear grant
-(`pureCommit_deny_no_decide_commit`, `budget_commitStep_deny`), and committed
-traces stay within caps (`budget_committed_trace_within_cap_of_consistent`,
-`linear_committed_trace_no_double_spend`), with the deployed loop body bound
-by the `phase1Held_*` lemmas. What is NOT proven: the IO realization of that
-commit discipline through the FFI boundary (mirrored, not proven), and any
-caller dimension — budget counters and linear grants are global, so one
-caller can exhaust another's allowance. The budget×linear proof is a queued
-follow-up goal; until it lands, treat B and L guarantees as per-config-global,
+claim beyond what seal-host proves. What is PROVEN (seal-host
+`Host/Commit.lean` + `Host/CommitRegistry.lean`, over the full 7-kernel
+registry — `commitInstsFor_kernels` binds the pure commit instances to the
+same `activeKernels` selection `registryFor_kernels` proves the deployed step
+dispatches): a call denied by ANY kernel (`pureCommit_deny_of_member`)
+commits no decide-phase state anywhere (`registry_deny_ingest_only`) — budget
+counters byte-identical (`registry_deny_no_budget_spend`), no linear
+capability consumed, holds can only grow by this call's ingested grants
+(`registry_deny_no_capability_consumed`; the deployed grants parse emits
+grant events only), no temporal trace event
+(`registry_deny_temporal_frozen`); only the spec-allowed ingests move
+(Safety's approval fold, Linear's grant fold). Committed traces stay within
+caps (`budget_committed_trace_within_cap_of_consistent`) and never
+double-spend (`linear_committed_trace_no_double_spend`), and the dispatch
+loop's per-call verdicts/writes/held-replay are proven equal to the model's
+`pureCommit` (`dispatch_plan`). What is NOT proven (the named IO shell): that
+the run-time snapshot fed to that pure computation is faithful — `IO.Ref`
+sequencing and ref distinctness, the loop/`do`-monad, the allow branch
+executing the held writes, `stepImpl`'s JSON marshalling, the mirror's
+config/evidence wiring against `registryFor` (kernel-list equality pinned;
+per-instance wiring trusted-by-inspection), and the FFI/Rust/OS boundary —
+and any caller dimension: budget counters and linear grants are global, so
+one caller can exhaust another's allowance. The caller dimension is a
+feature gap, not a proof gap; treat B and L guarantees as per-config-global,
 not per-caller.
 
 ## Proven properties
