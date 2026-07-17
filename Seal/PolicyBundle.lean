@@ -110,9 +110,27 @@ structure BudgetSection where
   budgets : List BudgetRule
   deriving Repr, BEq
 
+/-- One registered principal: the operator-pinned (id, Ed25519 verifying-key
+    hex) pair. The registry lives INSIDE the signed config — key→principal
+    binding is out-of-band trust, never a request field. -/
+structure PrincipalKeyEntry where
+  id : String
+  pubkey : String
+  deriving Repr, BEq
+
+/-- The V2.1 principals section: the key registry plus per-principal budget
+    specs (each budget enforced separately per authenticated principal —
+    state keyed (principal id, budget name) on the host side). -/
+structure PrincipalsSection where
+  enabled : Bool := true
+  keys : List PrincipalKeyEntry
+  budgets : List BudgetRule
+  deriving Repr, BEq
+
 /-- The 7-kernel policy bundle: the policy-v2 DX surface. Safety is the
     existing verified `Policy`; the six kernel sections are declarative and
-    optional. -/
+    optional. `principals` (V2.1) adds the signed-envelope principal registry
+    and per-principal budgets. -/
 structure PolicyBundle where
   epoch : Nat
   safety : Policy
@@ -122,6 +140,7 @@ structure PolicyBundle where
   calibration : Option CalibrationSection := none
   linear : Option LinearSection := none
   budget : Option BudgetSection := none
+  principals : Option PrincipalsSection := none
   deriving Repr
 
 /-! ## Effective sections
@@ -154,6 +173,11 @@ def PolicyBundle.effectiveBudget (b : PolicyBundle) : List BudgetRule :=
   match b.budget with
   | some s => if s.enabled then s.budgets else []
   | none => []
+
+def PolicyBundle.effectivePrincipals (b : PolicyBundle) : Option PrincipalsSection :=
+  match b.principals with
+  | some s => if s.enabled then some s else none
+  | none => none
 
 /-! ## Enablement lemmas
 
@@ -198,6 +222,15 @@ theorem effectiveBudget_ne_nil_iff (b : PolicyBundle) :
   | some s =>
       cases he : s.enabled <;>
         simp [PolicyBundle.effectiveBudget, h, he]
+
+theorem effectivePrincipals_isSome_iff (b : PolicyBundle) :
+    b.effectivePrincipals.isSome ↔
+      ∃ s, b.principals = some s ∧ s.enabled = true := by
+  cases h : b.principals with
+  | none => simp [PolicyBundle.effectivePrincipals, h]
+  | some s =>
+      cases he : s.enabled <;>
+        simp [PolicyBundle.effectivePrincipals, h, he]
 
 /-! ## Parser -/
 
@@ -275,20 +308,47 @@ def parseLinearSection (json : Json) : Except String LinearSection := do
     pure { tool, capArg := splitPath capArg : LinearGrantTool }
   pure { enabled, grantsFile, tools }
 
+private def parseBudgetRule (j : Json) : Except String BudgetRule := do
+  expectObjKeys j ["name", "cap", "tools", "cost_arg"] "budget spec"
+  let name ← getObjString j "name"
+  let cap ← (← j.getObjVal? "cap").getNat?
+  let tools ← parseStringList (← j.getObjVal? "tools")
+  let costArg ← match ← getObjValOpt j "cost_arg" with
+    | some v => pure (some (splitPath (← v.getStr?)))
+    | none => pure none
+  pure { name, cap, tools, costArg }
+
 def parseBudgetSection (json : Json) : Except String BudgetSection := do
   expectObjKeys json ["enabled", "budgets"] "budget section"
   let enabled ← parseEnabled json true
   let budgetsJson ← (← json.getObjVal? "budgets").getArr?
-  let budgets ← budgetsJson.toList.mapM fun j => do
-    expectObjKeys j ["name", "cap", "tools", "cost_arg"] "budget spec"
-    let name ← getObjString j "name"
-    let cap ← (← j.getObjVal? "cap").getNat?
-    let tools ← parseStringList (← j.getObjVal? "tools")
-    let costArg ← match ← getObjValOpt j "cost_arg" with
-      | some v => pure (some (splitPath (← v.getStr?)))
-      | none => pure none
-    pure { name, cap, tools, costArg : BudgetRule }
+  let budgets ← budgetsJson.toList.mapM parseBudgetRule
   pure { enabled, budgets }
+
+private def isHexChar (c : Char) : Bool :=
+  c.isDigit || ('a' ≤ c && c ≤ 'f') || ('A' ≤ c && c ≤ 'F')
+
+/-- V2.1 principals section. Parse-time fail-closed lints: non-empty ids and
+    64-hex-char pubkeys (an Ed25519 verifying key). The host's
+    `verifyEnvelope` re-checks the decoded key length (32 bytes) at use — the
+    lint here fails malformed registries at signing/load time instead of
+    turning every envelope into a silent deny. -/
+def parsePrincipalsSection (json : Json) : Except String PrincipalsSection := do
+  expectObjKeys json ["enabled", "keys", "budgets"] "principals section"
+  let enabled ← parseEnabled json true
+  let keysJson ← (← json.getObjVal? "keys").getArr?
+  let keys ← keysJson.toList.mapM fun j => do
+    expectObjKeys j ["id", "pubkey"] "principal key"
+    let id ← getObjString j "id"
+    let pubkey ← getObjString j "pubkey"
+    if id.isEmpty then
+      throw "principal id must be non-empty"
+    if pubkey.length != 64 || !(pubkey.toList.all isHexChar) then
+      throw s!"principal pubkey must be 64 hex chars: {id}"
+    pure { id, pubkey : PrincipalKeyEntry }
+  let budgetsJson ← (← json.getObjVal? "budgets").getArr?
+  let budgets ← budgetsJson.toList.mapM parseBudgetRule
+  pure { enabled, keys, budgets }
 
 private def parseOptSection {α : Type} (json : Json) (key : String)
     (parse : Json → Except String α) : Except String (Option α) := do
@@ -299,7 +359,7 @@ private def parseOptSection {α : Type} (json : Json) (key : String)
 /-- The keys a bundle payload may carry at the top level. -/
 def bundleTopLevelKeys : List String :=
   ["epoch", "server", "safety", "temporal", "consensus", "convergence",
-   "calibration", "linear", "budget"]
+   "calibration", "linear", "budget", "principals"]
 
 /-- The shallow keys of the `safety` section. The interior of `tools` rules
     stays the existing `parsePolicyJson` boundary (its strictness is the
@@ -343,8 +403,9 @@ def parsePolicyBundle (json : Json) : Except String PolicyBundle := do
   let calibration ← parseOptSection json "calibration" parseCalibrationSection
   let linear ← parseOptSection json "linear" parseLinearSection
   let budget ← parseOptSection json "budget" parseBudgetSection
+  let principals ← parseOptSection json "principals" parsePrincipalsSection
   pure { epoch, safety, temporal, consensus, convergence, calibration, linear,
-         budget }
+         budget, principals }
 
 /-! ## Axiom pins -/
 
@@ -367,5 +428,9 @@ def parsePolicyBundle (json : Json) : Except String PolicyBundle := do
 /-- info: 'Seal.effectiveBudget_ne_nil_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms effectiveBudget_ne_nil_iff
+
+/-- info: 'Seal.effectivePrincipals_isSome_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms effectivePrincipals_isSome_iff
 
 end Seal
