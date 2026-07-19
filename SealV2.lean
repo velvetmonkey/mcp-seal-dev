@@ -11,3 +11,5 @@ import SealV2.Decide
 import SealV2.DecideTheorems
 import SealV2.TamperTheorems
 import SealV2.LifecycleTheorems
+import SealV2.EffectEnvelope
+import SealV2.ResponseNI
