@@ -25,6 +25,10 @@ private def expectErrContaining (label text needle : String) : IO Unit := do
       unless (e.splitOn needle).length > 1 do
         throw <| IO.userError s!"{label}: error missing '{needle}': {e}"
 
+/-- 64 hex chars — a syntactically valid Ed25519 verifying-key hex. -/
+private def testPubkeyHex : String :=
+  "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+
 private def safetyBlock : String :=
   "\"safety\":{\"approval\":{\"control_file\":\"/tmp/approvals.ndjson\",\"ttl_seconds\":60},\"tools\":[{\"name\":\"db.execute\",\"mode\":\"guard\",\"target\":[{\"full_arguments\":true}]}]}"
 
@@ -36,7 +40,8 @@ private def fullPayload : String :=
   "\"convergence\":{\"tools\":[{\"tool\":\"store.update\",\"op_arg\":\"operation.kind\"}]}," ++
   "\"calibration\":{\"enabled\":true,\"delta_num\":1,\"delta_den\":20,\"min_samples\":10,\"records_file\":\"/tmp/forecasts.ndjson\",\"gated_tools\":[\"auto_publish\"]}," ++
   "\"linear\":{\"grants_file\":\"/tmp/grants.ndjson\",\"tools\":[{\"tool\":\"spend\",\"cap_arg\":\"capability.id\"}]}," ++
-  "\"budget\":{\"budgets\":[{\"name\":\"write-units\",\"cap\":100,\"tools\":[\"write_item\"],\"cost_arg\":\"usage.units\"}]}}"
+  "\"budget\":{\"budgets\":[{\"name\":\"write-units\",\"cap\":100,\"tools\":[\"write_item\"],\"cost_arg\":\"usage.units\"}]}," ++
+  "\"principals\":{\"keys\":[{\"id\":\"alice\",\"pubkey\":\"" ++ testPubkeyHex ++ "\"}],\"budgets\":[{\"name\":\"alice-writes\",\"cap\":10,\"tools\":[\"write_item\"]}]}}"
 
 private def minimalPayload : String :=
   "{\"epoch\":1," ++ safetyBlock ++ "}"
@@ -88,15 +93,25 @@ def main : IO Unit := do
                               costArg := some ["usage", "units"] }] do
         throw <| IO.userError s!"budget fields lost: {repr bg}"
   | none => throw <| IO.userError "budget section lost"
+  match b.principals with
+  | some p =>
+      unless p.enabled do throw <| IO.userError "principals enabled default not true"
+      unless p.keys == [{ id := "alice", pubkey := testPubkeyHex }] do
+        throw <| IO.userError s!"principal keys lost: {repr p}"
+      unless p.budgets == [{ name := "alice-writes", cap := 10,
+                             tools := ["write_item"], costArg := none }] do
+        throw <| IO.userError s!"principal budgets lost: {repr p}"
+  | none => throw <| IO.userError "principals section lost"
 
-  -- minimal payload: six sections absent, all effective views empty
+  -- minimal payload: optional sections absent, all effective views empty
   let m ← expectOk "minimal payload" minimalPayload
   unless m.temporal.isNone && m.consensus.isNone && m.convergence.isNone
-      && m.calibration.isNone && m.linear.isNone && m.budget.isNone do
+      && m.calibration.isNone && m.linear.isNone && m.budget.isNone
+      && m.principals.isNone do
     throw <| IO.userError "absent sections did not stay absent"
   unless m.effectiveTemporal.isEmpty && m.effectiveConsensus.isNone
       && m.effectiveConvergence.isEmpty && m.effectiveLinear.isNone
-      && m.effectiveBudget.isEmpty do
+      && m.effectiveBudget.isEmpty && m.effectivePrincipals.isNone do
     throw <| IO.userError "effective views of absent sections not empty"
 
   -- unknown keys: hard errors at every level
@@ -120,6 +135,15 @@ def main : IO Unit := do
     (withSection "\"budget\":{\"budgets\":[],\"cap\":1}") "unknown key 'cap'"
   expectErrContaining "unknown budget spec key"
     (withSection "\"budget\":{\"budgets\":[{\"name\":\"n\",\"cap\":1,\"tools\":[],\"costs\":1}]}")
+    "unknown key 'costs'"
+  expectErrContaining "unknown principals key"
+    (withSection ("\"principals\":{\"keys\":[],\"budgets\":[],\"registry\":[]}"))
+    "unknown key 'registry'"
+  expectErrContaining "unknown principal key entry key"
+    (withSection ("\"principals\":{\"keys\":[{\"id\":\"a\",\"pubkey\":\"" ++ testPubkeyHex ++ "\",\"role\":\"admin\"}],\"budgets\":[]}"))
+    "unknown key 'role'"
+  expectErrContaining "unknown principal budget spec key"
+    (withSection "\"principals\":{\"keys\":[],\"budgets\":[{\"name\":\"n\",\"cap\":1,\"tools\":[],\"costs\":1}]}")
     "unknown key 'costs'"
   expectErrContaining "unknown temporal rule key"
     (withSection "\"temporal\":{\"policies\":[{\"name\":\"n\",\"type\":\"no_after\",\"trigger\":[],\"forbidden\":[],\"after\":\"x\"}]}")
@@ -164,6 +188,24 @@ def main : IO Unit := do
     (withSection "\"budget\":{\"enabled\":false,\"budgets\":[{\"name\":\"n\",\"cap\":1,\"tools\":[\"t\"]}]}")
   unless bd.effectiveBudget.isEmpty do
     throw <| IO.userError "disabled budget still effective"
+  let pd ← expectOk "principals disabled"
+    (withSection ("\"principals\":{\"enabled\":false,\"keys\":[{\"id\":\"a\",\"pubkey\":\"" ++ testPubkeyHex ++ "\"}],\"budgets\":[]}"))
+  unless pd.principals.isSome do throw <| IO.userError "disabled principals lost"
+  unless pd.effectivePrincipals.isNone do
+    throw <| IO.userError "disabled principals still effective"
+
+  -- principals: parse-time fail-closed lints (V2.1 acceptance-set DELTA over
+  -- Layer 1: pre-V2.1 the whole 'principals' key was "unknown key" — see the
+  -- PolicyLegacy lockstep note)
+  expectErrContaining "empty principal id"
+    (withSection ("\"principals\":{\"keys\":[{\"id\":\"\",\"pubkey\":\"" ++ testPubkeyHex ++ "\"}],\"budgets\":[]}"))
+    "principal id must be non-empty"
+  expectErrContaining "short principal pubkey"
+    (withSection "\"principals\":{\"keys\":[{\"id\":\"a\",\"pubkey\":\"deadbeef\"}],\"budgets\":[]}")
+    "must be 64 hex chars"
+  expectErrContaining "non-hex principal pubkey"
+    (withSection ("\"principals\":{\"keys\":[{\"id\":\"a\",\"pubkey\":\"zz112233445566778899aabbccddeeff00112233445566778899aabbccddeeff\"}],\"budgets\":[]}"))
+    "must be 64 hex chars"
 
   -- calibration: EXPERIMENTAL default is DISABLED; present-but-disabled stays present
   let kDefault ← expectOk "calibration default"

@@ -202,6 +202,39 @@ theorem budgetRule_eq :
   try repeat' (split <;> try rfl)
   all_goals aesop
 
+set_option maxHeartbeats 1600000 in
+set_option maxRecDepth 8192 in
+theorem principalKey_eq :
+    Seal.principalKeyCodec.parse = PolicyLegacy.parsePrincipalKey := by
+  funext j
+  simp only [Seal.principalKeyCodec, WireCodec.strictObj, Seal.principalKeySpec,
+    ObjSpec.emit, ObjSpec.check, ObjSpec.field, ObjSpec.start, ObjSpec.keys,
+    Seal.principalIdCodec, Seal.principalPubkeyCodec, Seal.strCodec,
+    List.map_cons, List.map_nil, List.append_nil, List.nil_append,
+    List.cons_append,
+    PolicyLegacy.parsePrincipalKey, getObjString,
+    bind_assoc, pure_bind, throw_bind, ite_bind]
+  try simp only [bind_def, pure_def, throw_def, Except.bind]
+  try repeat' (split <;> try rfl)
+  all_goals aesop
+
+set_option maxHeartbeats 1600000 in
+set_option maxRecDepth 8192 in
+theorem parsePrincipalsSection_eq :
+    Seal.parsePrincipalsSection = PolicyLegacy.parsePrincipalsSection := by
+  funext j
+  simp only [Seal.parsePrincipalsSection, Seal.principalsSectionCodec,
+    WireCodec.strictObj, Seal.principalsSectionSpec, ObjSpec.emit,
+    ObjSpec.fieldD, ObjSpec.field, ObjSpec.start, ObjSpec.keys,
+    Seal.boolCodec, Seal.arrCodec, principalKey_eq, budgetRule_eq,
+    List.map_cons, List.map_nil, List.append_nil, List.nil_append,
+    List.cons_append,
+    PolicyLegacy.parsePrincipalsSection, PolicyLegacy.parseEnabled,
+    bind_assoc, pure_bind, throw_bind, ite_bind]
+  try simp only [bind_def, pure_def, throw_def, Except.bind]
+  try repeat' (split <;> try rfl)
+  all_goals aesop
+
 /-! ## Sections (T/C/V/K/L/B) -/
 
 set_option maxHeartbeats 1600000 in
@@ -325,7 +358,7 @@ theorem parsePolicyBundle_eq :
     bundleTopLevelKeys_eq, hsafety, happroval, parsePolicyJson_eq,
     parseTemporalSection_eq, parseConsensusSection_eq,
     parseConvergenceSection_eq, parseCalibrationSection_eq,
-    parseLinearSection_eq, parseBudgetSection_eq,
+    parseLinearSection_eq, parseBudgetSection_eq, parsePrincipalsSection_eq,
     Seal.parseOptSection, PolicyLegacy.parseOptSection,
     bind_assoc, pure_bind, throw_bind, ite_bind]
   try simp only [bind_def, pure_def, throw_def, Except.bind]

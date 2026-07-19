@@ -118,9 +118,27 @@ structure BudgetSection where
   budgets : List BudgetRule
   deriving Repr, BEq
 
+/-- One registered principal: the operator-pinned (id, Ed25519 verifying-key
+    hex) pair. The registry lives INSIDE the signed config — key→principal
+    binding is out-of-band trust, never a request field. -/
+structure PrincipalKeyEntry where
+  id : String
+  pubkey : String
+  deriving Repr, BEq
+
+/-- The V2.1 principals section: the key registry plus per-principal budget
+    specs (each budget enforced separately per authenticated principal —
+    state keyed (principal id, budget name) on the host side). -/
+structure PrincipalsSection where
+  enabled : Bool := true
+  keys : List PrincipalKeyEntry
+  budgets : List BudgetRule
+  deriving Repr, BEq
+
 /-- The 7-kernel policy bundle: the policy-v2 DX surface. Safety is the
     existing verified `Policy`; the six kernel sections are declarative and
-    optional. -/
+    optional. `principals` (V2.1) adds the signed-envelope principal registry
+    and per-principal budgets. -/
 structure PolicyBundle where
   epoch : Nat
   safety : Policy
@@ -130,6 +148,7 @@ structure PolicyBundle where
   calibration : Option CalibrationSection := none
   linear : Option LinearSection := none
   budget : Option BudgetSection := none
+  principals : Option PrincipalsSection := none
   deriving Repr
 
 /-! ## Effective sections
@@ -162,6 +181,11 @@ def PolicyBundle.effectiveBudget (b : PolicyBundle) : List BudgetRule :=
   match b.budget with
   | some s => if s.enabled then s.budgets else []
   | none => []
+
+def PolicyBundle.effectivePrincipals (b : PolicyBundle) : Option PrincipalsSection :=
+  match b.principals with
+  | some s => if s.enabled then some s else none
+  | none => none
 
 /-! ## Enablement lemmas
 
@@ -206,6 +230,15 @@ theorem effectiveBudget_ne_nil_iff (b : PolicyBundle) :
   | some s =>
       cases he : s.enabled <;>
         simp [PolicyBundle.effectiveBudget, h, he]
+
+theorem effectivePrincipals_isSome_iff (b : PolicyBundle) :
+    b.effectivePrincipals.isSome ↔
+      ∃ s, b.principals = some s ∧ s.enabled = true := by
+  cases h : b.principals with
+  | none => simp [PolicyBundle.effectivePrincipals, h]
+  | some s =>
+      cases he : s.enabled <;>
+        simp [PolicyBundle.effectivePrincipals, h, he]
 
 /-! ## Section codecs
 
@@ -332,6 +365,52 @@ def budgetSectionSpec : ObjSpec BudgetSection :=
 def budgetSectionCodec : WireCodec BudgetSection :=
   .strictObj "budget section" budgetSectionSpec
 
+private def isHexChar (c : Char) : Bool :=
+  c.isDigit || ('a' ≤ c && c ≤ 'f') || ('A' ≤ c && c ≤ 'F')
+
+/-- Principal id on the wire: a string the section-level check requires
+    non-empty (schema states `minLength: 1`; parse projection is plain
+    `getStr?` so the check fires in the pre-codec order). -/
+def principalIdCodec : WireCodec String :=
+  ⟨strCodec.parse,
+   Json.mkObj [("type", Json.str "string"), ("minLength", Json.num 1)]⟩
+
+/-- Principal pubkey on the wire: 64 hex chars (an Ed25519 verifying key);
+    the schema pattern states the same lint the parse-time check enforces. -/
+def principalPubkeyCodec : WireCodec String :=
+  ⟨strCodec.parse,
+   Json.mkObj [("type", Json.str "string"),
+               ("pattern", Json.str "^[0-9a-fA-F]{64}$")]⟩
+
+/-- V2.1 principal key entry. Parse-time fail-closed lints: non-empty ids
+    and 64-hex-char pubkeys. The host's `verifyEnvelope` re-checks the
+    decoded key length (32 bytes) at use — the lint here fails malformed
+    registries at signing/load time instead of turning every envelope into a
+    silent deny. -/
+def principalKeySpec : ObjSpec PrincipalKeyEntry :=
+  ObjSpec.start
+    |>.field "id" principalIdCodec
+    |>.field "pubkey" principalPubkeyCodec
+    |>.check (fun ((_, id), pubkey) => do
+        if id.isEmpty then
+          throw "principal id must be non-empty"
+        if pubkey.length != 64 || !(pubkey.toList.all isHexChar) then
+          throw s!"principal pubkey must be 64 hex chars: {id}")
+    |>.emit fun ((_, id), pubkey) => { id, pubkey }
+
+def principalKeyCodec : WireCodec PrincipalKeyEntry :=
+  .strictObj "principal key" principalKeySpec
+
+def principalsSectionSpec : ObjSpec PrincipalsSection :=
+  ObjSpec.start
+    |>.fieldD "enabled" boolCodec true
+    |>.field "keys" (arrCodec principalKeyCodec)
+    |>.field "budgets" (arrCodec budgetRuleCodec)
+    |>.emit fun (((_, enabled), keys), budgets) => { enabled, keys, budgets }
+
+def principalsSectionCodec : WireCodec PrincipalsSection :=
+  .strictObj "principals section" principalsSectionSpec
+
 /-! ## Compatibility parser names (thin projections of the codecs) -/
 
 def parseTemporalSection : Json → Except String TemporalSection :=
@@ -351,6 +430,9 @@ def parseLinearSection : Json → Except String LinearSection :=
 
 def parseBudgetSection : Json → Except String BudgetSection :=
   budgetSectionCodec.parse
+
+def parsePrincipalsSection : Json → Except String PrincipalsSection :=
+  principalsSectionCodec.parse
 
 def parseOptSection {α : Type} (json : Json) (key : String)
     (parse : Json → Except String α) : Except String (Option α) := do
@@ -399,7 +481,8 @@ def bundleSectionProps : List (String × Json) :=
    ("convergence", convergenceSectionCodec.schema),
    ("calibration", calibrationSectionCodec.schema),
    ("linear", linearSectionCodec.schema),
-   ("budget", budgetSectionCodec.schema)]
+   ("budget", budgetSectionCodec.schema),
+   ("principals", principalsSectionCodec.schema)]
 
 /-- The keys a bundle payload may carry at the top level (derived from the
     property table — no independent list). -/
@@ -456,8 +539,9 @@ def parsePolicyBundle (json : Json) : Except String PolicyBundle := do
   let calibration ← parseOptSection json "calibration" parseCalibrationSection
   let linear ← parseOptSection json "linear" parseLinearSection
   let budget ← parseOptSection json "budget" parseBudgetSection
+  let principals ← parseOptSection json "principals" parsePrincipalsSection
   pure { epoch, safety, temporal, consensus, convergence, calibration, linear,
-         budget }
+         budget, principals }
 
 /-- THE bundle codec: `parsePolicyBundle` and `policyBundleSchemaJson` bound
     into one value — the single source `seal schema` / `seal validate`
@@ -488,5 +572,9 @@ def policyBundleSchema : Json := policyBundleCodec.schema
 /-- info: 'Seal.effectiveBudget_ne_nil_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms effectiveBudget_ne_nil_iff
+
+/-- info: 'Seal.effectivePrincipals_isSome_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms effectivePrincipals_isSome_iff
 
 end Seal

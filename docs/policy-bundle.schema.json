@@ -62,6 +62,32 @@
       "control_file": {"type": "string"}},
      "additionalProperties": false}},
    "additionalProperties": false},
+  "principals":
+  {"type": "object",
+   "required": ["keys", "budgets"],
+   "properties":
+   {"keys":
+    {"type": "array",
+     "items":
+     {"type": "object",
+      "required": ["id", "pubkey"],
+      "properties":
+      {"pubkey": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+       "id": {"type": "string", "minLength": 1}},
+      "additionalProperties": false}},
+    "enabled": {"type": "boolean"},
+    "budgets":
+    {"type": "array",
+     "items":
+     {"type": "object",
+      "required": ["name", "cap", "tools"],
+      "properties":
+      {"tools": {"type": "array", "items": {"type": "string"}},
+       "name": {"type": "string"},
+       "cost_arg": {"type": "string", "description": "dotted argument path"},
+       "cap": {"type": "integer", "minimum": 0}},
+      "additionalProperties": false}}},
+   "additionalProperties": false},
   "linear":
   {"type": "object",
    "required": ["grants_file", "tools"],

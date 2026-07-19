@@ -27,6 +27,7 @@ import SealV2.TamperTheorems
 #print axioms Seal.effectiveTemporal_nil_of_disabled
 #print axioms Seal.effectiveConvergence_ne_nil_iff
 #print axioms Seal.effectiveBudget_ne_nil_iff
+#print axioms Seal.effectivePrincipals_isSome_iff
 #print axioms Seal.scan_pass_sound
 #print axioms Seal.scan_pass_no_orphan_allow
 #print axioms SealCore.consumed_approval_not_live
