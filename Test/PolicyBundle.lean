@@ -25,6 +25,10 @@ private def expectErrContaining (label text needle : String) : IO Unit := do
       unless (e.splitOn needle).length > 1 do
         throw <| IO.userError s!"{label}: error missing '{needle}': {e}"
 
+/-- 64 hex chars — a syntactically valid Ed25519 verifying-key hex. -/
+private def testPubkeyHex : String :=
+  "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+
 private def safetyBlock : String :=
   "\"safety\":{\"approval\":{\"control_file\":\"/tmp/approvals.ndjson\",\"ttl_seconds\":60},\"tools\":[{\"name\":\"db.execute\",\"mode\":\"guard\",\"target\":[{\"full_arguments\":true}]}]}"
 
@@ -36,7 +40,8 @@ private def fullPayload : String :=
   "\"convergence\":{\"tools\":[{\"tool\":\"store.update\",\"op_arg\":\"operation.kind\"}]}," ++
   "\"calibration\":{\"enabled\":true,\"delta_num\":1,\"delta_den\":20,\"min_samples\":10,\"records_file\":\"/tmp/forecasts.ndjson\",\"gated_tools\":[\"auto_publish\"]}," ++
   "\"linear\":{\"grants_file\":\"/tmp/grants.ndjson\",\"tools\":[{\"tool\":\"spend\",\"cap_arg\":\"capability.id\"}]}," ++
-  "\"budget\":{\"budgets\":[{\"name\":\"write-units\",\"cap\":100,\"tools\":[\"write_item\"],\"cost_arg\":\"usage.units\"}]}}"
+  "\"budget\":{\"budgets\":[{\"name\":\"write-units\",\"cap\":100,\"tools\":[\"write_item\"],\"cost_arg\":\"usage.units\"}]}," ++
+  "\"principals\":{\"keys\":[{\"id\":\"alice\",\"pubkey\":\"" ++ testPubkeyHex ++ "\"}],\"budgets\":[{\"name\":\"alice-writes\",\"cap\":10,\"tools\":[\"write_item\"]}]}}"
 
 private def minimalPayload : String :=
   "{\"epoch\":1," ++ safetyBlock ++ "}"
@@ -88,15 +93,25 @@ def main : IO Unit := do
                               costArg := some ["usage", "units"] }] do
         throw <| IO.userError s!"budget fields lost: {repr bg}"
   | none => throw <| IO.userError "budget section lost"
+  match b.principals with
+  | some p =>
+      unless p.enabled do throw <| IO.userError "principals enabled default not true"
+      unless p.keys == [{ id := "alice", pubkey := testPubkeyHex }] do
+        throw <| IO.userError s!"principal keys lost: {repr p}"
+      unless p.budgets == [{ name := "alice-writes", cap := 10,
+                             tools := ["write_item"], costArg := none }] do
+        throw <| IO.userError s!"principal budgets lost: {repr p}"
+  | none => throw <| IO.userError "principals section lost"
 
-  -- minimal payload: six sections absent, all effective views empty
+  -- minimal payload: optional sections absent, all effective views empty
   let m ← expectOk "minimal payload" minimalPayload
   unless m.temporal.isNone && m.consensus.isNone && m.convergence.isNone
-      && m.calibration.isNone && m.linear.isNone && m.budget.isNone do
+      && m.calibration.isNone && m.linear.isNone && m.budget.isNone
+      && m.principals.isNone do
     throw <| IO.userError "absent sections did not stay absent"
   unless m.effectiveTemporal.isEmpty && m.effectiveConsensus.isNone
       && m.effectiveConvergence.isEmpty && m.effectiveLinear.isNone
-      && m.effectiveBudget.isEmpty do
+      && m.effectiveBudget.isEmpty && m.effectivePrincipals.isNone do
     throw <| IO.userError "effective views of absent sections not empty"
 
   -- unknown keys: hard errors at every level
@@ -120,6 +135,15 @@ def main : IO Unit := do
     (withSection "\"budget\":{\"budgets\":[],\"cap\":1}") "unknown key 'cap'"
   expectErrContaining "unknown budget spec key"
     (withSection "\"budget\":{\"budgets\":[{\"name\":\"n\",\"cap\":1,\"tools\":[],\"costs\":1}]}")
+    "unknown key 'costs'"
+  expectErrContaining "unknown principals key"
+    (withSection ("\"principals\":{\"keys\":[],\"budgets\":[],\"registry\":[]}"))
+    "unknown key 'registry'"
+  expectErrContaining "unknown principal key entry key"
+    (withSection ("\"principals\":{\"keys\":[{\"id\":\"a\",\"pubkey\":\"" ++ testPubkeyHex ++ "\",\"role\":\"admin\"}],\"budgets\":[]}"))
+    "unknown key 'role'"
+  expectErrContaining "unknown principal budget spec key"
+    (withSection "\"principals\":{\"keys\":[],\"budgets\":[{\"name\":\"n\",\"cap\":1,\"tools\":[],\"costs\":1}]}")
     "unknown key 'costs'"
   expectErrContaining "unknown temporal rule key"
     (withSection "\"temporal\":{\"policies\":[{\"name\":\"n\",\"type\":\"no_after\",\"trigger\":[],\"forbidden\":[],\"after\":\"x\"}]}")
@@ -164,6 +188,24 @@ def main : IO Unit := do
     (withSection "\"budget\":{\"enabled\":false,\"budgets\":[{\"name\":\"n\",\"cap\":1,\"tools\":[\"t\"]}]}")
   unless bd.effectiveBudget.isEmpty do
     throw <| IO.userError "disabled budget still effective"
+  let pd ← expectOk "principals disabled"
+    (withSection ("\"principals\":{\"enabled\":false,\"keys\":[{\"id\":\"a\",\"pubkey\":\"" ++ testPubkeyHex ++ "\"}],\"budgets\":[]}"))
+  unless pd.principals.isSome do throw <| IO.userError "disabled principals lost"
+  unless pd.effectivePrincipals.isNone do
+    throw <| IO.userError "disabled principals still effective"
+
+  -- principals: parse-time fail-closed lints (V2.1 acceptance-set DELTA over
+  -- Layer 1: pre-V2.1 the whole 'principals' key was "unknown key" — see the
+  -- PolicyLegacy lockstep note)
+  expectErrContaining "empty principal id"
+    (withSection ("\"principals\":{\"keys\":[{\"id\":\"\",\"pubkey\":\"" ++ testPubkeyHex ++ "\"}],\"budgets\":[]}"))
+    "principal id must be non-empty"
+  expectErrContaining "short principal pubkey"
+    (withSection "\"principals\":{\"keys\":[{\"id\":\"a\",\"pubkey\":\"deadbeef\"}],\"budgets\":[]}")
+    "must be 64 hex chars"
+  expectErrContaining "non-hex principal pubkey"
+    (withSection ("\"principals\":{\"keys\":[{\"id\":\"a\",\"pubkey\":\"zz112233445566778899aabbccddeeff00112233445566778899aabbccddeeff\"}],\"budgets\":[]}"))
+    "must be 64 hex chars"
 
   -- calibration: EXPERIMENTAL default is DISABLED; present-but-disabled stays present
   let kDefault ← expectOk "calibration default"
@@ -207,5 +249,95 @@ def main : IO Unit := do
   expectErrContaining "bad calibration delta"
     (withSection "\"calibration\":{\"delta_num\":3,\"delta_den\":2,\"min_samples\":1,\"records_file\":\"r\",\"gated_tools\":[]}")
     "calibration delta must satisfy"
+
+  -- ── Layer-1 parity backfill: Safety interior semantics pinned as fixtures ──
+
+  let safetyWith (tools : String) : String :=
+    "{\"epoch\":1,\"safety\":{\"approval\":{\"control_file\":\"c\"},\"tools\":[" ++ tools ++ "]}}"
+
+  -- TTL: default 120 s, clamp at 300 s, stored in MILLISECONDS
+  let ttlDefault ← expectOk "ttl default"
+    "{\"epoch\":1,\"safety\":{\"approval\":{\"control_file\":\"c\"},\"tools\":[]}}"
+  unless ttlDefault.safety.approvalTtlMs == 120000 do
+    throw <| IO.userError s!"ttl default must be 120000 ms: {ttlDefault.safety.approvalTtlMs}"
+  let ttlClamped ← expectOk "ttl clamp"
+    "{\"epoch\":1,\"safety\":{\"approval\":{\"control_file\":\"c\",\"ttl_seconds\":9999},\"tools\":[]}}"
+  unless ttlClamped.safety.approvalTtlMs == 300000 do
+    throw <| IO.userError s!"ttl must clamp to 300000 ms: {ttlClamped.safety.approvalTtlMs}"
+
+  -- mode alias: guard and guarded parse to the same mode
+  let aliases ← expectOk "mode aliases"
+    (safetyWith "{\"name\":\"a\",\"mode\":\"guard\"},{\"name\":\"b\",\"mode\":\"guarded\"}")
+  match aliases.safety.tools with
+  | [ra, rb] =>
+      unless ra.mode == Seal.ToolMode.guarded && rb.mode == Seal.ToolMode.guarded do
+        throw <| IO.userError "guard/guarded alias broken"
+  | _ => throw <| IO.userError "alias rules lost"
+
+  -- defaults: absent match ⇒ .always, absent target ⇒ []
+  let defaults ← expectOk "matcher/target defaults"
+    (safetyWith "{\"name\":\"t\",\"mode\":\"allow\"}")
+  match defaults.safety.tools with
+  | [r] =>
+      (match r.matcher with
+       | .always => pure ()
+       | m => throw <| IO.userError s!"default matcher must be always: {repr m}")
+      unless r.target.isEmpty do
+        throw <| IO.userError "default target must be []"
+  | _ => throw <| IO.userError "default rule lost"
+
+  -- matcher variants + dotted-path split (empty components dropped)
+  let variants ← expectOk "matcher variants"
+    (safetyWith
+      ("{\"name\":\"t\",\"mode\":\"guard\",\"match\":{\"type\":\"all\",\"matches\":[" ++
+       "{\"type\":\"equals\",\"arg\":\"a..b.\",\"value\":\"v\"}," ++
+       "{\"type\":\"starts_with\",\"arg\":\"p\",\"value\":\"pre\"}," ++
+       "{\"type\":\"contains_any_ci\",\"arg\":\"q\",\"needles\":[\"DROP\"]}," ++
+       "{\"type\":\"any\",\"matches\":[{\"type\":\"always\"}]}]}}"))
+  match variants.safety.tools with
+  | [r] =>
+      match r.matcher with
+      | .all [.equals p v, .startsWith _ pre, .containsAnyCi _ needles, .any [.always]] =>
+          unless p == ["a", "b"] && v == "v" && pre == "pre" && needles == ["DROP"] do
+            throw <| IO.userError "matcher variant fields wrong"
+      | m => throw <| IO.userError s!"matcher variant shape wrong: {repr m}"
+  | _ => throw <| IO.userError "variant rule lost"
+
+  -- target: literal-first precedence; arg splits dotted path
+  let targets ← expectOk "target resolution"
+    (safetyWith
+      "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"literal\":\"x\",\"arg\":\"ignored\"},{\"arg\":\"a.b\"},{\"full_arguments\":true}]}")
+  match targets.safety.tools with
+  | [r] =>
+      match r.target with
+      | [.literal "x", .argPath ["a", "b"], .fullArguments] => pure ()
+      | t => throw <| IO.userError s!"target resolution wrong: {repr t}"
+  | _ => throw <| IO.userError "target rule lost"
+
+  -- permissive interior: nested unknown keys tolerated in rule/matcher/target
+  let _ ← expectOk "permissive interior"
+    (safetyWith
+      "{\"name\":\"t\",\"mode\":\"guard\",\"_comment\":\"c\",\"_seal_scaffold\":true,\"match\":{\"type\":\"always\",\"note\":1},\"target\":[{\"literal\":\"x\",\"junk\":[]}]}")
+
+  -- rejects the interior DOES enforce
+  expectErrContaining "full_arguments false" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"full_arguments\":false}]}")
+    "full_arguments must be true"
+  expectErrContaining "ambiguous target part" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"arg\":\"a\",\"full_arguments\":true}]}")
+    "exactly one of"
+  expectErrContaining "target not array" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":{}}")
+    "target must be an array"
+  expectErrContaining "unsupported match type" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"match\":{\"type\":\"regex\"}}")
+    "unsupported match type"
+  expectErrContaining "unsupported mode" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"block\"}")
+    "unsupported tool mode"
+
+  -- schema projection sanity: the codec carries the derived schema
+  unless Seal.policyBundleSchema == Seal.policyBundleCodec.schema do
+    throw <| IO.userError "policyBundleSchema must be the codec schema projection"
 
   IO.println "POLICY-BUNDLE TESTS PASS"

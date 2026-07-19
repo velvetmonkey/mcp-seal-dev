@@ -3,6 +3,7 @@
 import Lean.Data.Json
 import Seal.Policy
 import Seal.JsonUtil
+import Seal.PolicyWire
 
 /-!
 # The 7-kernel policy bundle — the policy-v2 DX surface
@@ -26,6 +27,13 @@ whole 7-kernel configuration part of the verified policy language:
 * hard errors on unknown keys at the payload, section, and entry levels
   (`Seal.JsonUtil.expectObjKeys`) — parser-boundary discipline: a typo such
   as `temporral` must not silently leave a kernel off.
+
+Since the codec refactor, every section is a schema-carrying `WireCodec`
+(`Seal/PolicyWire.lean`): the field list of each `ObjSpec` drives the parse,
+the strict-key allowlist, AND the JSON-Schema properties, so
+`parsePolicyBundle` and `policyBundleSchema` are projections of the same
+specs and physically cannot drift. Layer-1 equivalence with the pre-codec
+parsers is proven in `Seal/PolicyEquiv.lean`.
 
 Safety (S) and Temporal (T) are registered unconditionally by the host
 (`safety_always_registered` / `temporal_always_registered`); they are
@@ -110,9 +118,27 @@ structure BudgetSection where
   budgets : List BudgetRule
   deriving Repr, BEq
 
+/-- One registered principal: the operator-pinned (id, Ed25519 verifying-key
+    hex) pair. The registry lives INSIDE the signed config — key→principal
+    binding is out-of-band trust, never a request field. -/
+structure PrincipalKeyEntry where
+  id : String
+  pubkey : String
+  deriving Repr, BEq
+
+/-- The V2.1 principals section: the key registry plus per-principal budget
+    specs (each budget enforced separately per authenticated principal —
+    state keyed (principal id, budget name) on the host side). -/
+structure PrincipalsSection where
+  enabled : Bool := true
+  keys : List PrincipalKeyEntry
+  budgets : List BudgetRule
+  deriving Repr, BEq
+
 /-- The 7-kernel policy bundle: the policy-v2 DX surface. Safety is the
     existing verified `Policy`; the six kernel sections are declarative and
-    optional. -/
+    optional. `principals` (V2.1) adds the signed-envelope principal registry
+    and per-principal budgets. -/
 structure PolicyBundle where
   epoch : Nat
   safety : Policy
@@ -122,6 +148,7 @@ structure PolicyBundle where
   calibration : Option CalibrationSection := none
   linear : Option LinearSection := none
   budget : Option BudgetSection := none
+  principals : Option PrincipalsSection := none
   deriving Repr
 
 /-! ## Effective sections
@@ -154,6 +181,11 @@ def PolicyBundle.effectiveBudget (b : PolicyBundle) : List BudgetRule :=
   match b.budget with
   | some s => if s.enabled then s.budgets else []
   | none => []
+
+def PolicyBundle.effectivePrincipals (b : PolicyBundle) : Option PrincipalsSection :=
+  match b.principals with
+  | some s => if s.enabled then some s else none
+  | none => none
 
 /-! ## Enablement lemmas
 
@@ -199,120 +231,284 @@ theorem effectiveBudget_ne_nil_iff (b : PolicyBundle) :
       cases he : s.enabled <;>
         simp [PolicyBundle.effectiveBudget, h, he]
 
-/-! ## Parser -/
+theorem effectivePrincipals_isSome_iff (b : PolicyBundle) :
+    b.effectivePrincipals.isSome ↔
+      ∃ s, b.principals = some s ∧ s.enabled = true := by
+  cases h : b.principals with
+  | none => simp [PolicyBundle.effectivePrincipals, h]
+  | some s =>
+      cases he : s.enabled <;>
+        simp [PolicyBundle.effectivePrincipals, h, he]
 
-private def parseStringList (json : Json) : Except String (List String) := do
-  let arr ← json.getArr?
-  arr.toList.mapM (fun j => j.getStr?)
+/-! ## Section codecs
 
-/-- Optional `enabled` flag with a per-section default. -/
-private def parseEnabled (json : Json) (default : Bool) : Except String Bool := do
-  match ← getObjValOpt json "enabled" with
-  | some v => v.getBool?
-  | none => pure default
+One `ObjSpec` per section/entry: field list ⇒ parse ⇒ allowlist ⇒ schema.
+Field-chain order equals the pre-codec parse order (error priority is part of
+the preserved behavior). -/
 
-private def parseTemporalRule (json : Json) : Except String TemporalRule := do
-  expectObjKeys json ["name", "type", "trigger", "forbidden"] "temporal policy"
-  let name ← getObjString json "name"
-  let kind ← getObjString json "type"
-  if kind != "no_after" then
-    throw s!"unsupported temporal policy type: {kind}"
-  let trigger ← parseStringList (← json.getObjVal? "trigger")
-  let forbidden ← parseStringList (← json.getObjVal? "forbidden")
-  pure { name, trigger, forbidden }
+/-- The temporal rule discriminator: only `no_after` exists. -/
+def noAfterCodec : WireCodec Unit :=
+  ⟨fun j => do
+    let kind ← j.getStr?
+    if kind != "no_after" then
+      throw s!"unsupported temporal policy type: {kind}",
+   Json.mkObj [("const", Json.str "no_after")]⟩
 
-def parseTemporalSection (json : Json) : Except String TemporalSection := do
-  expectObjKeys json ["enabled", "policies"] "temporal section"
-  let enabled ← parseEnabled json true
-  let policiesJson ← (← json.getObjVal? "policies").getArr?
-  let policies ← policiesJson.toList.mapM parseTemporalRule
-  pure { enabled, policies }
+def temporalRuleSpec : ObjSpec TemporalRule :=
+  ObjSpec.start
+    |>.field "name" strCodec
+    |>.field "type" noAfterCodec
+    |>.field "trigger" (arrCodec strCodec)
+    |>.field "forbidden" (arrCodec strCodec)
+    |>.emit fun ((((_, name), _), trigger), forbidden) =>
+        { name, trigger, forbidden }
 
-def parseConsensusSection (json : Json) : Except String ConsensusSection := do
-  expectObjKeys json ["enabled", "roster", "votes_file", "high_stakes"]
-    "consensus section"
-  let enabled ← parseEnabled json true
-  let rosterJson ← (← json.getObjVal? "roster").getArr?
-  let roster ← rosterJson.toList.mapM (fun j => j.getNat?)
-  let votesFile ← getObjString json "votes_file"
-  let highStakes ← parseStringList (← json.getObjVal? "high_stakes")
-  pure { enabled, roster, votesFile, highStakes }
+def temporalRuleCodec : WireCodec TemporalRule :=
+  .strictObj "temporal policy" temporalRuleSpec
 
-def parseConvergenceSection (json : Json) : Except String ConvergenceSection := do
-  expectObjKeys json ["enabled", "tools"] "convergence section"
-  let enabled ← parseEnabled json true
-  let toolsJson ← (← json.getObjVal? "tools").getArr?
-  let tools ← toolsJson.toList.mapM fun j => do
-    expectObjKeys j ["tool", "op_arg"] "convergence tool"
-    let tool ← getObjString j "tool"
-    let opArg ← getObjString j "op_arg"
-    pure { tool, opArg := splitPath opArg : ConvergentTool }
-  pure { enabled, tools }
+def temporalSectionSpec : ObjSpec TemporalSection :=
+  ObjSpec.start
+    |>.fieldD "enabled" boolCodec true
+    |>.field "policies" (arrCodec temporalRuleCodec)
+    |>.emit fun ((_, enabled), policies) => { enabled, policies }
 
-def parseCalibrationSection (json : Json) : Except String CalibrationSection := do
-  expectObjKeys json
-    ["enabled", "delta_num", "delta_den", "min_samples", "records_file",
-     "gated_tools"] "calibration section"
-  let enabled ← parseEnabled json false
-  let deltaNum ← (← json.getObjVal? "delta_num").getNat?
-  let deltaDen ← (← json.getObjVal? "delta_den").getNat?
-  if deltaNum == 0 || deltaDen ≤ deltaNum then
-    throw "calibration delta must satisfy 0 < delta < 1"
-  let minSamples ← (← json.getObjVal? "min_samples").getNat?
-  let recordsFile ← getObjString json "records_file"
-  let gatedTools ← parseStringList (← json.getObjVal? "gated_tools")
-  pure { enabled, deltaNum, deltaDen, minSamples, recordsFile, gatedTools }
+def temporalSectionCodec : WireCodec TemporalSection :=
+  .strictObj "temporal section" temporalSectionSpec
 
-def parseLinearSection (json : Json) : Except String LinearSection := do
-  expectObjKeys json ["enabled", "grants_file", "tools"] "linear section"
-  let enabled ← parseEnabled json true
-  let grantsFile ← getObjString json "grants_file"
-  let toolsJson ← (← json.getObjVal? "tools").getArr?
-  let tools ← toolsJson.toList.mapM fun j => do
-    expectObjKeys j ["tool", "cap_arg"] "linear tool"
-    let tool ← getObjString j "tool"
-    let capArg ← getObjString j "cap_arg"
-    pure { tool, capArg := splitPath capArg : LinearGrantTool }
-  pure { enabled, grantsFile, tools }
+def consensusSectionSpec : ObjSpec ConsensusSection :=
+  ObjSpec.start
+    |>.fieldD "enabled" boolCodec true
+    |>.field "roster" (arrCodec natCodec)
+    |>.field "votes_file" strCodec
+    |>.field "high_stakes" (arrCodec strCodec)
+    |>.emit fun ((((_, enabled), roster), votesFile), highStakes) =>
+        { enabled, roster, votesFile, highStakes }
 
-def parseBudgetSection (json : Json) : Except String BudgetSection := do
-  expectObjKeys json ["enabled", "budgets"] "budget section"
-  let enabled ← parseEnabled json true
-  let budgetsJson ← (← json.getObjVal? "budgets").getArr?
-  let budgets ← budgetsJson.toList.mapM fun j => do
-    expectObjKeys j ["name", "cap", "tools", "cost_arg"] "budget spec"
-    let name ← getObjString j "name"
-    let cap ← (← j.getObjVal? "cap").getNat?
-    let tools ← parseStringList (← j.getObjVal? "tools")
-    let costArg ← match ← getObjValOpt j "cost_arg" with
-      | some v => pure (some (splitPath (← v.getStr?)))
-      | none => pure none
-    pure { name, cap, tools, costArg : BudgetRule }
-  pure { enabled, budgets }
+def consensusSectionCodec : WireCodec ConsensusSection :=
+  .strictObj "consensus section" consensusSectionSpec
 
-private def parseOptSection {α : Type} (json : Json) (key : String)
+def convergentToolSpec : ObjSpec ConvergentTool :=
+  ObjSpec.start
+    |>.field "tool" strCodec
+    |>.field "op_arg" pathCodec
+    |>.emit fun ((_, tool), opArg) => { tool, opArg }
+
+def convergentToolCodec : WireCodec ConvergentTool :=
+  .strictObj "convergence tool" convergentToolSpec
+
+def convergenceSectionSpec : ObjSpec ConvergenceSection :=
+  ObjSpec.start
+    |>.fieldD "enabled" boolCodec true
+    |>.field "tools" (arrCodec convergentToolCodec)
+    |>.emit fun ((_, enabled), tools) => { enabled, tools }
+
+def convergenceSectionCodec : WireCodec ConvergenceSection :=
+  .strictObj "convergence section" convergenceSectionSpec
+
+def calibrationSectionSpec : ObjSpec CalibrationSection :=
+  ObjSpec.start
+    |>.fieldD "enabled" boolCodec false
+    |>.field "delta_num" natCodec
+    |>.field "delta_den" natCodec
+    |>.check (fun (((_, _), deltaNum), deltaDen) =>
+        if deltaNum == 0 || deltaDen ≤ deltaNum then
+          throw "calibration delta must satisfy 0 < delta < 1"
+        else pure ())
+    |>.field "min_samples" natCodec
+    |>.field "records_file" strCodec
+    |>.field "gated_tools" (arrCodec strCodec)
+    |>.emit fun ((((((_, enabled), deltaNum), deltaDen), minSamples),
+                  recordsFile), gatedTools) =>
+        { enabled, deltaNum, deltaDen, minSamples, recordsFile, gatedTools }
+
+def calibrationSectionCodec : WireCodec CalibrationSection :=
+  .strictObj "calibration section" calibrationSectionSpec
+
+def linearToolSpec : ObjSpec LinearGrantTool :=
+  ObjSpec.start
+    |>.field "tool" strCodec
+    |>.field "cap_arg" pathCodec
+    |>.emit fun ((_, tool), capArg) => { tool, capArg }
+
+def linearToolCodec : WireCodec LinearGrantTool :=
+  .strictObj "linear tool" linearToolSpec
+
+def linearSectionSpec : ObjSpec LinearSection :=
+  ObjSpec.start
+    |>.fieldD "enabled" boolCodec true
+    |>.field "grants_file" strCodec
+    |>.field "tools" (arrCodec linearToolCodec)
+    |>.emit fun (((_, enabled), grantsFile), tools) =>
+        { enabled, grantsFile, tools }
+
+def linearSectionCodec : WireCodec LinearSection :=
+  .strictObj "linear section" linearSectionSpec
+
+def budgetRuleSpec : ObjSpec BudgetRule :=
+  ObjSpec.start
+    |>.field "name" strCodec
+    |>.field "cap" natCodec
+    |>.field "tools" (arrCodec strCodec)
+    |>.fieldOpt "cost_arg" pathCodec
+    |>.emit fun ((((_, name), cap), tools), costArg) =>
+        { name, cap, tools, costArg }
+
+def budgetRuleCodec : WireCodec BudgetRule :=
+  .strictObj "budget spec" budgetRuleSpec
+
+def budgetSectionSpec : ObjSpec BudgetSection :=
+  ObjSpec.start
+    |>.fieldD "enabled" boolCodec true
+    |>.field "budgets" (arrCodec budgetRuleCodec)
+    |>.emit fun ((_, enabled), budgets) => { enabled, budgets }
+
+def budgetSectionCodec : WireCodec BudgetSection :=
+  .strictObj "budget section" budgetSectionSpec
+
+private def isHexChar (c : Char) : Bool :=
+  c.isDigit || ('a' ≤ c && c ≤ 'f') || ('A' ≤ c && c ≤ 'F')
+
+/-- Principal id on the wire: a string the section-level check requires
+    non-empty (schema states `minLength: 1`; parse projection is plain
+    `getStr?` so the check fires in the pre-codec order). -/
+def principalIdCodec : WireCodec String :=
+  ⟨strCodec.parse,
+   Json.mkObj [("type", Json.str "string"), ("minLength", Json.num 1)]⟩
+
+/-- Principal pubkey on the wire: 64 hex chars (an Ed25519 verifying key);
+    the schema pattern states the same lint the parse-time check enforces. -/
+def principalPubkeyCodec : WireCodec String :=
+  ⟨strCodec.parse,
+   Json.mkObj [("type", Json.str "string"),
+               ("pattern", Json.str "^[0-9a-fA-F]{64}$")]⟩
+
+/-- V2.1 principal key entry. Parse-time fail-closed lints: non-empty ids
+    and 64-hex-char pubkeys. The host's `verifyEnvelope` re-checks the
+    decoded key length (32 bytes) at use — the lint here fails malformed
+    registries at signing/load time instead of turning every envelope into a
+    silent deny. -/
+def principalKeySpec : ObjSpec PrincipalKeyEntry :=
+  ObjSpec.start
+    |>.field "id" principalIdCodec
+    |>.field "pubkey" principalPubkeyCodec
+    |>.check (fun ((_, id), pubkey) => do
+        if id.isEmpty then
+          throw "principal id must be non-empty"
+        if pubkey.length != 64 || !(pubkey.toList.all isHexChar) then
+          throw s!"principal pubkey must be 64 hex chars: {id}")
+    |>.emit fun ((_, id), pubkey) => { id, pubkey }
+
+def principalKeyCodec : WireCodec PrincipalKeyEntry :=
+  .strictObj "principal key" principalKeySpec
+
+def principalsSectionSpec : ObjSpec PrincipalsSection :=
+  ObjSpec.start
+    |>.fieldD "enabled" boolCodec true
+    |>.field "keys" (arrCodec principalKeyCodec)
+    |>.field "budgets" (arrCodec budgetRuleCodec)
+    |>.emit fun (((_, enabled), keys), budgets) => { enabled, keys, budgets }
+
+def principalsSectionCodec : WireCodec PrincipalsSection :=
+  .strictObj "principals section" principalsSectionSpec
+
+/-! ## Compatibility parser names (thin projections of the codecs) -/
+
+def parseTemporalSection : Json → Except String TemporalSection :=
+  temporalSectionCodec.parse
+
+def parseConsensusSection : Json → Except String ConsensusSection :=
+  consensusSectionCodec.parse
+
+def parseConvergenceSection : Json → Except String ConvergenceSection :=
+  convergenceSectionCodec.parse
+
+def parseCalibrationSection : Json → Except String CalibrationSection :=
+  calibrationSectionCodec.parse
+
+def parseLinearSection : Json → Except String LinearSection :=
+  linearSectionCodec.parse
+
+def parseBudgetSection : Json → Except String BudgetSection :=
+  budgetSectionCodec.parse
+
+def parsePrincipalsSection : Json → Except String PrincipalsSection :=
+  principalsSectionCodec.parse
+
+def parseOptSection {α : Type} (json : Json) (key : String)
     (parse : Json → Except String α) : Except String (Option α) := do
   match ← getObjValOpt json key with
   | none => pure none
   | some section_ => pure (some (← parse section_))
 
-/-- The keys a bundle payload may carry at the top level. -/
+/-! ## Bundle envelope: derived key lists and schema -/
+
+/-- Epoch: a positive counter (`epoch == 0` is rejected by the parser; the
+    schema states the same bound as `minimum: 1`). -/
+def epochSchema : Json :=
+  Json.mkObj [("type", Json.str "integer"), ("minimum", Json.num 1)]
+
+/-- The safety section's schema inside a BUNDLE: the same `policySpecWith`
+    spec the parser runs, projected strict (`additionalProperties: false`
+    at the section and approval levels — the `expectObjKeys` overlays
+    `parsePolicyBundle` applies before delegating to `parsePolicyJson`). -/
+def safetySectionSchema : Json :=
+  (policySpecWith ⟨(WireCodec.openObj approvalSpec).parse,
+                   approvalSpec.objSchema true⟩).objSchema true
+
+/-- The shallow keys of the `safety` section, derived from the SAME spec
+    `parsePolicyJson` runs. The interior of `tools` rules stays the
+    permissive `parsePolicyJson` boundary (its strictness is the authoring
+    signer's job). -/
+def safetyShallowKeys : List String :=
+  (policySpecWith (.openObj approvalSpec)).keys
+
+/-- The `approval` keys, derived from `approvalSpec`: the parsed fields plus
+    `replay_store`, the documented host-layer replay-store pointer whose
+    interior the host consumes. -/
+def approvalKeys : List String := approvalSpec.keys
+
+/-- Head properties of the bundle payload (parsed by the bespoke envelope
+    code below), then one property per kernel-section codec. This single
+    table drives BOTH the top-level allowlist and the schema properties. -/
+def bundleHeadProps : List (String × Json) :=
+  [("epoch", epochSchema),
+   ("server", strCodec.schema),
+   ("safety", safetySectionSchema)]
+
+def bundleSectionProps : List (String × Json) :=
+  [("temporal", temporalSectionCodec.schema),
+   ("consensus", consensusSectionCodec.schema),
+   ("convergence", convergenceSectionCodec.schema),
+   ("calibration", calibrationSectionCodec.schema),
+   ("linear", linearSectionCodec.schema),
+   ("budget", budgetSectionCodec.schema),
+   ("principals", principalsSectionCodec.schema)]
+
+/-- The keys a bundle payload may carry at the top level (derived from the
+    property table — no independent list). -/
 def bundleTopLevelKeys : List String :=
-  ["epoch", "server", "safety", "temporal", "consensus", "convergence",
-   "calibration", "linear", "budget"]
+  (bundleHeadProps ++ bundleSectionProps).map (·.1)
 
-/-- The shallow keys of the `safety` section. The interior of `tools` rules
-    stays the existing `parsePolicyJson` boundary (its strictness is the
-    authoring signer's job); `approval` additionally admits `replay_store`,
-    the documented host-layer replay-store pointer whose interior the host
-    consumes. -/
-def safetyShallowKeys : List String := ["approval", "tools", "server"]
-
-def approvalKeys : List String := ["control_file", "ttl_seconds", "replay_store"]
+/-- The bundle payload's JSON Schema: a projection of the same specs
+    `parsePolicyBundle` parses with. Parser-only refinements that JSON Schema
+    cannot express (outer/inner `server` conflict, `delta_den > delta_num`,
+    the TTL clamp semantics, dropped empty dotted-path components) are
+    documented in seal-host `CONFIG.md`; `seal validate` runs the Lean parser
+    AND this schema in the same invocation, so the gap is gated, not trusted. -/
+def policyBundleSchemaJson : Json :=
+  Json.mkObj
+    [("$schema", Json.str "https://json-schema.org/draft/2020-12/schema"),
+     ("title", Json.str "Seal policy-v2 bundle payload"),
+     ("type", Json.str "object"),
+     ("properties", Json.mkObj (bundleHeadProps ++ bundleSectionProps)),
+     ("required", Json.arr #[Json.str "epoch", Json.str "safety"]),
+     ("additionalProperties", Json.bool false),
+     ("$defs", Json.mkObj [("match", matchSchemaDef)])]
 
 /-- Top-level bundle parser: the whole 7-kernel policy-v2 config surface.
 
-    Strict keys at the payload, section, and entry levels. Safety's interior
+    Strict keys at the payload, section, and entry levels — every allowlist
+    and section parse is a projection of the codecs above. Safety's interior
     is parsed by the existing verified `parsePolicyJson`; a top-level `server`
     is copied into the safety policy when the safety section carries none, and
     a conflict between the two is a hard error (identical semantics to the
@@ -343,8 +539,17 @@ def parsePolicyBundle (json : Json) : Except String PolicyBundle := do
   let calibration ← parseOptSection json "calibration" parseCalibrationSection
   let linear ← parseOptSection json "linear" parseLinearSection
   let budget ← parseOptSection json "budget" parseBudgetSection
+  let principals ← parseOptSection json "principals" parsePrincipalsSection
   pure { epoch, safety, temporal, consensus, convergence, calibration, linear,
-         budget }
+         budget, principals }
+
+/-- THE bundle codec: `parsePolicyBundle` and `policyBundleSchemaJson` bound
+    into one value — the single source `seal schema` / `seal validate`
+    project from. -/
+def policyBundleCodec : WireCodec PolicyBundle :=
+  ⟨parsePolicyBundle, policyBundleSchemaJson⟩
+
+def policyBundleSchema : Json := policyBundleCodec.schema
 
 /-! ## Axiom pins -/
 
@@ -367,5 +572,9 @@ def parsePolicyBundle (json : Json) : Except String PolicyBundle := do
 /-- info: 'Seal.effectiveBudget_ne_nil_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms effectiveBudget_ne_nil_iff
+
+/-- info: 'Seal.effectivePrincipals_isSome_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms effectivePrincipals_isSome_iff
 
 end Seal
