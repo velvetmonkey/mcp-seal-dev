@@ -2,8 +2,11 @@
 
 import Seal.Hash
 import Seal.JsonUtil
+import Seal.PolicyWire
 import Seal.Policy
 import Seal.PolicyBundle
+import Seal.PolicyLegacy
+import Seal.PolicyEquiv
 import Seal.Classify
 import Seal.PolicyV2Theorems
 import Seal.PolicyScan
