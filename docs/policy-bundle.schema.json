@@ -1,0 +1,170 @@
+{"type": "object",
+ "title": "Seal policy-v2 bundle payload",
+ "required": ["epoch", "safety"],
+ "properties":
+ {"temporal":
+  {"type": "object",
+   "required": ["policies"],
+   "properties":
+   {"policies":
+    {"type": "array",
+     "items":
+     {"type": "object",
+      "required": ["name", "type", "trigger", "forbidden"],
+      "properties":
+      {"type": {"const": "no_after"},
+       "trigger": {"type": "array", "items": {"type": "string"}},
+       "name": {"type": "string"},
+       "forbidden": {"type": "array", "items": {"type": "string"}}},
+      "additionalProperties": false}},
+    "enabled": {"type": "boolean"}},
+   "additionalProperties": false},
+  "server": {"type": "string"},
+  "safety":
+  {"type": "object",
+   "required": ["approval", "tools"],
+   "properties":
+   {"tools":
+    {"type": "array",
+     "items":
+     {"type": "object",
+      "required": ["name", "mode"],
+      "properties":
+      {"target":
+       {"type": "array",
+        "items":
+        {"anyOf":
+         [{"type": "object",
+           "required": ["literal"],
+           "properties": {"literal": {"type": "string"}}},
+          {"type": "object",
+           "required": ["arg"],
+           "properties":
+           {"arg": {"type": "string", "description": "dotted argument path"}},
+           "not":
+           {"anyOf":
+            [{"required": ["literal"]}, {"required": ["full_arguments"]}]}},
+          {"type": "object",
+           "required": ["full_arguments"],
+           "properties": {"full_arguments": {"const": true}},
+           "not":
+           {"anyOf": [{"required": ["literal"]}, {"required": ["arg"]}]}}]}},
+       "name": {"type": "string"},
+       "mode": {"enum": ["allow", "guard", "guarded", "deny"]},
+       "match": {"$ref": "#/$defs/match"}}}},
+    "server": {"type": "string"},
+    "approval":
+    {"type": "object",
+     "required": ["control_file"],
+     "properties":
+     {"ttl_seconds": {"type": "integer", "minimum": 0},
+      "replay_store": true,
+      "control_file": {"type": "string"}},
+     "additionalProperties": false}},
+   "additionalProperties": false},
+  "linear":
+  {"type": "object",
+   "required": ["grants_file", "tools"],
+   "properties":
+   {"tools":
+    {"type": "array",
+     "items":
+     {"type": "object",
+      "required": ["tool", "cap_arg"],
+      "properties":
+      {"tool": {"type": "string"},
+       "cap_arg": {"type": "string", "description": "dotted argument path"}},
+      "additionalProperties": false}},
+    "grants_file": {"type": "string"},
+    "enabled": {"type": "boolean"}},
+   "additionalProperties": false},
+  "epoch": {"type": "integer", "minimum": 1},
+  "convergence":
+  {"type": "object",
+   "required": ["tools"],
+   "properties":
+   {"tools":
+    {"type": "array",
+     "items":
+     {"type": "object",
+      "required": ["tool", "op_arg"],
+      "properties":
+      {"tool": {"type": "string"},
+       "op_arg": {"type": "string", "description": "dotted argument path"}},
+      "additionalProperties": false}},
+    "enabled": {"type": "boolean"}},
+   "additionalProperties": false},
+  "consensus":
+  {"type": "object",
+   "required": ["roster", "votes_file", "high_stakes"],
+   "properties":
+   {"votes_file": {"type": "string"},
+    "roster": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+    "high_stakes": {"type": "array", "items": {"type": "string"}},
+    "enabled": {"type": "boolean"}},
+   "additionalProperties": false},
+  "calibration":
+  {"type": "object",
+   "required":
+   ["delta_num", "delta_den", "min_samples", "records_file", "gated_tools"],
+   "properties":
+   {"records_file": {"type": "string"},
+    "min_samples": {"type": "integer", "minimum": 0},
+    "gated_tools": {"type": "array", "items": {"type": "string"}},
+    "enabled": {"type": "boolean"},
+    "delta_num": {"type": "integer", "minimum": 0},
+    "delta_den": {"type": "integer", "minimum": 0}},
+   "additionalProperties": false},
+  "budget":
+  {"type": "object",
+   "required": ["budgets"],
+   "properties":
+   {"enabled": {"type": "boolean"},
+    "budgets":
+    {"type": "array",
+     "items":
+     {"type": "object",
+      "required": ["name", "cap", "tools"],
+      "properties":
+      {"tools": {"type": "array", "items": {"type": "string"}},
+       "name": {"type": "string"},
+       "cost_arg": {"type": "string", "description": "dotted argument path"},
+       "cap": {"type": "integer", "minimum": 0}},
+      "additionalProperties": false}}},
+   "additionalProperties": false}},
+ "additionalProperties": false,
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$defs":
+ {"match":
+  {"anyOf":
+   [{"type": "object",
+     "required": ["type"],
+     "properties": {"type": {"const": "always"}}},
+    {"type": "object",
+     "required": ["type", "arg", "value"],
+     "properties":
+     {"value": {"type": "string"},
+      "type": {"const": "equals"},
+      "arg": {"type": "string", "description": "dotted argument path"}}},
+    {"type": "object",
+     "required": ["type", "arg", "value"],
+     "properties":
+     {"value": {"type": "string"},
+      "type": {"const": "starts_with"},
+      "arg": {"type": "string", "description": "dotted argument path"}}},
+    {"type": "object",
+     "required": ["type", "arg", "needles"],
+     "properties":
+     {"type": {"const": "contains_any_ci"},
+      "needles": {"type": "array", "items": {"type": "string"}},
+      "arg": {"type": "string", "description": "dotted argument path"}}},
+    {"type": "object",
+     "required": ["type", "matches"],
+     "properties":
+     {"type": {"const": "all"},
+      "matches": {"type": "array", "items": {"$ref": "#/$defs/match"}}}},
+    {"type": "object",
+     "required": ["type", "matches"],
+     "properties":
+     {"type": {"const": "any"},
+      "matches": {"type": "array", "items": {"$ref": "#/$defs/match"}}}}]}}}

@@ -208,4 +208,94 @@ def main : IO Unit := do
     (withSection "\"calibration\":{\"delta_num\":3,\"delta_den\":2,\"min_samples\":1,\"records_file\":\"r\",\"gated_tools\":[]}")
     "calibration delta must satisfy"
 
+  -- ── Layer-1 parity backfill: Safety interior semantics pinned as fixtures ──
+
+  let safetyWith (tools : String) : String :=
+    "{\"epoch\":1,\"safety\":{\"approval\":{\"control_file\":\"c\"},\"tools\":[" ++ tools ++ "]}}"
+
+  -- TTL: default 120 s, clamp at 300 s, stored in MILLISECONDS
+  let ttlDefault ← expectOk "ttl default"
+    "{\"epoch\":1,\"safety\":{\"approval\":{\"control_file\":\"c\"},\"tools\":[]}}"
+  unless ttlDefault.safety.approvalTtlMs == 120000 do
+    throw <| IO.userError s!"ttl default must be 120000 ms: {ttlDefault.safety.approvalTtlMs}"
+  let ttlClamped ← expectOk "ttl clamp"
+    "{\"epoch\":1,\"safety\":{\"approval\":{\"control_file\":\"c\",\"ttl_seconds\":9999},\"tools\":[]}}"
+  unless ttlClamped.safety.approvalTtlMs == 300000 do
+    throw <| IO.userError s!"ttl must clamp to 300000 ms: {ttlClamped.safety.approvalTtlMs}"
+
+  -- mode alias: guard and guarded parse to the same mode
+  let aliases ← expectOk "mode aliases"
+    (safetyWith "{\"name\":\"a\",\"mode\":\"guard\"},{\"name\":\"b\",\"mode\":\"guarded\"}")
+  match aliases.safety.tools with
+  | [ra, rb] =>
+      unless ra.mode == Seal.ToolMode.guarded && rb.mode == Seal.ToolMode.guarded do
+        throw <| IO.userError "guard/guarded alias broken"
+  | _ => throw <| IO.userError "alias rules lost"
+
+  -- defaults: absent match ⇒ .always, absent target ⇒ []
+  let defaults ← expectOk "matcher/target defaults"
+    (safetyWith "{\"name\":\"t\",\"mode\":\"allow\"}")
+  match defaults.safety.tools with
+  | [r] =>
+      (match r.matcher with
+       | .always => pure ()
+       | m => throw <| IO.userError s!"default matcher must be always: {repr m}")
+      unless r.target.isEmpty do
+        throw <| IO.userError "default target must be []"
+  | _ => throw <| IO.userError "default rule lost"
+
+  -- matcher variants + dotted-path split (empty components dropped)
+  let variants ← expectOk "matcher variants"
+    (safetyWith
+      ("{\"name\":\"t\",\"mode\":\"guard\",\"match\":{\"type\":\"all\",\"matches\":[" ++
+       "{\"type\":\"equals\",\"arg\":\"a..b.\",\"value\":\"v\"}," ++
+       "{\"type\":\"starts_with\",\"arg\":\"p\",\"value\":\"pre\"}," ++
+       "{\"type\":\"contains_any_ci\",\"arg\":\"q\",\"needles\":[\"DROP\"]}," ++
+       "{\"type\":\"any\",\"matches\":[{\"type\":\"always\"}]}]}}"))
+  match variants.safety.tools with
+  | [r] =>
+      match r.matcher with
+      | .all [.equals p v, .startsWith _ pre, .containsAnyCi _ needles, .any [.always]] =>
+          unless p == ["a", "b"] && v == "v" && pre == "pre" && needles == ["DROP"] do
+            throw <| IO.userError "matcher variant fields wrong"
+      | m => throw <| IO.userError s!"matcher variant shape wrong: {repr m}"
+  | _ => throw <| IO.userError "variant rule lost"
+
+  -- target: literal-first precedence; arg splits dotted path
+  let targets ← expectOk "target resolution"
+    (safetyWith
+      "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"literal\":\"x\",\"arg\":\"ignored\"},{\"arg\":\"a.b\"},{\"full_arguments\":true}]}")
+  match targets.safety.tools with
+  | [r] =>
+      match r.target with
+      | [.literal "x", .argPath ["a", "b"], .fullArguments] => pure ()
+      | t => throw <| IO.userError s!"target resolution wrong: {repr t}"
+  | _ => throw <| IO.userError "target rule lost"
+
+  -- permissive interior: nested unknown keys tolerated in rule/matcher/target
+  let _ ← expectOk "permissive interior"
+    (safetyWith
+      "{\"name\":\"t\",\"mode\":\"guard\",\"_comment\":\"c\",\"_seal_scaffold\":true,\"match\":{\"type\":\"always\",\"note\":1},\"target\":[{\"literal\":\"x\",\"junk\":[]}]}")
+
+  -- rejects the interior DOES enforce
+  expectErrContaining "full_arguments false" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"full_arguments\":false}]}")
+    "full_arguments must be true"
+  expectErrContaining "ambiguous target part" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"arg\":\"a\",\"full_arguments\":true}]}")
+    "exactly one of"
+  expectErrContaining "target not array" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":{}}")
+    "target must be an array"
+  expectErrContaining "unsupported match type" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"match\":{\"type\":\"regex\"}}")
+    "unsupported match type"
+  expectErrContaining "unsupported mode" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"block\"}")
+    "unsupported tool mode"
+
+  -- schema projection sanity: the codec carries the derived schema
+  unless Seal.policyBundleSchema == Seal.policyBundleCodec.schema do
+    throw <| IO.userError "policyBundleSchema must be the codec schema projection"
+
   IO.println "POLICY-BUNDLE TESTS PASS"

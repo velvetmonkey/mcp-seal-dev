@@ -50,6 +50,14 @@ name = "policy_bundle_tests"
 root = "Test.PolicyBundle"
 
 [[lean_exe]]
+name = "policy_diff_tests"
+root = "Test.PolicyDiff"
+
+[[lean_exe]]
+name = "policy_schema_emit"
+root = "Test.PolicySchemaEmit"
+
+[[lean_exe]]
 name = "scaffold_tests"
 root = "Test.Scaffold"
 
