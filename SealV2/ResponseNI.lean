@@ -51,7 +51,10 @@ faithful to it:
   identity state and no decision, so the hazard is not expressible here.
 
 These theorems must NOT be summarized as deployed-host response-egress
-non-interference.
+non-interference. `SealV2/ResponseTransport.lean` enriches this model with
+framing outcomes and a transport-death flag: there the purge/insertion
+property is REFUTED (witness: the oversized-frame story above) and the
+surviving fail-closed property is proven.
 
 **Withdrawn verdict (previously asserted here; not entailed).** An earlier
 revision of this header concluded "P6 is confidentiality-only; integrity
