@@ -3,57 +3,65 @@
 import SealV2.Decide
 
 /-!
-# P6 — response-egress non-interference (theorem, with its boundary stated)
+# P6 in a simplified sequential model (scope corrected after adversarial frisk)
 
-**The question (Ben, E1.1):** seal-host documents response egress as
-UNMEDIATED BY DESIGN — P6 in the `main.rs` mediation table: child stdout is
-copied verbatim to client stdout by a dedicated relay thread (no parse, no
-gate, no state write). Can unmediated response egress influence any
-SUBSEQUENT authorization decision? If provably not, P6 is a
-confidentiality-only risk; if it can, it is an integrity hole that must close
-before HTTP.
+**Exactly what is proven here, and no more:** within the simplified
+sequential model defined below — in which a response event is state-identity
+and decision-silent BY DEFINITION (the `.response` arms of `stepState` and
+`observeDecision`) — deleting or inserting response events leaves the
+modeled decision/state trace unchanged (`p6_response_noninterference`,
+`p6_response_insertion`, `p6_state_noninterference`). The two facts the
+headline theorems turn on (`response_state_invariant`,
+`response_no_decision`) are `rfl`: they restate how the `.response` arm was
+defined. These are specification theorems about THIS model. They are NOT
+implementation-refinement theorems about any deployed host.
 
-**The answer: a THEOREM — `p6_response_noninterference` (with
-`p6_response_insertion` and `p6_state_noninterference`).** Response egress
-cannot influence any subsequent authorization decision, because no response
-byte has a path into the decision-bearing state.
+**What the model mirrors: THIS repository's FFI, nothing else.** The
+init/approve/request arms follow mcp-seal-dev's single-state FFI
+(`Ffi.lean:32-33`: one `IO.Ref (Option ApprovalState)`; session-touching
+exports `seal_v2_init`, `seal_v2_add_approval`, `seal_v2_decide`,
+`seal_v2_challenge` (stateless); no response-consuming export). The arms are
+the same pure kernel compositions `Ffi.lean` runs (`parseConfig` result,
+`signedParse ∘ signedMessageFromAst?` approval append,
+`parse → validateAndConsumeWithStore listReplayStore → serialize`).
+`response` is the one event that FFI does not have.
 
-**Why this is a fact about the interface, not an assumption.** Lean owns ALL
-decision-bearing state (`Ffi.stateRef : Option ApprovalState`, mutated only by
-the exported entry points). The FFI surface has exactly four exports touching
-a session: `seal_v2_init` (config), `seal_v2_add_approval` (signed approval),
-`seal_v2_decide` (raw request + clock), `seal_v2_challenge` (STATELESS). There
-is NO export that consumes a response. The trace model below mirrors those
-entry points call-for-call — `stepState`/`observeDecision` on the
-init/approve/request arms are the SAME pure kernel compositions `Ffi.lean`
-runs (`parseConfig` result, `signedParse ∘ signedMessageFromAst?` approval
-append, `parse → validateAndConsumeWithStore listReplayStore → serialize`) —
-and adds the one event the FFI does not have: `response bytes`. The `response`
-arm is the identity BY CONSTRUCTION OF THE INTERFACE: there is no function to
-model. The theorems then prove that the entire decision trace, and the entire
-state evolution, are invariant under deleting or inserting arbitrary response
-events with arbitrary bytes.
+**What the model does NOT mirror: the deployed seal-host runtime.** NO
+refinement theorem connects this file to seal-host, and this model is not
+faithful to it:
+* seal-host's exported seam is `seal_host_init` / `seal_host_step` /
+  `seal_host_classify` over multiple kernel state refs and a kernel registry
+  (seal-host `Ffi.lean:314-334`, `:37-53`, `:94-150`), not the four
+  `seal_v2_*` entry points modeled here.
+* seal-host's response relay is NOT a stateless byte copy. It reads raw
+  `Vec<u8>` frames through `read_bounded_frame`, bounded to 1 MiB,
+  distinguishing complete / EOF / unterminated / oversized / IO-error
+  (seal-host `rust/src/limits.rs:7,16-68`); every failure arm — and a failed
+  enqueue of a complete frame — WRITES transport state (`downstream_dead`,
+  readiness: `rust/src/main.rs:1137-1181`); and the request loop observes
+  that state BEFORE classification or any Lean call (`main.rs:1209-1216`).
+  Output is queued through a bounded sync channel with its own interleaving
+  behavior (`rust/src/output.rs`).
+* `HostEvent.response (bytes : String)` cannot express any of those cases.
+  Concretely: an oversized (> 1 MiB) terminated child frame sets
+  `downstream_dead`; the NEXT client request is answered with a seam error
+  and the session terminates. Real response output therefore changes the
+  subsequent decision trace — a fail-closed denial/termination effect (not
+  an unauthorized Allow). In this model the same event is a `.response` with
+  identity state and no decision, so the hazard is not expressible here.
 
-**The boundary, stated loudly (what the theorem can and cannot say):**
-* IN SCOPE, PROVEN: no response-derived data reaches `ApprovalState`, the
-  replay store, the clock argument, or any `decide` input inside the model
-  that mirrors the deployed FFI. Checked against the deployed Rust relay
-  (`main.rs:855-873`): the P6 path is `child_out.read → stdout.write_all`,
-  byte-verbatim, no state.
-* TCB (A3-class, named): that the Rust host CONTINUES to conform — i.e. never
-  synthesizes an `init`/`add_approval`/`decide` argument from response bytes.
-  Same seam class as every other A3 obligation; the mediation-table row is the
-  documented contract.
-* OUT OF SCOPE, permanently: the CLIENT reads responses and may choose its
-  next request accordingly. That is not an integrity channel into the
-  decision: requests are adversarial by assumption, and every decision is a
-  function of (request bytes, trusted state) only — `SealV2.decide`. What
-  response egress DOES carry is information OUT (child → client, unfiltered):
-  a CONFIDENTIALITY/exfiltration channel. Over a local pipe to the same
-  client this is the documented design; over HTTP it becomes an exfiltration
-  path. **Verdict: P6 is confidentiality-only — record as a named risk that
-  must be re-examined at the HTTP boundary; it is NOT an integrity hole and
-  does not block on integrity grounds.**
+These theorems must NOT be summarized as deployed-host response-egress
+non-interference.
+
+**Withdrawn verdict (previously asserted here; not entailed).** An earlier
+revision of this header concluded "P6 is confidentiality-only; integrity
+clean; named exfiltration risk at the HTTP boundary." No confidentiality,
+secret, client, HTTP, exfiltration, or integrity predicate appears anywhere
+in this model, so that verdict is not a consequence of these theorems. It is
+demoted to an unproven CONJECTURE: the known seal-host counterexample class
+is fail-closed (denial/termination), and no response-to-unauthorized-Allow
+path is currently known — but a confidentiality assessment would need a
+model with secrets and an observer, which this file does not contain.
 -/
 
 namespace SealV2.ResponseNI
@@ -82,8 +90,11 @@ def isResponse : HostEvent → Bool
       `parse → validateAndConsumeWithStore listReplayStore` and persist the
       consumed store (+ clock) ONLY on Allow (`decideImpl` writes `stateRef`
       only in its Allow arm);
-    * `response` — IDENTITY: the FFI has no response-consuming export. This
-      arm is the interface fact P6 turns on, not an assumption bolted on. -/
+    * `response` — IDENTITY BY DEFINITION. This mirrors the absence of a
+      response-consuming export in mcp-seal-dev's FFI. It is a MODELING
+      CHOICE, and it is exactly where this model diverges from the deployed
+      seal-host relay, whose response handling does write transport state
+      (see the header). The P6 theorems below hold because of this arm. -/
 def stepState (s : Option ApprovalState) : HostEvent → Option ApprovalState
   | .init cfg => some cfg
   | .approve rawSigned sigHex =>
@@ -158,11 +169,11 @@ theorem response_state_invariant (s : Option ApprovalState) (b : String) :
 theorem response_no_decision (s : Option ApprovalState) (b : String) :
     observeDecision s (.response b) = none := rfl
 
-/-- **P6, purge form: response egress cannot influence any subsequent
-    authorization decision.** The decision trace of ANY event sequence equals
-    the decision trace of the same sequence with every response event (and
-    all its bytes) deleted. Unmediated response egress is
-    decision-invisible. -/
+/-- **P6, purge form, model-level only.** In THIS model the decision trace
+    of any event sequence equals that of the same sequence with every
+    response event deleted. Holds because the `.response` arm is defined as
+    state-identity and decision-silent; it does not transfer to the deployed
+    seal-host relay (see header). -/
 theorem p6_response_noninterference (s : Option ApprovalState)
     (t : List HostEvent) : runTrace s (purgeResponses t) = runTrace s t := by
   induction t generalizing s with
@@ -186,8 +197,9 @@ theorem p6_response_noninterference (s : Option ApprovalState)
           simp only [runTrace, observeDecision]
           rw [ih _]
 
-/-- **P6, insertion form:** injecting a response event with ARBITRARY bytes at
-    ANY position changes no decision, before or after the injection point. -/
+/-- **P6, insertion form, model-level only:** in THIS model, injecting a
+    response event at any position changes no modeled decision. Same caveat
+    as the purge form: this is a property of the model's `.response` arm. -/
 theorem p6_response_insertion (s : Option ApprovalState)
     (t₁ t₂ : List HostEvent) (b : String) :
     runTrace s (t₁ ++ .response b :: t₂) = runTrace s (t₁ ++ t₂) := by
@@ -206,9 +218,10 @@ theorem p6_response_insertion (s : Option ApprovalState)
           simp only [List.cons_append, runTrace, hobs]
           rw [ih _]
 
-/-- **P6, state form:** the authorization STATE after any run is invariant
-    under purging responses — nothing response-derived is retained for any
-    later decision to read. -/
+/-- **P6, state form, model-level only:** the modeled authorization state
+    after any run is invariant under purging responses. The model has no
+    transport/control state for a response to write; the deployed seal-host
+    relay does (see header), and that state is outside this theorem. -/
 theorem p6_state_noninterference (s : Option ApprovalState)
     (t : List HostEvent) : runState s (purgeResponses t) = runState s t := by
   induction t generalizing s with
@@ -220,7 +233,14 @@ theorem p6_state_noninterference (s : Option ApprovalState)
       | approve rawSigned sigHex => exact ih _
       | request raw now => exact ih _
 
-/-! ## Axiom pins -/
+/-! ## Axiom pins
+
+Count, stated precisely: this file has 3 `#guard_msgs` axiom-diagnostic
+pins. The V2.3 package as a whole has 33 `#guard_msgs` commands — 31
+axiom-diagnostic pins (28 in `EffectEnvelope.lean` + 3 here) plus 2 `#eval`
+golden-vector pins in `EffectEnvelope.lean`. An earlier summary said
+"31 `#guard_msgs` pins"; that number is correct only as the count of
+axiom-diagnostic pins, not of `#guard_msgs` commands. -/
 
 /-- info: 'SealV2.ResponseNI.p6_response_noninterference' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
