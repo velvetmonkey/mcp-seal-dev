@@ -111,7 +111,7 @@ theorem parseToolRule_eq :
     Seal.toolRuleCodec.parse = PolicyLegacy.parseToolRule := by
   funext j
   simp only [Seal.toolRuleCodec, WireCodec.openObj, Seal.toolRuleSpec,
-    ObjSpec.emit, ObjSpec.fieldD, ObjSpec.field, ObjSpec.start,
+    ObjSpec.emit, ObjSpec.check, ObjSpec.fieldD, ObjSpec.field, ObjSpec.start,
     Seal.strCodec, Seal.modeCodec, Seal.matchCodec, Seal.targetListCodec,
     PolicyLegacy.parseToolRule, getObjString,
     bind_assoc, pure_bind, throw_bind, ite_bind]

@@ -8,6 +8,8 @@ import Seal.PolicyScan
 import Seal.Scaffold
 import Seal.GoldenPath
 import Seal.SignedPolicy
+import Seal.EffectCommitment
+import Seal.GuardTheorems
 import SealV2.TamperTheorems
 
 #print axioms SealCore.default_deny_never_allowed
@@ -48,6 +50,26 @@ import SealV2.TamperTheorems
 #print axioms Seal.shell_rm_rf_blocks_on_fresh_state
 #print axioms Seal.shell_rm_rf_allows_with_fresh_approval
 #print axioms Seal.shell_read_flows
+
+-- Stage A: the effect commitment (assumption-conditional theorems)
+#print axioms Seal.effect_commitment_injective
+#print axioms Seal.commitment_check_iff
+#print axioms Seal.commitment_rederivation_stable
+#print axioms Seal.preimage_shape
+#print axioms Seal.preimage_separates_tools
+#print axioms Seal.preimage_separates_servers
+
+-- Stage A: guard mode accepts ONLY the full-argument target
+#print axioms Seal.guard_requires_full_arguments
+#print axioms Seal.bundle_guard_requires_full_arguments
+#print axioms Seal.toolRule_guard_full_arguments
+#print axioms Seal.guardCheck_ok_guarded
+#print axioms Seal.isFullArgumentsTarget_eq_true
+#print axioms Seal.guard_partial_target_rejected
+#print axioms Seal.guard_empty_target_rejected
+#print axioms Seal.guard_starts_with_target_rejected
+#print axioms Seal.guard_full_arguments_policy_accepted
+#print axioms Seal.allow_partial_target_still_accepted
 
 -- Golden-path spec: tamper ⇒ fail-closed
 #print axioms Seal.tampered_policy_fail_closed

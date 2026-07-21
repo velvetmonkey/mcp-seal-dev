@@ -265,9 +265,10 @@ def main : IO Unit := do
   unless ttlClamped.safety.approvalTtlMs == 300000 do
     throw <| IO.userError s!"ttl must clamp to 300000 ms: {ttlClamped.safety.approvalTtlMs}"
 
-  -- mode alias: guard and guarded parse to the same mode
+  -- mode alias: guard and guarded parse to the same mode (both must carry
+  -- the full-argument target after Stage A)
   let aliases ← expectOk "mode aliases"
-    (safetyWith "{\"name\":\"a\",\"mode\":\"guard\"},{\"name\":\"b\",\"mode\":\"guarded\"}")
+    (safetyWith "{\"name\":\"a\",\"mode\":\"guard\",\"target\":[{\"full_arguments\":true}]},{\"name\":\"b\",\"mode\":\"guarded\",\"target\":[{\"full_arguments\":true}]}")
   match aliases.safety.tools with
   | [ra, rb] =>
       unless ra.mode == Seal.ToolMode.guarded && rb.mode == Seal.ToolMode.guarded do
@@ -289,7 +290,7 @@ def main : IO Unit := do
   -- matcher variants + dotted-path split (empty components dropped)
   let variants ← expectOk "matcher variants"
     (safetyWith
-      ("{\"name\":\"t\",\"mode\":\"guard\",\"match\":{\"type\":\"all\",\"matches\":[" ++
+      ("{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"full_arguments\":true}],\"match\":{\"type\":\"all\",\"matches\":[" ++
        "{\"type\":\"equals\",\"arg\":\"a..b.\",\"value\":\"v\"}," ++
        "{\"type\":\"starts_with\",\"arg\":\"p\",\"value\":\"pre\"}," ++
        "{\"type\":\"contains_any_ci\",\"arg\":\"q\",\"needles\":[\"DROP\"]}," ++
@@ -303,10 +304,20 @@ def main : IO Unit := do
       | m => throw <| IO.userError s!"matcher variant shape wrong: {repr m}"
   | _ => throw <| IO.userError "variant rule lost"
 
-  -- target: literal-first precedence; arg splits dotted path
-  let targets ← expectOk "target resolution"
+  -- Stage A: a MIXED guarded target is a HARD PARSE ERROR (this fixture
+  -- previously asserted a successful parse — the flip is the check that
+  -- guard mode was actually restricted, not just theorem-ed about)
+  expectErrContaining "mixed guarded target rejected"
     (safetyWith
       "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"literal\":\"x\",\"arg\":\"ignored\"},{\"arg\":\"a.b\"},{\"full_arguments\":true}]}")
+    "guard mode requires target"
+
+  -- target-part parsing itself is unchanged: literal-first precedence and
+  -- dotted-path split still resolve — witnessed on an allow rule, where a
+  -- target never binds an approval
+  let targets ← expectOk "target resolution (allow rule)"
+    (safetyWith
+      "{\"name\":\"t\",\"mode\":\"allow\",\"target\":[{\"literal\":\"x\",\"arg\":\"ignored\"},{\"arg\":\"a.b\"},{\"full_arguments\":true}]}")
   match targets.safety.tools with
   | [r] =>
       match r.target with
@@ -315,11 +326,28 @@ def main : IO Unit := do
   | _ => throw <| IO.userError "target rule lost"
 
   -- permissive interior: nested unknown keys tolerated in rule/matcher/target
+  -- (the guarded target part may carry unknown keys as long as it PARSES to
+  -- full_arguments)
   let _ ← expectOk "permissive interior"
     (safetyWith
-      "{\"name\":\"t\",\"mode\":\"guard\",\"_comment\":\"c\",\"_seal_scaffold\":true,\"match\":{\"type\":\"always\",\"note\":1},\"target\":[{\"literal\":\"x\",\"junk\":[]}]}")
+      "{\"name\":\"t\",\"mode\":\"guard\",\"_comment\":\"c\",\"_seal_scaffold\":true,\"match\":{\"type\":\"always\",\"note\":1},\"target\":[{\"full_arguments\":true,\"junk\":[]}]}")
 
   -- rejects the interior DOES enforce
+  expectErrContaining "guard arg target rejected" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"arg\":\"sql\"}]}")
+    "guard mode requires target"
+  expectErrContaining "guard literal target rejected" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"literal\":\"x\"}]}")
+    "guard mode requires target"
+  expectErrContaining "guard absent target rejected" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\"}")
+    "guard mode requires target"
+  expectErrContaining "guard empty target rejected" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[]}")
+    "guard mode requires target"
+  expectErrContaining "guard starts_with target part rejected" (safetyWith
+    "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"starts_with\":\"DROP\"}]}")
+    "exactly one of"
   expectErrContaining "full_arguments false" (safetyWith
     "{\"name\":\"t\",\"mode\":\"guard\",\"target\":[{\"full_arguments\":false}]}")
     "full_arguments must be true"

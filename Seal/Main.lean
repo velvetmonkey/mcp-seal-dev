@@ -69,6 +69,23 @@ private def processHostLine
           childIn.putStr hostLine
           childIn.flush
       | some (toolName, toolArgs) =>
+          -- Duplicate-key mediation gate: `Json.parse` collapsed duplicate
+          -- object keys last-wins to produce `toolArgs`, but a downstream
+          -- tool parser may disagree (first-wins/reject) — a kernel-vs-tool
+          -- divergence no post-parse check can see. A tools/call line whose
+          -- RAW text carries a duplicate (or escaped) object key is a HARD
+          -- block, never a silent collapse. (Seal.JsonUtil.wireKeysSafe)
+          if !JsonUtil.wireKeysSafe trimmed then
+            writeLocked stdoutLock hostOut
+              (blockResponseLine (jsonId json) "duplicate or escaped object key in tool call")
+            return
+          -- Stage-A pinned integer bound: >18 significant mantissa digits in
+          -- an unquoted number would diverge from the Stage-C i64 byte twin;
+          -- fail closed here instead. (Seal.JsonUtil.wireDigitsSafe)
+          if !JsonUtil.wireDigitsSafe trimmed then
+            writeLocked stdoutLock hostOut
+              (blockResponseLine (jsonId json) "number exceeds significant-digit bound in tool call")
+            return
           -- One wall-clock epoch reading (ms) per tools/call. Wall-clock (not
           -- monotonic) so a record-supplied `issuedAt` is comparable: the deadline
           -- is computed in Channel as min(issuedAt, now) + ttlMs. The same `now`

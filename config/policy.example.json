@@ -13,10 +13,7 @@
         "needles": ["drop", "delete", "truncate"]
       },
       "target": [
-        { "literal": "db" },
-        { "arg": "database" },
-        { "literal": "write" },
-        { "arg": "sql" }
+        { "full_arguments": true }
       ]
     },
     {
@@ -24,9 +21,7 @@
       "mode": "guarded",
       "match": { "type": "always" },
       "target": [
-        { "literal": "payment" },
-        { "arg": "to" },
-        { "arg": "amount" }
+        { "full_arguments": true }
       ]
     },
     {

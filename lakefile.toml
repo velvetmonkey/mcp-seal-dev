@@ -62,6 +62,10 @@ name = "scaffold_tests"
 root = "Test.Scaffold"
 
 [[lean_exe]]
+name = "effect_vectors"
+root = "Test.EffectVectors"
+
+[[lean_exe]]
 name = "scan_oracle"
 root = "Test.ScanOracle"
 

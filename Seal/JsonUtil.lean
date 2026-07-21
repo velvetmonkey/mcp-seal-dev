@@ -95,6 +95,141 @@ def numberScanStep (st : NumberScan) (c : Char) : NumberScan :=
 def wireNumbersSafe (s : String) : Bool :=
   (s.toList.foldl numberScanStep {}).worst ≤ maxExponentDigits
 
+/-! ## Raw-wire object-key scan (duplicate-key mediation gate)
+
+`Lean.Json.parse` collapses duplicate object keys last-wins. A tool's own
+parser may take first-wins (or reject), so a duplicate key in a guarded
+call's arguments is a kernel-versus-tool parser divergence — a full
+mediation bypass invisible to any check on the post-parse value. The gate
+therefore runs on the RAW wire text, before the information is destroyed.
+
+Scope and posture:
+* A duplicate key (raw-identical text) in ANY object of the line ⇒ unsafe.
+* An ESCAPE SEQUENCE inside an object key ⇒ unsafe. Rationale: `"a"`
+  and `"a"` are different raw bytes but the same post-parse key, so raw
+  comparison alone would miss that duplicate. Rather than re-implement the
+  parser's escape decoding (surrogate pairs included) in the gate, any
+  escaped key fails closed. Escapes in string VALUES are unaffected.
+* Structural anomalies (stray closers, key position confusion) ⇒ unsafe.
+  The gate runs alongside `Json.parse`; malformed lines are already handled
+  there, so over-blocking malformed text costs nothing.
+
+Total: a single `List.foldl` over the characters with an explicit frame
+stack — no `partial`, no parse. -/
+
+/-- One container frame of the key scan: an object frame carries the raw
+    keys seen so far and whether the next string in this frame is a key. -/
+inductive KeyFrame where
+  | obj (seen : List String) (expectKey : Bool)
+  | arr
+  deriving Repr
+
+structure KeyScan where
+  stack : List KeyFrame := []
+  inString : Bool := false
+  escaped : Bool := false
+  /-- The string being read is an object key: capture it. -/
+  isKey : Bool := false
+  /-- Captured key characters, reversed. -/
+  buf : List Char := []
+  bad : Bool := false
+  deriving Repr
+
+def keyScanStep (st : KeyScan) (c : Char) : KeyScan :=
+  if st.bad then st
+  else if st.inString then
+    if st.escaped then { st with escaped := false }
+    else if c == '\\' then
+      if st.isKey then { st with bad := true }
+      else { st with escaped := true }
+    else if c == '"' then
+      if st.isKey then
+        let key := String.ofList st.buf.reverse
+        match st.stack with
+        | .obj seen _ :: rest =>
+            if seen.contains key then { st with bad := true }
+            else { st with inString := false, isKey := false, buf := [],
+                           stack := .obj (key :: seen) false :: rest }
+        | _ => { st with bad := true }
+      else { st with inString := false }
+    else if st.isKey then { st with buf := c :: st.buf }
+    else st
+  else if c == '"' then
+    let isKey := match st.stack with
+      | .obj _ expectKey :: _ => expectKey
+      | _ => false
+    { st with inString := true, isKey, buf := [] }
+  else if c == '{' then { st with stack := .obj [] true :: st.stack }
+  else if c == '[' then { st with stack := .arr :: st.stack }
+  else if c == '}' then
+    match st.stack with
+    | .obj _ _ :: rest => { st with stack := rest }
+    | _ => { st with bad := true }
+  else if c == ']' then
+    match st.stack with
+    | .arr :: rest => { st with stack := rest }
+    | _ => { st with bad := true }
+  else if c == ',' then
+    match st.stack with
+    | .obj seen _ :: rest => { st with stack := .obj seen true :: rest }
+    | _ => st
+  else
+    st
+
+/-- `true` iff the raw wire line contains no duplicate object key, no escape
+    sequence inside an object key, and no structural anomaly the scan can
+    see. `false` on a guarded call is a HARD block (fail closed), never a
+    silent last-wins collapse. -/
+def wireKeysSafe (s : String) : Bool :=
+  !(s.toList.foldl keyScanStep {}).bad
+
+/-! ## Raw-wire significant-digit bound (Stage-C twin comparability)
+
+Pinned Stage-A integer bound for guarded-call arguments: an unquoted JSON
+number may carry at most `maxSignificantDigits` mantissa digits (integer +
+fraction digits of the literal, exponent digits excluded — those are bounded
+separately by `maxExponentDigits`). `10^18 < 2^63`, so every in-bound
+integer mantissa fits an `i64` in the Stage-C Rust byte twin; anything
+longer fails closed here rather than diverging there. Leading zeros count
+toward the bound (over-blocking a pathological `0.00…01` is acceptable). -/
+
+def maxSignificantDigits : Nat := 18
+
+structure DigitScan where
+  inString : Bool := false
+  escaped : Bool := false
+  inExp : Bool := false
+  run : Nat := 0
+  worst : Nat := 0
+  deriving Repr
+
+def digitScanStep (st : DigitScan) (c : Char) : DigitScan :=
+  if st.inString then
+    if st.escaped then { st with escaped := false }
+    else if c == '\\' then { st with escaped := true }
+    else if c == '"' then { st with inString := false }
+    else st
+  else if c == '"' then
+    { st with inString := true, inExp := false, run := 0 }
+  else if c == 'e' || c == 'E' then
+    { st with inExp := true }
+  else if c == '+' || c == '-' then
+    st            -- exponent sign keeps `inExp`; a value sign is inert
+  else if c.isDigit then
+    if st.inExp then st
+    else
+      let r := st.run + 1
+      { st with run := r, worst := Nat.max st.worst r }
+  else if c == '.' then
+    st
+  else
+    { st with inExp := false, run := 0 }
+
+/-- `true` iff no unquoted number literal on the line carries more than
+    `maxSignificantDigits` mantissa digits. -/
+def wireDigitsSafe (s : String) : Bool :=
+  (s.toList.foldl digitScanStep {}).worst ≤ maxSignificantDigits
+
 def splitPath (s : String) : List String :=
   s.splitOn "." |>.filter (fun part => part ≠ "")
 

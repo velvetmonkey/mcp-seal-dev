@@ -22,12 +22,7 @@ def write_policy(tmp: Path, approval_file: Path) -> Path:
                     "arg": "sql",
                     "needles": ["drop", "delete", "truncate"],
                 },
-                "target": [
-                    {"literal": "db"},
-                    {"arg": "database"},
-                    {"literal": "write"},
-                    {"arg": "sql"},
-                ],
+                "target": [{"full_arguments": True}],
             },
             {"name": "approve", "mode": "deny", "match": {"type": "always"}, "target": []},
         ],

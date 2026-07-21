@@ -4,7 +4,7 @@
     "ttl_seconds": 120
   },
   "tools": [
-    { "name": "echo", "mode": "guarded", "match": { "type": "always" }, "target": [] },
-    { "name": "add",  "mode": "guarded", "match": { "type": "always" }, "target": [] }
+    { "name": "echo", "mode": "guarded", "match": { "type": "always" }, "target": [{"full_arguments": true}] },
+    { "name": "add",  "mode": "guarded", "match": { "type": "always" }, "target": [{"full_arguments": true}] }
   ]
 }

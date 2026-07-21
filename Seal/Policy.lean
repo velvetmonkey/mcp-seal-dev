@@ -112,6 +112,32 @@ def parseTargetPart (json : Json) : Except String TargetPart := do
     a shorter lifetime is strictly more restrictive). -/
 def maxApprovalTtlSeconds : Nat := 300
 
+/-- Stage-A guard-target restriction: the ONLY target a guarded rule may
+    carry is exactly `[{"full_arguments": true}]`. Anything else (`literal`
+    parts, `arg` paths, the empty list) binds the approval to less than the
+    full canonical arguments and is rejected at parse time — same hard-error
+    class as the unknown-key rejections. Shared verbatim by the codec and the
+    `PolicyLegacy` equivalence spec. -/
+def isFullArgumentsTarget : List TargetPart → Bool
+  | [.fullArguments] => true
+  | _ => false
+
+/-- The parse-time hard error for a guarded rule whose target is not exactly
+    `[{"full_arguments": true}]`. One constant, shared by codec and legacy
+    spec, so the equivalence theorem aligns the throw sites syntactically. -/
+def guardTargetErrorText : String :=
+  "guard mode requires target [{\"full_arguments\": true}]"
+
+/-- The Stage-A guard-target refinement as ONE shared constant (the
+    `parseMatch` / `parseTargetPart` sharing discipline): the codec's
+    `ObjSpec.check` and the legacy spec both run THIS function, so the
+    Layer-1 equivalence proof treats it as an atomic effect instead of
+    re-relating two if-trees. -/
+def guardCheck (mode : ToolMode) (target : List TargetPart) : Except String Unit :=
+  if mode == ToolMode.guarded && !isFullArgumentsTarget target then
+    throw guardTargetErrorText
+  else pure ()
+
 /-! ## Codecs
 
 `parse` and `schema` are projections of the same values. The two interior
@@ -202,6 +228,8 @@ def toolRuleSpec : ObjSpec ToolRule :=
     |>.field "mode" modeCodec
     |>.fieldD "match" matchCodec .always
     |>.fieldD "target" targetListCodec []
+    |>.check (fun ((((_, _name), mode), _matcher), target) =>
+        guardCheck mode target)
     |>.emit fun ((((_, name), mode), matcher), target) =>
         { name, mode, matcher, target }
 

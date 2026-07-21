@@ -35,6 +35,16 @@ review this file's history to read the delta directly):
   (inline `mapM` lambda hoisted, body identical) are copied VERBATIM from
   the 8761fae parser. Everything else is byte-identical to the pre-codec
   spec, so the non-principals acceptance set is unchanged.
+
+* Stage A guard-target restriction (2026-07-21): `parseToolRule` gains the
+  guarded-mode target check — a rule with `mode: guard`/`guarded` whose
+  target is not exactly `[{"full_arguments": true}]` is a hard parse error
+  (`Seal.guardTargetErrorText`). The check is the shared constant
+  `Seal.guardCheck` (the `parseMatch` sharing discipline), inserted at
+  the SAME position (after target parse, before emit) as the codec's
+  `ObjSpec.check`. This is the documented acceptance-set delta: every
+  previously-accepted guarded rule with a `literal`/`arg`/empty target is
+  now rejected; nothing else changes.
 -/
 
 namespace Seal.PolicyLegacy
@@ -65,6 +75,7 @@ def parseToolRule (json : Json) : Except String ToolRule := do
     | some (.arr parts) => parts.toList.mapM parseTargetPart
     | some _ => throw "target must be an array"
     | none => pure []
+  let _ ← Seal.guardCheck mode target
   pure { name, mode, matcher, target }
 
 def parsePolicyJson (json : Json) : Except String Policy := do

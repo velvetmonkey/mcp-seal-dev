@@ -99,8 +99,8 @@ def write_policy(tmp, ttl_seconds, control_file):
     policy = {
         "approval": {"control_file": control_file, "ttl_seconds": ttl_seconds},
         "tools": [
-            {"name": "echo", "mode": "guarded", "match": {"type": "always"}, "target": []},
-            {"name": "add", "mode": "guarded", "match": {"type": "always"}, "target": []},
+            {"name": "echo", "mode": "guarded", "match": {"type": "always"}, "target": [{"full_arguments": True}]},
+            {"name": "add", "mode": "guarded", "match": {"type": "always"}, "target": [{"full_arguments": True}]},
         ],
     }
     path = os.path.join(tmp, f"policy.ttl{ttl_seconds}.json")
