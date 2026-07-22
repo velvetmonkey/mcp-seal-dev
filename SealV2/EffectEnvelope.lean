@@ -3,88 +3,143 @@
 import SealV2.Decide
 
 /-!
-# V2.3 effect envelope — `seal.effect/v2` (Stage B strip, E1★ ballot)
+# V2.3 effect envelope — `seal.effect/v2` (Stage B strip + B2 reconciliation)
 
 **What this module is.** The V2.3 signed message shape and its proof package.
 Seal bumps the signed request envelope from V2.2 (`seal/v2.2/principal-envelope`,
 host-side `Host/Principal.lean` in seal-host) to ONE signed object carrying the
 fields that are actually authenticated AND interpreted. The original
 `seal.effect/v1` layout (council `bf01363f`) seated every candidate field; the
-E1★ ballot (Ben, 2026-07-22) killed the uninterpreted seats and Stage B strips
-them from the signed message:
+E1★ ballot (Ben, 2026-07-22) killed the uninterpreted seats; Stage B stripped
+them; Stage B2 reconciles that strip with the field-warrant campaign verdicts
+(`/home/monkey/.mega-monkey/field-warrant-report.md`) BEFORE the tag ships —
+one domain-tag bump covers every shape change, per the repin razor.
 
-**Killed and STRIPPED (E1★):** F4 `idempotency_key`, F5 `policy_version`,
-F6 `on_behalf_of` / `parent_capability_ref`, and the eighth-field trio
-`audience` / `causality_token` / `expires_at`. Why they are gone, not seated:
-* A null seat does NOT save the repin it exists for: if v4 were to give a
-  today-ignored field semantics, the same bytes would carry two meanings, and
-  distinguishing them needs a domain-tag bump — which IS the repin. The seat
-  defers nothing and costs seven unvalidated authenticated fields.
-* Malleability: receipts identical in every meaningful respect but differing
-  in a seat are distinct signatures over distinct messages — two objects for
-  one decision to anything that dedupes or identity-keys receipts.
-* `expires_at` was signed, security-sounding, and never checked — a
-  claim-drift trap in an artifact headed for a 90-day freeze.
+**Killed and STRIPPED:** F4 `idempotency_key`, F6 `on_behalf_of` /
+`parent_capability_ref`, `audience`, `causality_token` (E1★, campaign
+concurs), and — Stage B2 — F7 `revocation_subject`. Why the last one goes:
+revocation is a statement by the AUTHORITY about standing trust; a request
+field is a statement by the REQUESTER. Every candidate theorem either forbids
+nothing or inverts the trust direction (request data shrinking trust). Seal's
+actual revocation channel is config re-sign (revocation-by-re-sign, TCB note
+below); keeping the field invites routing revocation through request data.
+SEAT, wrong plane — stripped exactly as the E1★ seats were.
 
-**Bound fields, retained (unchanged in meaning from `seal.effect/v1`):**
+**RESCUED and GATED (Stage B2, field-warrant campaign):** `expires_at` and
+`policy_version` were on the Stage B strip list, but the campaign PROVED
+their gates using state already in this cone (`expired_envelope_blocks`,
+`policy_version_spoof_blocks`). Stripping a field that is one gate from real,
+then re-adding it in v3, is the double repin the razor exists to prevent. So
+they stay — checked, not seated. `issuedAt` likewise graduates from
+tuple-member-only to gated (`issuedAtGate`, ported with them).
+
+**The audience consequence, stated where the strip is recorded (do not let
+the slot and the defence disappear silently):** `audience` stays stripped,
+but its ABSENCE is security-relevant — it is the classic token-redirection
+boundary (`aud` confusion): an envelope accepted at mediator/host A being
+replayed to mediator/host B wherever the same authority/registry is
+accepted. What closes that threat today: the now-MANDATORY session binding
+(`sessionGate`). Every envelope must carry the verifier's boot/config
+session, and the host issues that value per boot from 32 bytes of entropy
+(`issue_session_id`, seal-host), so an envelope minted for verifier A names
+a session verifier B does not have. This closure is CONDITIONAL on a
+deployment invariant, not a theorem: session values must be per-verifier
+unique and never shared or reused across verifiers. Two mediators
+deliberately booted with one shared config+session are indistinguishable to
+this kernel. The clean fix remains a host self-identity (`selfId`) and an
+`audienceGate` at the next repin — recorded for Ben (field-warrant report
+§6). Before Stage B2, empty-session envelopes were exactly the portable
+ones; the mandatory session binding is what upgrades this from "documented
+hole" to "closed modulo the named invariant".
+
+**No magic empty/zero bypasses (Stage B2, Task 4 ruling).** Prior art found
+several named security bindings were checked when non-empty and silently
+accepted when `""`/`0` — an insecure default wearing a security name, the
+same class as the poison-the-receipt ruling. In this shape, for every signed
+binding: either it is MANDATORY (empty/zero fails closed) or its optionality
+is DECLARED in the signed object, never implied by a sentinel value:
+* `session` — MANDATORY. Empty blocks (`empty_session_blocks`). This also
+  aligns the kernel with the host, which already rejected empty sessions
+  (seal-host `verify()`): the kernel seat was a plane divergence.
+* `policy_version` — MANDATORY. Empty blocks (`empty_policy_version_blocks`).
+  Consequence: the signed config MUST declare a nonempty `policyVersion`
+  (fail-closed on unconfigured deployments, by design).
+* `expires_at` — MANDATORY nonzero (`zero_expiry_blocks`). The signer must
+  bound its own exposure window; a signer with no preference signs
+  `issuedAt + ttl`. Effective lifetime is
+  `min(issuedAt + maxApprovalTtl, expiresAt)` — the composite deadline.
+* F3 `effect` — stays OPTIONAL (advisory by design; its strip-vs-keep is
+  Ben's separate flagged F3 call, NOT decided here), but the optionality is
+  now a DECLARED property: the claim is `Option EffectClaim`, wire-encoded
+  with a signed presence byte (`0x00` absent / `0x01` present). The retired
+  `("", "", "")` sentinel is now an ordinary CLAIM and gets equality-checked
+  (and blocked on mismatch) like any other; absence is a distinct signed
+  byte. Presence itself is signed: flipping it is a forgery.
+* Not bypasses, for the record: `nonce` is signed randomness awaiting a
+  replay ledger (exempted, with reason, in `EnvelopeCompleteness`); `keyId`
+  is a registry lookup that fails closed on any unregistered value including
+  `""`; `issuedAt`/`line`/`adapter{type,version}` are checked unconditionally.
+
+**Bound fields, retained:**
 * BIND `line` by value — the exact judged bytes, never digest-downgraded,
   framed (`u64be(len) ‖ bytes`) like every variable-width field.
-* BIND `authority` (32 raw bytes), `keyId`, `nonce` (32 raw bytes), `issuedAt`
-  — the V2.2 Fix B config-authority bind, folded in unchanged in meaning.
+* BIND `authority` (32 raw bytes), `keyId`, `nonce` (32 raw bytes) — the
+  V2.2 Fix B config-authority bind, folded in unchanged in meaning.
+* BIND + GATE `issuedAt` — freshness (`issuedAtGate`): never future-dated,
+  never older than `state.maxApprovalTtl` (documented reuse as the envelope
+  freshness window). Honest `state.now` is a standing host obligation.
+* BIND + GATE `expiresAt` — mandatory signer-declared deadline (`expiryGate`).
 * BIND F1 `adapter{type,version}` — host must equality-check against the
   adapter that actually mediated (`adapter_bind` / `adapter_mismatch_blocks`).
-* BIND (conditional) F2 `principal.session` — the approval/replay-namespace
-  SESSION PLANE (`ApprovalState.session`, the value the SIGNED CONFIG names —
-  the same plane as `Host.Provenance.bootAssigner` and
-  `replayNamespace_trusted_plane`), explicitly NOT the receipt pid string.
-  Implemented as equality-when-nonempty (`session_plane_equality`,
-  `session_spoof_blocks`); empty = seat, so if client-visible session issuance
-  slips the cycle nothing breaks and the slot needs no re-bump.
-* BIND-optional F3 `effect{resource,action,args}` — ADVISORY but INTERPRETED:
-  equality-enforced against the parser-derived effect (`mcp_effect_equality`),
-  never the decision value (`effect_step_presence_not_value`). The F3 triple
-  is under a SEPARATE, FLAGGED strip decision (the ballot realized F3 as the
-  kernel-computed `effect_commitment`); it is deliberately NOT stripped here.
-* BIND F7 `revocation_subject` — retained by the ballot's keep-list.
+* BIND F2 `principal.session` — the approval/replay-namespace SESSION PLANE
+  (`ApprovalState.session`, the value the SIGNED CONFIG names), explicitly
+  NOT the receipt pid string. MANDATORY equality (`session_bind`,
+  `session_spoof_blocks`, `empty_session_blocks`).
+* BIND F5 `policy_version` — the anti-downgrade pin: an envelope signed
+  against policy X cannot be judged under policy Y (`policy_version_bind`,
+  `policy_version_spoof_blocks`). Mandatory equality against
+  `state.policyVersion`.
+* BIND-declared-optional F3 `effect : Option {resource, action, args}` —
+  ADVISORY but INTERPRETED: a present claim is equality-enforced against the
+  parser-derived effect (`mcp_effect_equality`), never the decision value
+  (`effect_step_presence_not_value`). The F3 triple is under a SEPARATE,
+  FLAGGED strip decision (the ballot realized F3 as the kernel-computed
+  `effect_commitment`); it is deliberately NOT stripped here.
 * Encoding: every variable-width field `u64be(len) ‖ bytes`; fixed-width
-  fields raw (authority 32, nonce 32, u64be at 8).
+  fields raw (authority 32, nonce 32, u64be at 8); the F3 option block is
+  `0x00`, or `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args)`.
 
 **The proof package** (full-tuple injectivity alone is necessary, NOT
 sufficient — both council seats):
 1. `effect_message_injective` — equal messages ⇒ equal (authority, full field
-   tuple), under wire-width constraints; `verified_effect_injective` discharges
-   the width constraints from the runtime checks, so for VERIFIED envelopes
-   injectivity is unconditional.
+   tuple), under wire-width constraints; `verified_effect_injective`
+   discharges the width constraints from the runtime checks, so for VERIFIED
+   envelopes injectivity is unconditional.
 2. Framing lemmas — `u64be_inj` (width-checked), `u64be_cancel`,
-   `sized_cancel`, `frame_cancel`, `frame_inj`: every variable-width field is
-   length-framed and append-injective; no field can splice into another.
+   `sized_cancel`, `frame_cancel`, `frame_inj`, `optEffect_inj`: every
+   variable-width field is length-framed and append-injective; the option
+   block is presence-byte-separated; no field can splice into another.
 3. Advisory non-influence — `effect_step_presence_not_value` /
    `advisory_non_influence` / `allow_value_from_line_and_state`: the decision
    VALUE is `SealV2.decide e.line state` — a function of the judged line and
-   the trusted config/state only. Envelope fields (advisory ones included) gate
-   only WHETHER a decision is produced, never WHICH bytes are allowed.
-4. MCP effect-equality — `mcp_effect_equality` / `mcp_effect_mismatch_blocks` /
-   `nonmcp_nonempty_effect_blocks`: a non-empty signed effect must equal the
-   effect derived from the judged line by the VERIFIED parser, else fail
-   closed. Without this, injectivity would authenticate a lie (confused
-   deputy): the signature would bind an effect claim nobody checked.
-5. Session-plane equality — `session_plane_equality` / `session_spoof_blocks`:
-   a client-signed session never ENTERS the judgment plane; it is
-   equality-checked against the boot/config session and otherwise blocks.
-6. Cross-version + cross-plane separation — `effect_cross_version_v1_separated`
-   (the Stage B strip is a REAL version bump: no `seal.effect/v1` receipt can
-   verify under `seal.effect/v2`, nor vice versa),
-   `effect_cross_version_v22_separated`, `effect_cross_version_v21_separated`,
-   `effect_cross_plane_separated`: no byte string is both a `seal.effect/v2`
-   message and a v1/V2.2/V2.1 envelope message or a `{`-prefixed
-   canonical-JSON payload (config plane AND the approval signed-message
-   plane — both are canonical JSON objects).
+   the trusted config/state only. Envelope fields (the advisory claim
+   included) gate only WHETHER a decision is produced, never WHICH bytes are
+   allowed.
+4. Gate theorems, one pair per binding, all fail-closed: F1 adapter, F2
+   session (mandatory), F3 MCP effect-equality, F5 policy version
+   (mandatory), expiry (mandatory), issuedAt freshness.
+5. Cross-version + cross-plane separation — `effect_cross_version_v1_separated`
+   (no `seal.effect/v1` receipt can verify under `seal.effect/v2`, nor vice
+   versa — and the Stage B2 reshape rides the SAME v1→v2 bump: the tag has
+   never shipped between shapes), `effect_cross_version_v22_separated`,
+   `effect_cross_version_v21_separated`, `effect_cross_plane_separated`.
 
 **Trusted, named, never proven (the crypto TCB at this seam)** — unchanged
 from V2.2: `ed25519Verify` extern faithfulness; Ed25519 existential
 unforgeability; nonce-freshness (A3, Rust seam); key custody / rotation /
 revocation-by-re-sign; that the `authority` bytes threaded in ARE the config
-trust root (pinned by construction at init, host-side).
+trust root (pinned by construction at init, host-side); `state.now` honesty
+(shared with M6).
 -/
 
 namespace SealV2.Effect
@@ -182,13 +237,17 @@ theorem frame_inj {s₁ s₂ : String}
 /-! ## Domain tags -/
 
 /-- Domain-separation tag for Stage B effect envelopes: `seal.effect/v2`.
-    The v1→v2 bump IS the strip: `seal.effect/v1` signed seven fields this
-    layout no longer carries, so a tag bump is mandatory — otherwise one byte
+    The v1→v2 bump IS the strip: `seal.effect/v1` signed fields this layout
+    no longer carries, so a tag bump is mandatory — otherwise one byte
     string could be a valid v1 message and a valid stripped message with
-    different semantics. Distinct from the retired `effectTagV1` at byte 13
-    (`'2'` vs `'1'`), from both retired principal-envelope tags at byte 4
-    (`.` vs `/`), and from every canonical-JSON plane at byte 0 (`s` vs `{`).
-    The trailing NUL terminates the tag unambiguously.
+    different semantics. The Stage B2 reconciliation (rescues, the
+    revocation-subject strip, the option-encoded F3 claim, the mandatory
+    bindings) rides the SAME bump: the v2 tag has never shipped between
+    shapes, so one repin covers every Stage B shape change. Distinct from
+    the retired `effectTagV1` at byte 13 (`'2'` vs `'1'`), from both retired
+    principal-envelope tags at byte 4 (`.` vs `/`), and from every
+    canonical-JSON plane at byte 0 (`s` vs `{`). The trailing NUL terminates
+    the tag unambiguously.
 
     NOT in this lineage: the Stage A commitment preimage tag
     `seal.effect/v3` (`Seal.effectDomainTag`). That string is part 0 of a
@@ -214,55 +273,77 @@ def envelopeTagV21 : String := "seal/v2.1/principal-envelope\x00"
 
 /-! ## The envelope and its message bytes -/
 
-/-- The Stage B effect envelope — every field both authenticated AND
-    interpreted; the E1★ killed seats (F4, F5, F6, eighth-field trio) are
-    STRIPPED from the structure, so a killed field cannot even be expressed,
-    let alone signed. Raw request fields exactly as marshalled; only
-    `verifyEffect` gives them meaning. `authority` is NOT a field: it is the
-    config trust root, threaded in by the session (never request data). -/
+/-- The F3 advisory effect claim — what the client BELIEVES the judged line
+    does. Never the decision input; a PRESENT claim is equality-checked
+    against the parser-derived effect (`effectGate`) and blocks on mismatch.
+    Grouped as one structure so presence is all-or-nothing: there is no
+    "resource claimed, action unclaimed" state to reason about. -/
+structure EffectClaim where
+  resource : String
+  action : String
+  args : String
+  deriving Repr, BEq, DecidableEq
+
+/-- The Stage B2 effect envelope — every field both authenticated AND
+    interpreted; the killed seats (E1★ plus the Stage B2 revocation-subject
+    strip) are STRIPPED from the structure, so a killed field cannot even be
+    expressed, let alone signed. Raw request fields exactly as marshalled;
+    only `verifyEffect` gives them meaning. `authority` is NOT a field: it
+    is the config trust root, threaded in by the session (never request
+    data). -/
 structure EffectEnvelope where
   /-- Wire-claimed registry id (Fix B bind). -/
   keyId : String
   /-- 32 raw bytes (width enforced by `verifyEffect`). -/
   nonce : ByteArray
   issuedAt : Nat
+  /-- MANDATORY nonzero signer-declared deadline (`expiryGate`). -/
+  expiresAt : Nat
   /-- THE judged line, bound BY VALUE (non-negotiable). -/
   line : String
   /-- F1: the adapter the client believes is mediating. -/
   adapterType : String
   adapterVersion : String
-  /-- F2: session plane; `""` = seat (unset). -/
+  /-- F2: session plane, MANDATORY equality with the boot/config session. -/
   session : String
+  /-- F5: policy version, MANDATORY equality — the anti-downgrade pin. -/
+  policyVersion : String
   /-- F3 (advisory, INTERPRETED — separate flagged strip decision):
-      claimed effect; all-`""` = unset. -/
-  effectResource : String
-  effectAction : String
-  effectArgs : String
-  /-- F7: revocation subject (ballot keep-list). -/
-  revocationSubject : String
+      `none` = declared absent (signed presence byte), `some` = checked. -/
+  effect : Option EffectClaim
   deriving BEq
+
+/-- Wire form of the option-encoded F3 claim: `0x00` = declared absent;
+    `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args)` = present. The
+    presence byte is INSIDE the signed message: absence is a distinct signed
+    value, not an inference from empty strings, and flipping presence is a
+    forgery (`optEffect_inj`). -/
+def optEffect : Option EffectClaim → ByteArray
+  | none => ByteArray.mk #[0]
+  | some c => ByteArray.mk #[1] ++ frame c.resource ++ frame c.action
+      ++ frame c.args
 
 /-- **The canonical signed message** — the cross-language contract:
 
-        tag ‖ authority(32) ‖ frame(keyId) ‖ nonce(32) ‖ u64be(issuedAt)
+        tag ‖ authority(32) ‖ frame(keyId) ‖ nonce(32)
+            ‖ u64be(issuedAt) ‖ u64be(expiresAt)
             ‖ frame(line)
             ‖ frame(adapterType) ‖ frame(adapterVersion)
-            ‖ frame(session)
-            ‖ frame(effectResource) ‖ frame(effectAction) ‖ frame(effectArgs)
-            ‖ frame(revocationSubject)
+            ‖ frame(session) ‖ frame(policyVersion)
+            ‖ optEffect(effect)
 
     with `frame(s) = u64be(|s| in UTF-8 bytes) ‖ s-bytes`. Every field is
-    either fixed-width or length-framed, so the encoding is injective in the
-    FULL tuple (`effect_message_injective`); no separate digest needed
-    (Ed25519 hashes internally). -/
+    fixed-width, length-framed, or presence-byte-discriminated, so the
+    encoding is injective in the FULL tuple (`effect_message_injective`);
+    no separate digest needed (Ed25519 hashes internally). -/
 def effectMessage (authority : ByteArray) (e : EffectEnvelope) : ByteArray :=
   effectTag.toUTF8 ++ authority
-    ++ frame e.keyId ++ e.nonce ++ u64be e.issuedAt
+    ++ frame e.keyId ++ e.nonce
+    ++ u64be e.issuedAt ++ u64be e.expiresAt
     ++ frame e.line
     ++ frame e.adapterType ++ frame e.adapterVersion
-    ++ frame e.session
-    ++ frame e.effectResource ++ frame e.effectAction ++ frame e.effectArgs
-    ++ frame e.revocationSubject
+    ++ frame e.session ++ frame e.policyVersion
+    ++ optEffect e.effect
 
 /-- The RETIRED V2.2 message layout (spec-only; layout frozen in
     `Host/Principal.lean`), kept so cross-version separation is a theorem. -/
@@ -279,86 +360,57 @@ def envelopeMessageV21 (nonce : ByteArray) (issuedAt : Nat) (line : String) :
 /-! ## Wire-width constraints -/
 
 /-- The wire-range side conditions injectivity needs: nonce fixed at 32,
-    every u64be argument (lengths, issuedAt) in u64 range.
+    every u64be argument (lengths, issuedAt, expiresAt) in u64 range.
     `verifyEffect` CHECKS all of these at runtime (`wireSizedB`), so verified
     envelopes satisfy them by theorem (`verifyEffect_wireSized`). -/
 structure WireSized (e : EffectEnvelope) : Prop where
   nonce32 : e.nonce.size = 32
   keyId : e.keyId.utf8ByteSize < 2 ^ 64
   issuedAt : e.issuedAt < 2 ^ 64
+  expiresAt : e.expiresAt < 2 ^ 64
   line : e.line.utf8ByteSize < 2 ^ 64
   adapterType : e.adapterType.utf8ByteSize < 2 ^ 64
   adapterVersion : e.adapterVersion.utf8ByteSize < 2 ^ 64
   session : e.session.utf8ByteSize < 2 ^ 64
-  effectResource : e.effectResource.utf8ByteSize < 2 ^ 64
-  effectAction : e.effectAction.utf8ByteSize < 2 ^ 64
-  effectArgs : e.effectArgs.utf8ByteSize < 2 ^ 64
-  revocationSubject : e.revocationSubject.utf8ByteSize < 2 ^ 64
+  policyVersion : e.policyVersion.utf8ByteSize < 2 ^ 64
+  effect : ∀ c, e.effect = some c →
+    c.resource.utf8ByteSize < 2 ^ 64 ∧ c.action.utf8ByteSize < 2 ^ 64
+      ∧ c.args.utf8ByteSize < 2 ^ 64
 
 /-- Decidable form of `WireSized`, checked by `verifyEffect` at runtime. -/
 def wireSizedB (e : EffectEnvelope) : Bool :=
   (e.nonce.size == 32)
     && Decidable.decide (e.keyId.utf8ByteSize < 2 ^ 64)
     && Decidable.decide (e.issuedAt < 2 ^ 64)
+    && Decidable.decide (e.expiresAt < 2 ^ 64)
     && Decidable.decide (e.line.utf8ByteSize < 2 ^ 64)
     && Decidable.decide (e.adapterType.utf8ByteSize < 2 ^ 64)
     && Decidable.decide (e.adapterVersion.utf8ByteSize < 2 ^ 64)
     && Decidable.decide (e.session.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.effectResource.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.effectAction.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.effectArgs.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.revocationSubject.utf8ByteSize < 2 ^ 64)
+    && Decidable.decide (e.policyVersion.utf8ByteSize < 2 ^ 64)
+    && (match e.effect with
+        | none => true
+        | some c =>
+            Decidable.decide (c.resource.utf8ByteSize < 2 ^ 64)
+              && Decidable.decide (c.action.utf8ByteSize < 2 ^ 64)
+              && Decidable.decide (c.args.utf8ByteSize < 2 ^ 64))
 
 theorem wireSizedB_spec {e : EffectEnvelope} (h : wireSizedB e = true) :
     WireSized e := by
   unfold wireSizedB at h
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩ := h
-  exact ⟨h0, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, heff⟩ := h
+  refine ⟨h0, h1, h2, h3, h4, h5, h6, h7, h8, ?_⟩
+  intro c hc
+  rw [hc] at heff
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at heff
+  exact ⟨heff.1.1, heff.1.2, heff.2⟩
 
 /-! ## 1 + 2: full-tuple injectivity, by sequential peel -/
 
-/-- **The Stage B bind, at the encoding.** Equal messages force equal
-    authority AND an equal FULL field tuple — the `seal.effect/v1` theorem
-    re-proven over the narrowed tuple, same strength. Each variable-width
-    field is peeled by `frame_cancel` (terminal field by `frame_inj`); miss
-    one and adjacent fields would splice — this proof is the machine-checked
-    witness that none is missed. -/
-theorem effect_message_injective {authority₁ authority₂ : ByteArray}
-    {e₁ e₂ : EffectEnvelope}
-    (ha₁ : authority₁.size = 32) (ha₂ : authority₂.size = 32)
-    (hw₁ : WireSized e₁) (hw₂ : WireSized e₂)
-    (h : effectMessage authority₁ e₁ = effectMessage authority₂ e₂) :
-    authority₁ = authority₂ ∧ e₁ = e₂ := by
-  unfold effectMessage at h
-  simp only [ByteArray.append_assoc] at h
-  rw [ByteArray.append_right_inj] at h
-  obtain ⟨hauth, h⟩ := sized_cancel ha₁ ha₂ h
-  obtain ⟨hkeyId, h⟩ := frame_cancel hw₁.keyId hw₂.keyId h
-  obtain ⟨hnonce, h⟩ := sized_cancel hw₁.nonce32 hw₂.nonce32 h
-  obtain ⟨hissuedAt, h⟩ := u64be_cancel hw₁.issuedAt hw₂.issuedAt h
-  obtain ⟨hline, h⟩ := frame_cancel hw₁.line hw₂.line h
-  obtain ⟨hadapterType, h⟩ := frame_cancel hw₁.adapterType hw₂.adapterType h
-  obtain ⟨hadapterVersion, h⟩ :=
-    frame_cancel hw₁.adapterVersion hw₂.adapterVersion h
-  obtain ⟨hsession, h⟩ := frame_cancel hw₁.session hw₂.session h
-  obtain ⟨heffectResource, h⟩ :=
-    frame_cancel hw₁.effectResource hw₂.effectResource h
-  obtain ⟨heffectAction, h⟩ := frame_cancel hw₁.effectAction hw₂.effectAction h
-  obtain ⟨heffectArgs, h⟩ := frame_cancel hw₁.effectArgs hw₂.effectArgs h
-  have hrevocationSubject : e₁.revocationSubject = e₂.revocationSubject :=
-    frame_inj hw₁.revocationSubject hw₂.revocationSubject h
-  refine ⟨hauth, ?_⟩
-  cases e₁; cases e₂
-  simp only [EffectEnvelope.mk.injEq]
-  exact ⟨hkeyId, hnonce, hissuedAt, hline, hadapterType, hadapterVersion,
-    hsession, heffectResource, heffectAction, heffectArgs, hrevocationSubject⟩
-
-/-! ## 6: cross-version + cross-plane domain separation -/
-
 /-- Two byte strings with a distinguishing byte inside both prefixes never
     agree, whatever the tails — the one-lemma core of every separation
-    theorem below. -/
+    theorem below (and of the option block's presence discrimination). -/
 theorem prefix_byte_separated {p₁ p₂ : ByteArray} {i : Nat}
     (hi₁ : i < p₁.size) (hi₂ : i < p₂.size)
     (hne : p₁[i]'hi₁ ≠ p₂[i]'hi₂) :
@@ -373,12 +425,90 @@ theorem prefix_byte_separated {p₁ p₂ : ByteArray} {i : Nat}
     _ = (p₂ ++ r₂)[i]'hR := by simp only [h]
     _ = p₂[i]'hi₂ := ByteArray.getElem_append_left hi₂
 
+/-- The option block is injective: the signed presence byte separates
+    `none` from `some` (0x00 vs 0x01 at offset 0), and present claims peel
+    field-by-field like the rest of the message. Flipping presence, or any
+    claim component, is a distinct signed message. -/
+theorem optEffect_inj {o₁ o₂ : Option EffectClaim}
+    (h₁ : ∀ c, o₁ = some c → c.resource.utf8ByteSize < 2 ^ 64
+      ∧ c.action.utf8ByteSize < 2 ^ 64 ∧ c.args.utf8ByteSize < 2 ^ 64)
+    (h₂ : ∀ c, o₂ = some c → c.resource.utf8ByteSize < 2 ^ 64
+      ∧ c.action.utf8ByteSize < 2 ^ 64 ∧ c.args.utf8ByteSize < 2 ^ 64)
+    (h : optEffect o₁ = optEffect o₂) : o₁ = o₂ := by
+  match o₁, o₂ with
+  | none, none => rfl
+  | none, some c =>
+      exfalso
+      have h' := congrArg (· ++ ByteArray.empty) h
+      simp only [optEffect, ByteArray.append_assoc] at h'
+      exact prefix_byte_separated (i := 0)
+        (p₁ := ByteArray.mk #[0]) (p₂ := ByteArray.mk #[1])
+        (by decide) (by decide) (by decide) _ _ h'
+  | some c, none =>
+      exfalso
+      have h' := congrArg (· ++ ByteArray.empty) h.symm
+      simp only [optEffect, ByteArray.append_assoc] at h'
+      exact prefix_byte_separated (i := 0)
+        (p₁ := ByteArray.mk #[0]) (p₂ := ByteArray.mk #[1])
+        (by decide) (by decide) (by decide) _ _ h'
+  | some c₁, some c₂ =>
+      obtain ⟨hr₁, ha₁, hg₁⟩ := h₁ c₁ rfl
+      obtain ⟨hr₂, ha₂, hg₂⟩ := h₂ c₂ rfl
+      have h' := congrArg (· ++ ByteArray.empty) h
+      simp only [optEffect, ByteArray.append_assoc] at h'
+      rw [ByteArray.append_right_inj] at h'
+      obtain ⟨hres, h'⟩ := frame_cancel hr₁ hr₂ h'
+      obtain ⟨hact, h'⟩ := frame_cancel ha₁ ha₂ h'
+      obtain ⟨hargs, _⟩ := frame_cancel hg₁ hg₂ h'
+      have hc : c₁ = c₂ := by
+        cases c₁; cases c₂
+        simp only [EffectClaim.mk.injEq]
+        exact ⟨hres, hact, hargs⟩
+      rw [hc]
+
+/-- **The Stage B2 bind, at the encoding.** Equal messages force equal
+    authority AND an equal FULL field tuple — the `seal.effect/v1` theorem
+    re-proven over the reconciled tuple, same strength. Each variable-width
+    field is peeled by `frame_cancel` (the terminal option block by
+    `optEffect_inj`); miss one and adjacent fields would splice — this proof
+    is the machine-checked witness that none is missed. -/
+theorem effect_message_injective {authority₁ authority₂ : ByteArray}
+    {e₁ e₂ : EffectEnvelope}
+    (ha₁ : authority₁.size = 32) (ha₂ : authority₂.size = 32)
+    (hw₁ : WireSized e₁) (hw₂ : WireSized e₂)
+    (h : effectMessage authority₁ e₁ = effectMessage authority₂ e₂) :
+    authority₁ = authority₂ ∧ e₁ = e₂ := by
+  unfold effectMessage at h
+  simp only [ByteArray.append_assoc] at h
+  rw [ByteArray.append_right_inj] at h
+  obtain ⟨hauth, h⟩ := sized_cancel ha₁ ha₂ h
+  obtain ⟨hkeyId, h⟩ := frame_cancel hw₁.keyId hw₂.keyId h
+  obtain ⟨hnonce, h⟩ := sized_cancel hw₁.nonce32 hw₂.nonce32 h
+  obtain ⟨hissuedAt, h⟩ := u64be_cancel hw₁.issuedAt hw₂.issuedAt h
+  obtain ⟨hexpiresAt, h⟩ := u64be_cancel hw₁.expiresAt hw₂.expiresAt h
+  obtain ⟨hline, h⟩ := frame_cancel hw₁.line hw₂.line h
+  obtain ⟨hadapterType, h⟩ := frame_cancel hw₁.adapterType hw₂.adapterType h
+  obtain ⟨hadapterVersion, h⟩ :=
+    frame_cancel hw₁.adapterVersion hw₂.adapterVersion h
+  obtain ⟨hsession, h⟩ := frame_cancel hw₁.session hw₂.session h
+  obtain ⟨hpolicyVersion, h⟩ :=
+    frame_cancel hw₁.policyVersion hw₂.policyVersion h
+  have heffect : e₁.effect = e₂.effect :=
+    optEffect_inj hw₁.effect hw₂.effect h
+  refine ⟨hauth, ?_⟩
+  cases e₁; cases e₂
+  simp only [EffectEnvelope.mk.injEq]
+  exact ⟨hkeyId, hnonce, hissuedAt, hexpiresAt, hline, hadapterType,
+    hadapterVersion, hsession, hpolicyVersion, heffect⟩
+
+/-! ## 5: cross-version + cross-plane domain separation -/
+
 /-- **Cross-version separation, v2 vs v1 — the Stage B acceptance theorem.**
     No byte string is both a `seal.effect/v2` message and ANY
     `seal.effect/v1`-tagged byte string (the retired 18-field layout signed
     messages of exactly that form): the tags differ at byte 13 (`'2'` vs
     `'1'`). A receipt signed under the seated v1 layout can never verify as a
-    stripped v2 envelope, nor vice versa, modulo only Ed25519 verifying the
+    Stage B2 envelope, nor vice versa, modulo only Ed25519 verifying the
     exact message bytes. Quantifying over an ARBITRARY tail makes this
     stronger than a layout-to-layout statement: every retired v1 message is
     an instance of `effectTagV1.toUTF8 ++ rest`. -/
@@ -454,7 +584,7 @@ theorem AuthenticatedId.ext_id {p q : AuthenticatedId} (h : p.id = q.id) :
     malformed hex (key or sig), authority/pubkey width, ANY wire-width check
     (`wireSizedB` — nonce 32, every u64be argument in range), or verification
     failure. `some ⟨k.id⟩` ONLY when the registered key verifies the signature
-    over `effectMessage authority e` — the full Stage B tuple. The extern
+    over `effectMessage authority e` — the full Stage B2 tuple. The extern
     result is only ever cased on as an opaque `Bool` (crypto TCB). -/
 def verifyEffect (authority : ByteArray) (reg : PrincipalRegistry)
     (e : EffectEnvelope) (sigHex : String) : Option AuthenticatedId :=
@@ -542,13 +672,17 @@ theorem verifyEffect_id_registered (authority : ByteArray)
     effect_gates_presence_not_value authority reg e sigHex p h
   exact ⟨k, List.mem_of_find?_eq_some hf, hid.symm⟩
 
-/-! ## 3 + 4 + 5: the judgment pipeline and its gates
+/-! ## 3 + 4: the judgment pipeline and its gates
 
 `effectStep` is the V2.3 judgment spec the host binds to at repin: verify the
 envelope, equality-check the host-known facts (mediating adapter, boot/config
-session, parser-derived effect), then judge the LINE with the verified kernel.
-The gates are equality checks against TRUSTED values; none of them ever
-substitutes a client-signed value into the judgment. -/
+session, policy version, clocks, parser-derived effect), then judge the LINE
+with the verified kernel. The gates are equality/window checks against
+TRUSTED values; none of them ever substitutes a client-signed value into the
+judgment. Honest `state.now` is a standing host obligation — the same class
+as the mediator identity (F1) and the boot/config session (F2).
+`issuedAtGate` reuses `state.maxApprovalTtl` as the envelope freshness
+window (a documented reuse, not a new config knob). -/
 
 /-- The adapter identity the HOST knows actually mediated this call — a
     trusted input (deployment fact), never request data. -/
@@ -574,32 +708,58 @@ def deriveEffect (line : RawBytes) : Option (String × String × String) :=
       | none => none
       | some req => some (req.tool, req.action, serializeAstValue req.arguments)
 
-/-- All three advisory effect fields unset. -/
-def advisoryEmpty (e : EffectEnvelope) : Bool :=
-  e.effectResource == "" && e.effectAction == "" && e.effectArgs == ""
-
 /-- F1 gate: the signed adapter claim must equal the adapter that actually
     mediated. -/
 def adapterGate (mediator : AdapterId) (e : EffectEnvelope) : Bool :=
   e.adapterType == mediator.type && e.adapterVersion == mediator.version
 
-/-- F2 gate: a nonempty signed session must equal the boot/config session
-    (the `ApprovalState.session` plane — `bootAssigner`'s plane, not the
-    receipt pid). Empty = seat, accepted. -/
+/-- F2 gate: the signed session must be nonempty AND equal the boot/config
+    session (the `ApprovalState.session` plane — `bootAssigner`'s plane, not
+    the receipt pid). MANDATORY: the empty-string seat was a fail-open
+    bypass (a session-named binding that vanished when unset) and made
+    empty-session envelopes portable across verifiers — the exact
+    token-redirection shape the stripped `audience` field would have
+    guarded. Killed in Stage B2. -/
 def sessionGate (state : ApprovalState) (e : EffectEnvelope) : Bool :=
-  e.session == "" || e.session == state.session
+  e.session != "" && e.session == state.session
 
-/-- F3 gate: an empty advisory effect always passes (seat). A nonempty one
-    passes ONLY under the MCP adapter and ONLY if it equals the
-    parser-derived effect of the judged line. Any other combination — a
-    mismatch, an unparseable line, or a non-MCP adapter claiming an effect
-    this kernel cannot derive — FAILS CLOSED: accepting an uncheckable claim
-    would authenticate a lie. -/
+/-- F5 gate: the signed policy version must be nonempty AND equal the
+    config's policy version — the anti-downgrade pin. MANDATORY: empty
+    defeated the pin (prior art: "optional security-binding bypass").
+    Consequence, deliberate: a deployment whose config declares no
+    `policyVersion` fails closed. -/
+def policyVersionGate (state : ApprovalState) (e : EffectEnvelope) : Bool :=
+  e.policyVersion != "" && e.policyVersion == state.policyVersion
+
+/-- Expiry gate: the signer-declared deadline is MANDATORY (nonzero) and the
+    envelope is usable only while `state.now ≤ expiresAt`. The `0 = unset`
+    escape was a sentinel-valued bypass ("good forever, by my own bound");
+    killed in Stage B2. A signer with no tighter preference signs
+    `issuedAt + ttl`. Effective lifetime is the composite deadline
+    `min(issuedAt + maxApprovalTtl, expiresAt)`. -/
+def expiryGate (state : ApprovalState) (e : EffectEnvelope) : Bool :=
+  e.expiresAt != 0 && Decidable.decide (state.now ≤ e.expiresAt)
+
+/-- issuedAt freshness gate: never future-dated, and no older than the
+    state's TTL cap. Freshness, NOT replay uniqueness — never present this
+    as replay defense (that is the nonce ledger seam, still BOUNDARY). -/
+def issuedAtGate (state : ApprovalState) (e : EffectEnvelope) : Bool :=
+  Decidable.decide (e.issuedAt ≤ state.now)
+    && Decidable.decide (state.now - e.issuedAt ≤ state.maxApprovalTtl)
+
+/-- F3 gate: a DECLARED-ABSENT effect claim (`none`) always passes — the
+    optionality is explicit in the signed object, not inferred from empty
+    strings. A PRESENT claim passes ONLY under the MCP adapter and ONLY if
+    it equals the parser-derived effect of the judged line. Any other
+    combination — a mismatch, an unparseable line, or a non-MCP adapter
+    claiming an effect this kernel cannot derive — FAILS CLOSED: accepting
+    an uncheckable claim would authenticate a lie. Note `some ⟨"", "", ""⟩`
+    is a PRESENT claim and is checked like any other: the retired all-empty
+    sentinel buys nothing. -/
 def effectGate (mediator : AdapterId) (e : EffectEnvelope) : Bool :=
-  if advisoryEmpty e then true
-  else if mediator.type == mcpAdapterType then
-    deriveEffect e.line == some (e.effectResource, e.effectAction, e.effectArgs)
-  else false
+  e.effect.all fun c =>
+    mediator.type == mcpAdapterType
+      && (deriveEffect e.line == some (c.resource, c.action, c.args))
 
 /-- **The V2.3 judgment step** — the spec the host binds to at repin. -/
 def effectStep (authority : ByteArray) (reg : PrincipalRegistry)
@@ -609,6 +769,8 @@ def effectStep (authority : ByteArray) (reg : PrincipalRegistry)
   | none => .Block
   | some _ =>
       if adapterGate mediator e && sessionGate state e && effectGate mediator e
+          && expiryGate state e && issuedAtGate state e
+          && policyVersionGate state e
       then decide e.line state
       else .Block
 
@@ -620,7 +782,10 @@ theorem effect_step_gates {authority : ByteArray} {reg : PrincipalRegistry}
     (∃ p, verifyEffect authority reg e sigHex = some p)
       ∧ adapterGate mediator e = true
       ∧ sessionGate state e = true
-      ∧ effectGate mediator e = true := by
+      ∧ effectGate mediator e = true
+      ∧ expiryGate state e = true
+      ∧ issuedAtGate state e = true
+      ∧ policyVersionGate state e = true := by
   unfold effectStep at h
   split at h
   · exact absurd rfl h
@@ -628,7 +793,8 @@ theorem effect_step_gates {authority : ByteArray} {reg : PrincipalRegistry}
       split at h
       · next hg =>
           simp only [Bool.and_eq_true] at hg
-          exact ⟨⟨p, hp⟩, hg.1.1, hg.1.2, hg.2⟩
+          exact ⟨⟨p, hp⟩, hg.1.1.1.1.1, hg.1.1.1.1.2, hg.1.1.1.2,
+            hg.1.1.2, hg.1.2, hg.2⟩
       · exact absurd rfl h
 
 /-- Decidability of blocking, constructively: the step is `.Block` or provably
@@ -646,8 +812,8 @@ theorem effect_step_block_or_not (authority : ByteArray)
 /-- **Presence, not value** — the factorization at the pipeline level: the
     step either blocks or returns EXACTLY `SealV2.decide e.line state`. The
     decision VALUE is a function of the judged line and the trusted
-    config/state alone; every envelope field — the advisory F3 effect, the
-    F7 revocation subject, all of them — gates only WHETHER a decision is
+    config/state alone; every envelope field — the advisory F3 claim, the
+    mandatory bindings, all of them — gates only WHETHER a decision is
     produced. Advisory fields cannot appear in `SealV2.decide`: it never
     receives them. -/
 theorem effect_step_presence_not_value (authority : ByteArray)
@@ -676,9 +842,8 @@ theorem allow_value_from_line_and_state {authority : ByteArray}
 
 /-- **Advisory non-influence.** Two envelopes carrying the SAME judged line —
     under different registries, authorities, mediators, signatures, advisory
-    effects, revocation subjects, everything — that both pass the gates
-    produce the SAME decision. The advisory fields have no influence channel
-    into the decision value. -/
+    claims, everything — that both pass the gates produce the SAME decision.
+    The advisory fields have no influence channel into the decision value. -/
 theorem advisory_non_influence {authority₁ authority₂ : ByteArray}
     {reg₁ reg₂ : PrincipalRegistry} {mediator₁ mediator₂ : AdapterId}
     {e₁ e₂ : EffectEnvelope} {sig₁ sig₂ : String} {state : ApprovalState}
@@ -702,7 +867,7 @@ theorem adapter_bind {authority : ByteArray} {reg : PrincipalRegistry}
     {state : ApprovalState}
     (h : effectStep authority reg mediator e sigHex state ≠ .Block) :
     e.adapterType = mediator.type ∧ e.adapterVersion = mediator.version := by
-  obtain ⟨_, hg, _, _⟩ := effect_step_gates h
+  obtain ⟨_, hg, _, _, _, _, _⟩ := effect_step_gates h
   unfold adapterGate at hg
   simp only [Bool.and_eq_true, beq_iff_eq] at hg
   exact hg
@@ -721,89 +886,235 @@ theorem adapter_mismatch_blocks {authority : ByteArray}
     · exact absurd this.1 hne
     · exact absurd this.2 hne
 
-/-- **F2: session-plane equality.** Anything not blocked carries either no
-    session claim (seat) or EXACTLY the boot/config session. A client-signed
-    session value never enters the judgment plane: `decide` reads
-    `state.session` (trusted config), never the envelope field. -/
-theorem session_plane_equality {authority : ByteArray}
+/-- **F2: the session bind, MANDATORY.** Anything not blocked carries a
+    NONEMPTY session claim EXACTLY equal to the boot/config session. A
+    client-signed session value never enters the judgment plane: `decide`
+    reads `state.session` (trusted config), never the envelope field. The
+    empty seat is gone: before Stage B2 an empty session was silently
+    accepted (and portable across verifiers). -/
+theorem session_bind {authority : ByteArray}
     {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
     {sigHex : String} {state : ApprovalState}
     (h : effectStep authority reg mediator e sigHex state ≠ .Block) :
-    e.session = "" ∨ e.session = state.session := by
-  obtain ⟨_, _, hg, _⟩ := effect_step_gates h
+    e.session ≠ "" ∧ e.session = state.session := by
+  obtain ⟨_, _, hg, _, _, _, _⟩ := effect_step_gates h
   unfold sessionGate at hg
-  simp only [Bool.or_eq_true, beq_iff_eq] at hg
+  simp only [Bool.and_eq_true, bne_iff_ne, beq_iff_eq, ne_eq] at hg
   exact hg
 
-/-- F2 fail-closed: a session claim that is neither empty nor the boot/config
+/-- F2 fail-closed, the killed bypass: an EMPTY session claim blocks. The
+    negative control for the "checked when non-empty, accepted when empty"
+    fail-open. -/
+theorem empty_session_blocks {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (he : e.session = "") :
+    effectStep authority reg mediator e sigHex state = .Block := by
+  rcases effect_step_block_or_not authority reg mediator e sigHex state
+    with hb | hnb
+  · exact hb
+  · exact absurd he (session_bind hnb).1
+
+/-- F2 fail-closed: a session claim that differs from the boot/config
     session blocks — the spoof theorem. -/
 theorem session_spoof_blocks {authority : ByteArray}
     {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
     {sigHex : String} {state : ApprovalState}
-    (hne : e.session ≠ "") (hnm : e.session ≠ state.session) :
+    (hnm : e.session ≠ state.session) :
     effectStep authority reg mediator e sigHex state = .Block := by
   rcases effect_step_block_or_not authority reg mediator e sigHex state
     with hb | hnb
   · exact hb
-  · rcases session_plane_equality hnb with h' | h'
-    · exact absurd h' hne
-    · exact absurd h' hnm
+  · exact absurd (session_bind hnb).2 hnm
 
-/-- **F3: MCP effect-equality.** Under the MCP mediator, anything not blocked
-    that carries a nonempty effect claim carries EXACTLY the parser-derived
-    effect of the judged line. The signature never authenticates an effect
-    nobody checked — the confused-deputy closure. -/
+/-- **F5: the policy-version bind, MANDATORY.** Anything not blocked carries
+    a NONEMPTY policy-version claim EXACTLY equal to the config's — the
+    anti-downgrade pin, with the empty bypass killed. -/
+theorem policy_version_bind {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (h : effectStep authority reg mediator e sigHex state ≠ .Block) :
+    e.policyVersion ≠ "" ∧ e.policyVersion = state.policyVersion := by
+  obtain ⟨_, _, _, _, _, _, hg⟩ := effect_step_gates h
+  unfold policyVersionGate at hg
+  simp only [Bool.and_eq_true, bne_iff_ne, beq_iff_eq, ne_eq] at hg
+  exact hg
+
+/-- F5 fail-closed, the killed bypass: an EMPTY policy-version claim blocks.
+    Before Stage B2 (on the v1 layout), empty silently defeated the pin. -/
+theorem empty_policy_version_blocks {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (he : e.policyVersion = "") :
+    effectStep authority reg mediator e sigHex state = .Block := by
+  rcases effect_step_block_or_not authority reg mediator e sigHex state
+    with hb | hnb
+  · exact hb
+  · exact absurd he (policy_version_bind hnb).1
+
+/-- F5 fail-closed: a policy-version claim that differs from the config's
+    blocks — the anti-downgrade theorem. An envelope signed against policy X
+    cannot be judged under policy Y ≠ X. Ported from the field-warrant
+    campaign (`policy_version_spoof_blocks`), strengthened: the empty escape
+    hatch no longer exists. -/
+theorem policy_version_spoof_blocks {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (hnm : e.policyVersion ≠ state.policyVersion) :
+    effectStep authority reg mediator e sigHex state = .Block := by
+  rcases effect_step_block_or_not authority reg mediator e sigHex state
+    with hb | hnb
+  · exact hb
+  · exact absurd (policy_version_bind hnb).2 hnm
+
+/-- **Expiry respected, MANDATORY.** Anything not blocked declares a nonzero
+    deadline and is still live at `state.now`. Ported from the field-warrant
+    campaign (`envelope_expiry_respected`), strengthened: the `0 = unset`
+    seat no longer exists. -/
+theorem envelope_expiry_respected {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (h : effectStep authority reg mediator e sigHex state ≠ .Block) :
+    e.expiresAt ≠ 0 ∧ state.now ≤ e.expiresAt := by
+  obtain ⟨_, _, _, _, hg, _, _⟩ := effect_step_gates h
+  unfold expiryGate at hg
+  simp only [Bool.and_eq_true, bne_iff_ne, decide_eq_true_eq, ne_eq] at hg
+  exact hg
+
+/-- Expiry fail-closed, the killed bypass: `expiresAt = 0` blocks. Before
+    Stage B2, zero meant "good forever, by my own bound". -/
+theorem zero_expiry_blocks {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (he : e.expiresAt = 0) :
+    effectStep authority reg mediator e sigHex state = .Block := by
+  rcases effect_step_block_or_not authority reg mediator e sigHex state
+    with hb | hnb
+  · exact hb
+  · exact absurd he (envelope_expiry_respected hnb).1
+
+/-- Expiry fail-closed: an `expiresAt` in the past blocks. An attacker
+    holding a validly signed envelope cannot use it after its declared
+    expiry (given an honest `state.now`). Ported from the field-warrant
+    campaign (`expired_envelope_blocks`). -/
+theorem expired_envelope_blocks {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (hlt : e.expiresAt < state.now) :
+    effectStep authority reg mediator e sigHex state = .Block := by
+  rcases effect_step_block_or_not authority reg mediator e sigHex state
+    with hb | hnb
+  · exact hb
+  · have h' := (envelope_expiry_respected hnb).2
+    omega
+
+/-- **issuedAt is never future-dated** on anything not blocked. Ported from
+    the field-warrant campaign. -/
+theorem issuedAt_not_future {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (h : effectStep authority reg mediator e sigHex state ≠ .Block) :
+    e.issuedAt ≤ state.now := by
+  obtain ⟨_, _, _, _, _, hg, _⟩ := effect_step_gates h
+  unfold issuedAtGate at hg
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hg
+  exact hg.1
+
+/-- **issuedAt freshness window**: anything not blocked was issued within
+    the state's TTL cap of `state.now`. Ported from the field-warrant
+    campaign. -/
+theorem issuedAt_within_window {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (h : effectStep authority reg mediator e sigHex state ≠ .Block) :
+    state.now - e.issuedAt ≤ state.maxApprovalTtl := by
+  obtain ⟨_, _, _, _, _, hg, _⟩ := effect_step_gates h
+  unfold issuedAtGate at hg
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hg
+  exact hg.2
+
+/-- issuedAt fail-closed, future: a post-dated envelope blocks. -/
+theorem future_issued_envelope_blocks {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (hf : state.now < e.issuedAt) :
+    effectStep authority reg mediator e sigHex state = .Block := by
+  rcases effect_step_block_or_not authority reg mediator e sigHex state
+    with hb | hnb
+  · exact hb
+  · have h' := issuedAt_not_future hnb
+    omega
+
+/-- issuedAt fail-closed, stale: an envelope older than the freshness
+    window blocks — a signed envelope cannot be banked indefinitely. -/
+theorem stale_envelope_blocks {authority : ByteArray}
+    {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
+    {sigHex : String} {state : ApprovalState}
+    (hs : state.maxApprovalTtl < state.now - e.issuedAt) :
+    effectStep authority reg mediator e sigHex state = .Block := by
+  rcases effect_step_block_or_not authority reg mediator e sigHex state
+    with hb | hnb
+  · exact hb
+  · have h' := issuedAt_within_window hnb
+    omega
+
+/-- **F3: MCP effect-equality.** Under the MCP mediator, anything not
+    blocked that carries a PRESENT effect claim carries EXACTLY the
+    parser-derived effect of the judged line. The signature never
+    authenticates an effect nobody checked — the confused-deputy closure.
+    Note this covers `some ⟨"", "", ""⟩`: the retired all-empty sentinel is
+    a present claim and must match the derivation like any other. -/
 theorem mcp_effect_equality {authority : ByteArray} {reg : PrincipalRegistry}
     {mediator : AdapterId} {e : EffectEnvelope} {sigHex : String}
-    {state : ApprovalState}
-    (hm : mediator.type = mcpAdapterType) (hne : advisoryEmpty e = false)
+    {state : ApprovalState} {c : EffectClaim}
+    (hm : mediator.type = mcpAdapterType) (hc : e.effect = some c)
     (h : effectStep authority reg mediator e sigHex state ≠ .Block) :
-    deriveEffect e.line
-      = some (e.effectResource, e.effectAction, e.effectArgs) := by
-  obtain ⟨_, _, _, hg⟩ := effect_step_gates h
+    deriveEffect e.line = some (c.resource, c.action, c.args) := by
+  obtain ⟨_, _, _, hg, _, _, _⟩ := effect_step_gates h
   unfold effectGate at hg
-  rw [hne] at hg
-  simp only [Bool.false_eq_true, if_false, hm, beq_self_eq_true, if_true] at hg
-  exact eq_of_beq hg
+  rw [hc] at hg
+  simp only [Option.all_some, Bool.and_eq_true, beq_iff_eq] at hg
+  exact hg.2
 
-/-- F3 fail-closed, mismatch: a nonempty effect claim that differs from the
+/-- F3 fail-closed, mismatch: a present effect claim that differs from the
     parser-derived effect blocks (this includes an unparseable line, where
     `deriveEffect = none`). -/
 theorem mcp_effect_mismatch_blocks {authority : ByteArray}
     {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
-    {sigHex : String} {state : ApprovalState}
-    (hm : mediator.type = mcpAdapterType) (hne : advisoryEmpty e = false)
+    {sigHex : String} {state : ApprovalState} {c : EffectClaim}
+    (hm : mediator.type = mcpAdapterType) (hc : e.effect = some c)
     (hmis : deriveEffect e.line
-      ≠ some (e.effectResource, e.effectAction, e.effectArgs)) :
+      ≠ some (c.resource, c.action, c.args)) :
     effectStep authority reg mediator e sigHex state = .Block := by
   rcases effect_step_block_or_not authority reg mediator e sigHex state
     with hb | hnb
   · exact hb
-  · exact absurd (mcp_effect_equality hm hne hnb) hmis
+  · exact absurd (mcp_effect_equality hm hc hnb) hmis
 
 /-- F3 fail-closed, non-MCP: an adapter this kernel defines no effect
-    derivation for cannot carry a nonempty effect claim at all. -/
-theorem nonmcp_nonempty_effect_blocks {authority : ByteArray}
+    derivation for cannot carry a present effect claim at all. -/
+theorem nonmcp_effect_claim_blocks {authority : ByteArray}
     {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
-    {sigHex : String} {state : ApprovalState}
-    (hm : mediator.type ≠ mcpAdapterType) (hne : advisoryEmpty e = false) :
+    {sigHex : String} {state : ApprovalState} {c : EffectClaim}
+    (hm : mediator.type ≠ mcpAdapterType) (hc : e.effect = some c) :
     effectStep authority reg mediator e sigHex state = .Block := by
   rcases effect_step_block_or_not authority reg mediator e sigHex state
     with hb | hnb
   · exact hb
-  · obtain ⟨_, _, _, hg⟩ := effect_step_gates hnb
+  · obtain ⟨_, _, _, hg, _, _, _⟩ := effect_step_gates hnb
     unfold effectGate at hg
-    rw [hne] at hg
-    simp only [Bool.false_eq_true, if_false] at hg
-    rw [if_neg (by simpa [beq_iff_eq] using hm)] at hg
-    cases hg
+    rw [hc] at hg
+    simp only [Option.all_some, Bool.and_eq_true, beq_iff_eq] at hg
+    exact absurd hg.1 hm
 
-/-! ## Golden vector — the cross-language signed-message contract
+/-! ## Golden vectors — the cross-language signed-message contract
 
-These `#eval` pins are ALSO the kernel-side negative control for the strip:
-re-adding any killed field to the structure or message changes the golden
-hex (and the Rust twin corpus), so reverting the strip breaks the build
-here, not just review. -/
+These `#eval` pins are ALSO the kernel-side negative control for the strip
+and the reconciliation: re-adding any killed field, dropping a rescued one,
+or reverting the presence-byte encoding changes the golden hex (and the Rust
+twin corpus), so reverting breaks the build here, not just review. Two pins:
+one with the F3 claim PRESENT (0x01 block) and one DECLARED ABSENT (the
+signed 0x00 presence byte) — the pair pins the option encoding itself. -/
 
 /-- Hex of a byte array (lowercase) — for golden-vector pins. -/
 def bytesToHex (b : ByteArray) : String :=
@@ -819,7 +1130,7 @@ def bytesToHex (b : ByteArray) : String :=
 #eval bytesToHex effectTag.toUTF8
 
 /--
-info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000000000004d200000000000000077b226d223a317d00000000000000036d6370000000000000000a323032352d30362d31380000000000000006736573732d31000000000000000a64622e65786563757465000000000000000463616c6c00000000000000077b2271223a317d0000000000000000"
+info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000000000004d2000000000000162e00000000000000077b226d223a317d00000000000000036d6370000000000000000a323032352d30362d31380000000000000006736573732d310000000000000005706f6c2d3101000000000000000a64622e65786563757465000000000000000463616c6c00000000000000077b2271223a317d"
 -/
 #guard_msgs in
 #eval bytesToHex (effectMessage
@@ -827,14 +1138,31 @@ info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b
   { keyId := "alice"
     nonce := ByteArray.mk (Array.range 32 |>.map UInt8.ofNat)
     issuedAt := 1234
+    expiresAt := 5678
     line := "{\"m\":1}"
     adapterType := "mcp"
     adapterVersion := "2025-06-18"
     session := "sess-1"
-    effectResource := "db.execute"
-    effectAction := "call"
-    effectArgs := "{\"q\":1}"
-    revocationSubject := "" })
+    policyVersion := "pol-1"
+    effect := some { resource := "db.execute", action := "call",
+                     args := "{\"q\":1}" } })
+
+/--
+info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000000000004d2000000000000162e00000000000000077b226d223a317d00000000000000036d6370000000000000000a323032352d30362d31380000000000000006736573732d310000000000000005706f6c2d3100"
+-/
+#guard_msgs in
+#eval bytesToHex (effectMessage
+  (ByteArray.mk (Array.range 32 |>.map fun i => UInt8.ofNat (0xa0 + i)))
+  { keyId := "alice"
+    nonce := ByteArray.mk (Array.range 32 |>.map UInt8.ofNat)
+    issuedAt := 1234
+    expiresAt := 5678
+    line := "{\"m\":1}"
+    adapterType := "mcp"
+    adapterVersion := "2025-06-18"
+    session := "sess-1"
+    policyVersion := "pol-1"
+    effect := none })
 
 /-! ## Axiom pins — the honesty razor, machine-checked
 
@@ -860,6 +1188,10 @@ axioms; `ed25519Verify` is `opaque` (TCB seam), not an axiom. -/
 /-- info: 'SealV2.Effect.frame_inj' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms frame_inj
+
+/-- info: 'SealV2.Effect.optEffect_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms optEffect_inj
 
 /-- info: 'SealV2.Effect.wireSizedB_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -941,13 +1273,57 @@ axioms; `ed25519Verify` is `opaque` (TCB seam), not an axiom. -/
 #guard_msgs in
 #print axioms adapter_mismatch_blocks
 
-/-- info: 'SealV2.Effect.session_plane_equality' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'SealV2.Effect.session_bind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms session_plane_equality
+#print axioms session_bind
+
+/-- info: 'SealV2.Effect.empty_session_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms empty_session_blocks
 
 /-- info: 'SealV2.Effect.session_spoof_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms session_spoof_blocks
+
+/-- info: 'SealV2.Effect.policy_version_bind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms policy_version_bind
+
+/-- info: 'SealV2.Effect.empty_policy_version_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms empty_policy_version_blocks
+
+/-- info: 'SealV2.Effect.policy_version_spoof_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms policy_version_spoof_blocks
+
+/-- info: 'SealV2.Effect.envelope_expiry_respected' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms envelope_expiry_respected
+
+/-- info: 'SealV2.Effect.zero_expiry_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms zero_expiry_blocks
+
+/-- info: 'SealV2.Effect.expired_envelope_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms expired_envelope_blocks
+
+/-- info: 'SealV2.Effect.issuedAt_not_future' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms issuedAt_not_future
+
+/-- info: 'SealV2.Effect.issuedAt_within_window' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms issuedAt_within_window
+
+/-- info: 'SealV2.Effect.future_issued_envelope_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms future_issued_envelope_blocks
+
+/-- info: 'SealV2.Effect.stale_envelope_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms stale_envelope_blocks
 
 /-- info: 'SealV2.Effect.mcp_effect_equality' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -957,8 +1333,8 @@ axioms; `ed25519Verify` is `opaque` (TCB seam), not an axiom. -/
 #guard_msgs in
 #print axioms mcp_effect_mismatch_blocks
 
-/-- info: 'SealV2.Effect.nonmcp_nonempty_effect_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'SealV2.Effect.nonmcp_effect_claim_blocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms nonmcp_nonempty_effect_blocks
+#print axioms nonmcp_effect_claim_blocks
 
 end SealV2.Effect
