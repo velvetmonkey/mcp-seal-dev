@@ -3,21 +3,32 @@
 import SealV2.Decide
 
 /-!
-# V2.3 effect envelope — `seal.effect/v1` (SUBSUME, E1.1 proof lane)
+# V2.3 effect envelope — `seal.effect/v2` (Stage B strip, E1★ ballot)
 
 **What this module is.** The V2.3 signed message shape and its proof package.
 Seal bumps the signed request envelope from V2.2 (`seal/v2.2/principal-envelope`,
-host-side `Host/Principal.lean` in seal-host) to ONE signed object carrying every
-field that could ever need authenticating — the repin razor: changing the signed
-shape is the only expensive operation, so all candidate fields ride this bump,
-BOUND or SEATED. Authored kernel-side: the shape is the cross-language contract
-the host binds to at repin (repin itself is OUT OF SCOPE for this lane).
+host-side `Host/Principal.lean` in seal-host) to ONE signed object carrying the
+fields that are actually authenticated AND interpreted. The original
+`seal.effect/v1` layout (council `bf01363f`) seated every candidate field; the
+E1★ ballot (Ben, 2026-07-22) killed the uninterpreted seats and Stage B strips
+them from the signed message:
 
-**Locked field decisions (council `bf01363f`), implemented here:**
-* BIND `line` by value — the exact judged bytes, never digest-downgraded. V2.2
-  carried the line as the unframed tail; V2.3 appends fields after it, so the
-  line is framed (`u64be(len) ‖ bytes`) like every variable-width field. Framing
-  changes the wire form, not the bind: the full line bytes are signed.
+**Killed and STRIPPED (E1★):** F4 `idempotency_key`, F5 `policy_version`,
+F6 `on_behalf_of` / `parent_capability_ref`, and the eighth-field trio
+`audience` / `causality_token` / `expires_at`. Why they are gone, not seated:
+* A null seat does NOT save the repin it exists for: if v4 were to give a
+  today-ignored field semantics, the same bytes would carry two meanings, and
+  distinguishing them needs a domain-tag bump — which IS the repin. The seat
+  defers nothing and costs seven unvalidated authenticated fields.
+* Malleability: receipts identical in every meaningful respect but differing
+  in a seat are distinct signatures over distinct messages — two objects for
+  one decision to anything that dedupes or identity-keys receipts.
+* `expires_at` was signed, security-sounding, and never checked — a
+  claim-drift trap in an artifact headed for a 90-day freeze.
+
+**Bound fields, retained (unchanged in meaning from `seal.effect/v1`):**
+* BIND `line` by value — the exact judged bytes, never digest-downgraded,
+  framed (`u64be(len) ‖ bytes`) like every variable-width field.
 * BIND `authority` (32 raw bytes), `keyId`, `nonce` (32 raw bytes), `issuedAt`
   — the V2.2 Fix B config-authority bind, folded in unchanged in meaning.
 * BIND F1 `adapter{type,version}` — host must equality-check against the
@@ -25,20 +36,18 @@ the host binds to at repin (repin itself is OUT OF SCOPE for this lane).
 * BIND (conditional) F2 `principal.session` — the approval/replay-namespace
   SESSION PLANE (`ApprovalState.session`, the value the SIGNED CONFIG names —
   the same plane as `Host.Provenance.bootAssigner` and
-  `replayNamespace_trusted_plane`), explicitly NOT the receipt pid string
-  (`seal-host-rs/stdio:pid:startMs`, receipt-only, never crosses into Lean).
+  `replayNamespace_trusted_plane`), explicitly NOT the receipt pid string.
   Implemented as equality-when-nonempty (`session_plane_equality`,
   `session_spoof_blocks`); empty = seat, so if client-visible session issuance
   slips the cycle nothing breaks and the slot needs no re-bump.
-* BIND-optional F3 `effect{resource,action,args}` — ADVISORY: equality-enforced
-  against the parser-derived effect (`mcp_effect_equality`), never the decision
-  value (`effect_step_presence_not_value`).
-* BIND F4 `idempotency_key`. SEAT F5 `policy_version` (shape slot, never
-  enforced, empty always accepted — no gate reads it). SEAT F6 `on_behalf_of` /
-  `parent_capability_ref`, F7 `revocation_subject`, and the eighth-field trio
-  `audience` / `causality_token` / `expires_at` (fixed-width u64, 0 = unset).
-* Encoding: every variable-width field `u64be(len) ‖ bytes`; optional seats
-  `len = 0`; fixed-width fields raw (authority 32, nonce 32, u64be at 8).
+* BIND-optional F3 `effect{resource,action,args}` — ADVISORY but INTERPRETED:
+  equality-enforced against the parser-derived effect (`mcp_effect_equality`),
+  never the decision value (`effect_step_presence_not_value`). The F3 triple
+  is under a SEPARATE, FLAGGED strip decision (the ballot realized F3 as the
+  kernel-computed `effect_commitment`); it is deliberately NOT stripped here.
+* BIND F7 `revocation_subject` — retained by the ballot's keep-list.
+* Encoding: every variable-width field `u64be(len) ‖ bytes`; fixed-width
+  fields raw (authority 32, nonce 32, u64be at 8).
 
 **The proof package** (full-tuple injectivity alone is necessary, NOT
 sufficient — both council seats):
@@ -47,8 +56,8 @@ sufficient — both council seats):
    the width constraints from the runtime checks, so for VERIFIED envelopes
    injectivity is unconditional.
 2. Framing lemmas — `u64be_inj` (width-checked), `u64be_cancel`,
-   `sized_cancel`, `frame_cancel`: every variable-width field is length-framed
-   and append-injective; no field can splice into the optional seats.
+   `sized_cancel`, `frame_cancel`, `frame_inj`: every variable-width field is
+   length-framed and append-injective; no field can splice into another.
 3. Advisory non-influence — `effect_step_presence_not_value` /
    `advisory_non_influence` / `allow_value_from_line_and_state`: the decision
    VALUE is `SealV2.decide e.line state` — a function of the judged line and
@@ -62,11 +71,14 @@ sufficient — both council seats):
 5. Session-plane equality — `session_plane_equality` / `session_spoof_blocks`:
    a client-signed session never ENTERS the judgment plane; it is
    equality-checked against the boot/config session and otherwise blocks.
-6. Cross-version + cross-plane separation — `effect_cross_version_v22_separated`,
-   `effect_cross_version_v21_separated`, `effect_cross_plane_separated`: no
-   byte string is both a `seal.effect/v1` message and a V2.2/V2.1 envelope
-   message or a `{`-prefixed canonical-JSON payload (config plane AND the
-   approval signed-message plane — both are canonical JSON objects).
+6. Cross-version + cross-plane separation — `effect_cross_version_v1_separated`
+   (the Stage B strip is a REAL version bump: no `seal.effect/v1` receipt can
+   verify under `seal.effect/v2`, nor vice versa),
+   `effect_cross_version_v22_separated`, `effect_cross_version_v21_separated`,
+   `effect_cross_plane_separated`: no byte string is both a `seal.effect/v2`
+   message and a v1/V2.2/V2.1 envelope message or a `{`-prefixed
+   canonical-JSON payload (config plane AND the approval signed-message
+   plane — both are canonical JSON objects).
 
 **Trusted, named, never proven (the crypto TCB at this seam)** — unchanged
 from V2.2: `ed25519Verify` extern faithfulness; Ed25519 existential
@@ -115,8 +127,7 @@ theorem u64be_inj {n m : Nat} (hn : n < 2 ^ 64) (hm : m < 2 ^ 64)
   simp only [UInt8.toNat_ofNat', Nat.shiftRight_eq_div_pow] at e7 e6 e5 e4 e3 e2 e1 e0
   omega
 
-/-- One variable-width field on the wire: `u64be(byte length) ‖ UTF-8 bytes`.
-    Optional seats ride as `frame "" = u64be 0` (8 zero bytes). -/
+/-- One variable-width field on the wire: `u64be(byte length) ‖ UTF-8 bytes`. -/
 def frame (s : String) : ByteArray :=
   u64be s.utf8ByteSize ++ s.toUTF8
 
@@ -160,13 +171,39 @@ theorem frame_cancel {s₁ s₂ : String} {r₁ r₂ : ByteArray}
   refine ⟨?_, h⟩
   simpa [String.toUTF8_eq_toByteArray, String.toByteArray_inj] using hu
 
+/-- Terminal-field peel: equal frames with NOTHING after them force equal
+    strings — `frame_cancel` specialized to empty remainders, for the last
+    field of the message. -/
+theorem frame_inj {s₁ s₂ : String}
+    (h₁ : s₁.utf8ByteSize < 2 ^ 64) (h₂ : s₂.utf8ByteSize < 2 ^ 64)
+    (h : frame s₁ = frame s₂) : s₁ = s₂ :=
+  (frame_cancel h₁ h₂ (congrArg (· ++ ByteArray.empty) h)).1
+
 /-! ## Domain tags -/
 
-/-- Domain-separation tag for V2.3 effect envelopes. Distinct at byte 4 from
-    both retired principal-envelope tags (`.` vs `/`) and at byte 0 from every
-    canonical-JSON plane (`s` vs `{`). The trailing NUL terminates the tag
-    unambiguously. -/
-def effectTag : String := "seal.effect/v1\x00"
+/-- Domain-separation tag for Stage B effect envelopes: `seal.effect/v2`.
+    The v1→v2 bump IS the strip: `seal.effect/v1` signed seven fields this
+    layout no longer carries, so a tag bump is mandatory — otherwise one byte
+    string could be a valid v1 message and a valid stripped message with
+    different semantics. Distinct from the retired `effectTagV1` at byte 13
+    (`'2'` vs `'1'`), from both retired principal-envelope tags at byte 4
+    (`.` vs `/`), and from every canonical-JSON plane at byte 0 (`s` vs `{`).
+    The trailing NUL terminates the tag unambiguously.
+
+    NOT in this lineage: the Stage A commitment preimage tag
+    `seal.effect/v3` (`Seal.effectDomainTag`). That string is part 0 of a
+    NETSTRING-framed hash preimage — on the wire it only ever appears inside
+    `encodeParts` output, which begins with an ASCII digit and carries no
+    NUL — never as a raw signed-message prefix. The two planes are
+    byte-separated at offset 0; the version numbers are lineage-local. -/
+def effectTag : String := "seal.effect/v2\x00"
+
+/-- The RETIRED Stage A/`bf01363f` envelope tag. SPEC-ONLY: kept so the
+    v1→v2 cross-version separation is a theorem, not a changelog note. Every
+    retired-layout message is `effectTagV1.toUTF8 ++ rest` for some `rest`,
+    so `effect_cross_version_v1_separated` covers the entire retired layout
+    without restating its 18-field shape. -/
+def effectTagV1 : String := "seal.effect/v1\x00"
 
 /-- The RETIRED V2.2 tag. SPEC-ONLY: kept so cross-version separation is a
     theorem, not a changelog note. -/
@@ -177,10 +214,12 @@ def envelopeTagV21 : String := "seal/v2.1/principal-envelope\x00"
 
 /-! ## The envelope and its message bytes -/
 
-/-- The V2.3 effect envelope — every field that could ever need
-    authenticating, BOUND or SEATED. Raw request fields exactly as marshalled;
-    only `verifyEffect` gives them meaning. `authority` is NOT a field: it is
-    the config trust root, threaded in by the session (never request data). -/
+/-- The Stage B effect envelope — every field both authenticated AND
+    interpreted; the E1★ killed seats (F4, F5, F6, eighth-field trio) are
+    STRIPPED from the structure, so a killed field cannot even be expressed,
+    let alone signed. Raw request fields exactly as marshalled; only
+    `verifyEffect` gives them meaning. `authority` is NOT a field: it is the
+    config trust root, threaded in by the session (never request data). -/
 structure EffectEnvelope where
   /-- Wire-claimed registry id (Fix B bind). -/
   keyId : String
@@ -194,23 +233,13 @@ structure EffectEnvelope where
   adapterVersion : String
   /-- F2: session plane; `""` = seat (unset). -/
   session : String
-  /-- F3 (advisory): claimed effect; all-`""` = unset. -/
+  /-- F3 (advisory, INTERPRETED — separate flagged strip decision):
+      claimed effect; all-`""` = unset. -/
   effectResource : String
   effectAction : String
   effectArgs : String
-  /-- F4. -/
-  idempotencyKey : String
-  /-- F5 SEAT: shape slot, never enforced. -/
-  policyVersion : String
-  /-- F6 SEATs. -/
-  onBehalfOf : String
-  parentCapabilityRef : String
-  /-- F7 SEAT. -/
+  /-- F7: revocation subject (ballot keep-list). -/
   revocationSubject : String
-  /-- Eighth-field trio SEATs; `expiresAt = 0` = unset. -/
-  audience : String
-  causalityToken : String
-  expiresAt : Nat
   deriving BEq
 
 /-- **The canonical signed message** — the cross-language contract:
@@ -220,11 +249,7 @@ structure EffectEnvelope where
             ‖ frame(adapterType) ‖ frame(adapterVersion)
             ‖ frame(session)
             ‖ frame(effectResource) ‖ frame(effectAction) ‖ frame(effectArgs)
-            ‖ frame(idempotencyKey)
-            ‖ frame(policyVersion)
-            ‖ frame(onBehalfOf) ‖ frame(parentCapabilityRef)
             ‖ frame(revocationSubject)
-            ‖ frame(audience) ‖ frame(causalityToken) ‖ u64be(expiresAt)
 
     with `frame(s) = u64be(|s| in UTF-8 bytes) ‖ s-bytes`. Every field is
     either fixed-width or length-framed, so the encoding is injective in the
@@ -237,11 +262,7 @@ def effectMessage (authority : ByteArray) (e : EffectEnvelope) : ByteArray :=
     ++ frame e.adapterType ++ frame e.adapterVersion
     ++ frame e.session
     ++ frame e.effectResource ++ frame e.effectAction ++ frame e.effectArgs
-    ++ frame e.idempotencyKey
-    ++ frame e.policyVersion
-    ++ frame e.onBehalfOf ++ frame e.parentCapabilityRef
     ++ frame e.revocationSubject
-    ++ frame e.audience ++ frame e.causalityToken ++ u64be e.expiresAt
 
 /-- The RETIRED V2.2 message layout (spec-only; layout frozen in
     `Host/Principal.lean`), kept so cross-version separation is a theorem. -/
@@ -258,7 +279,7 @@ def envelopeMessageV21 (nonce : ByteArray) (issuedAt : Nat) (line : String) :
 /-! ## Wire-width constraints -/
 
 /-- The wire-range side conditions injectivity needs: nonce fixed at 32,
-    every u64be argument (lengths, issuedAt, expiresAt) in u64 range.
+    every u64be argument (lengths, issuedAt) in u64 range.
     `verifyEffect` CHECKS all of these at runtime (`wireSizedB`), so verified
     envelopes satisfy them by theorem (`verifyEffect_wireSized`). -/
 structure WireSized (e : EffectEnvelope) : Prop where
@@ -272,14 +293,7 @@ structure WireSized (e : EffectEnvelope) : Prop where
   effectResource : e.effectResource.utf8ByteSize < 2 ^ 64
   effectAction : e.effectAction.utf8ByteSize < 2 ^ 64
   effectArgs : e.effectArgs.utf8ByteSize < 2 ^ 64
-  idempotencyKey : e.idempotencyKey.utf8ByteSize < 2 ^ 64
-  policyVersion : e.policyVersion.utf8ByteSize < 2 ^ 64
-  onBehalfOf : e.onBehalfOf.utf8ByteSize < 2 ^ 64
-  parentCapabilityRef : e.parentCapabilityRef.utf8ByteSize < 2 ^ 64
   revocationSubject : e.revocationSubject.utf8ByteSize < 2 ^ 64
-  audience : e.audience.utf8ByteSize < 2 ^ 64
-  causalityToken : e.causalityToken.utf8ByteSize < 2 ^ 64
-  expiresAt : e.expiresAt < 2 ^ 64
 
 /-- Decidable form of `WireSized`, checked by `verifyEffect` at runtime. -/
 def wireSizedB (e : EffectEnvelope) : Bool :=
@@ -293,32 +307,23 @@ def wireSizedB (e : EffectEnvelope) : Bool :=
     && Decidable.decide (e.effectResource.utf8ByteSize < 2 ^ 64)
     && Decidable.decide (e.effectAction.utf8ByteSize < 2 ^ 64)
     && Decidable.decide (e.effectArgs.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.idempotencyKey.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.policyVersion.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.onBehalfOf.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.parentCapabilityRef.utf8ByteSize < 2 ^ 64)
     && Decidable.decide (e.revocationSubject.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.audience.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.causalityToken.utf8ByteSize < 2 ^ 64)
-    && Decidable.decide (e.expiresAt < 2 ^ 64)
 
 theorem wireSizedB_spec {e : EffectEnvelope} (h : wireSizedB e = true) :
     WireSized e := by
   unfold wireSizedB at h
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩,
-    h10⟩, h11⟩, h12⟩, h13⟩, h14⟩, h15⟩, h16⟩, h17⟩ := h
-  exact ⟨h0, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14,
-    h15, h16, h17⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩ := h
+  exact ⟨h0, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩
 
 /-! ## 1 + 2: full-tuple injectivity, by sequential peel -/
 
-/-- **The V2.3 bind, at the encoding.** Equal messages force equal authority
-    AND an equal FULL field tuple — generalizing V2.2's
-    `envelope_message_binds_authority_and_keyId` (which bound authority ∧
-    keyId only) to every bound and seated field. Each variable-width field is
-    peeled by `frame_cancel`; miss one and the optional seats would splice —
-    this proof is the machine-checked witness that none is missed. -/
+/-- **The Stage B bind, at the encoding.** Equal messages force equal
+    authority AND an equal FULL field tuple — the `seal.effect/v1` theorem
+    re-proven over the narrowed tuple, same strength. Each variable-width
+    field is peeled by `frame_cancel` (terminal field by `frame_inj`); miss
+    one and adjacent fields would splice — this proof is the machine-checked
+    witness that none is missed. -/
 theorem effect_message_injective {authority₁ authority₂ : ByteArray}
     {e₁ e₂ : EffectEnvelope}
     (ha₁ : authority₁.size = 32) (ha₂ : authority₂.size = 32)
@@ -341,27 +346,13 @@ theorem effect_message_injective {authority₁ authority₂ : ByteArray}
     frame_cancel hw₁.effectResource hw₂.effectResource h
   obtain ⟨heffectAction, h⟩ := frame_cancel hw₁.effectAction hw₂.effectAction h
   obtain ⟨heffectArgs, h⟩ := frame_cancel hw₁.effectArgs hw₂.effectArgs h
-  obtain ⟨hidempotencyKey, h⟩ :=
-    frame_cancel hw₁.idempotencyKey hw₂.idempotencyKey h
-  obtain ⟨hpolicyVersion, h⟩ :=
-    frame_cancel hw₁.policyVersion hw₂.policyVersion h
-  obtain ⟨honBehalfOf, h⟩ := frame_cancel hw₁.onBehalfOf hw₂.onBehalfOf h
-  obtain ⟨hparentCapabilityRef, h⟩ :=
-    frame_cancel hw₁.parentCapabilityRef hw₂.parentCapabilityRef h
-  obtain ⟨hrevocationSubject, h⟩ :=
-    frame_cancel hw₁.revocationSubject hw₂.revocationSubject h
-  obtain ⟨haudience, h⟩ := frame_cancel hw₁.audience hw₂.audience h
-  obtain ⟨hcausalityToken, h⟩ :=
-    frame_cancel hw₁.causalityToken hw₂.causalityToken h
-  have hexpiresAt : e₁.expiresAt = e₂.expiresAt :=
-    u64be_inj hw₁.expiresAt hw₂.expiresAt h
+  have hrevocationSubject : e₁.revocationSubject = e₂.revocationSubject :=
+    frame_inj hw₁.revocationSubject hw₂.revocationSubject h
   refine ⟨hauth, ?_⟩
   cases e₁; cases e₂
   simp only [EffectEnvelope.mk.injEq]
   exact ⟨hkeyId, hnonce, hissuedAt, hline, hadapterType, hadapterVersion,
-    hsession, heffectResource, heffectAction, heffectArgs, hidempotencyKey,
-    hpolicyVersion, honBehalfOf, hparentCapabilityRef, hrevocationSubject,
-    haudience, hcausalityToken, hexpiresAt⟩
+    hsession, heffectResource, heffectAction, heffectArgs, hrevocationSubject⟩
 
 /-! ## 6: cross-version + cross-plane domain separation -/
 
@@ -382,8 +373,24 @@ theorem prefix_byte_separated {p₁ p₂ : ByteArray} {i : Nat}
     _ = (p₂ ++ r₂)[i]'hR := by simp only [h]
     _ = p₂[i]'hi₂ := ByteArray.getElem_append_left hi₂
 
+/-- **Cross-version separation, v2 vs v1 — the Stage B acceptance theorem.**
+    No byte string is both a `seal.effect/v2` message and ANY
+    `seal.effect/v1`-tagged byte string (the retired 18-field layout signed
+    messages of exactly that form): the tags differ at byte 13 (`'2'` vs
+    `'1'`). A receipt signed under the seated v1 layout can never verify as a
+    stripped v2 envelope, nor vice versa, modulo only Ed25519 verifying the
+    exact message bytes. Quantifying over an ARBITRARY tail makes this
+    stronger than a layout-to-layout statement: every retired v1 message is
+    an instance of `effectTagV1.toUTF8 ++ rest`. -/
+theorem effect_cross_version_v1_separated (authority : ByteArray)
+    (e : EffectEnvelope) (rest : ByteArray) :
+    effectMessage authority e ≠ effectTagV1.toUTF8 ++ rest := by
+  unfold effectMessage
+  simp only [ByteArray.append_assoc]
+  exact prefix_byte_separated (i := 13) (by decide) (by decide) (by decide) _ rest
+
 /-- **Cross-version separation, V2.3 vs V2.2.** No byte string is both a
-    `seal.effect/v1` message and a `seal/v2.2/principal-envelope` message:
+    `seal.effect/v2` message and a `seal/v2.2/principal-envelope` message:
     the tags differ at byte 4 (`.` vs `/`). A V2.2 principal signature can
     never verify as a V2.3 effect envelope, nor vice versa, modulo only
     Ed25519 verifying the exact message bytes. -/
@@ -408,7 +415,9 @@ theorem effect_cross_version_v21_separated (authority : ByteArray)
     V2 approval plane (`signedMessageRaw`, a canonical JSON object). An
     effect-envelope message begins with the tag byte `s` (0x73). So no byte
     string is both — an effect signature can never double as a config or
-    approval signature, or vice versa. -/
+    approval signature, or vice versa. (The Stage A commitment preimage plane
+    is separated the same way: `encodeParts` output begins with an ASCII
+    digit, never `s`.) -/
 theorem effect_cross_plane_separated (authority : ByteArray)
     (e : EffectEnvelope) (rest : ByteArray) :
     effectMessage authority e ≠ "{".toUTF8 ++ rest := by
@@ -445,8 +454,8 @@ theorem AuthenticatedId.ext_id {p q : AuthenticatedId} (h : p.id = q.id) :
     malformed hex (key or sig), authority/pubkey width, ANY wire-width check
     (`wireSizedB` — nonce 32, every u64be argument in range), or verification
     failure. `some ⟨k.id⟩` ONLY when the registered key verifies the signature
-    over `effectMessage authority e` — the full V2.3 tuple. The extern result
-    is only ever cased on as an opaque `Bool` (crypto TCB). -/
+    over `effectMessage authority e` — the full Stage B tuple. The extern
+    result is only ever cased on as an opaque `Bool` (crypto TCB). -/
 def verifyEffect (authority : ByteArray) (reg : PrincipalRegistry)
     (e : EffectEnvelope) (sigHex : String) : Option AuthenticatedId :=
   match reg.find? (fun k => k.id == e.keyId) with
@@ -637,10 +646,10 @@ theorem effect_step_block_or_not (authority : ByteArray)
 /-- **Presence, not value** — the factorization at the pipeline level: the
     step either blocks or returns EXACTLY `SealV2.decide e.line state`. The
     decision VALUE is a function of the judged line and the trusted
-    config/state alone; every envelope field — the advisory F3 effect, F4
-    idempotency key, the F5/F6/F7/eighth seats, all of them — gates only
-    WHETHER a decision is produced. Advisory fields cannot appear in
-    `SealV2.decide`: it never receives them. -/
+    config/state alone; every envelope field — the advisory F3 effect, the
+    F7 revocation subject, all of them — gates only WHETHER a decision is
+    produced. Advisory fields cannot appear in `SealV2.decide`: it never
+    receives them. -/
 theorem effect_step_presence_not_value (authority : ByteArray)
     (reg : PrincipalRegistry) (mediator : AdapterId) (e : EffectEnvelope)
     (sigHex : String) (state : ApprovalState) :
@@ -667,9 +676,9 @@ theorem allow_value_from_line_and_state {authority : ByteArray}
 
 /-- **Advisory non-influence.** Two envelopes carrying the SAME judged line —
     under different registries, authorities, mediators, signatures, advisory
-    effects, idempotency keys, seats, everything — that both pass the gates
-    produce the SAME decision. The advisory and seated fields have no
-    influence channel into the decision value. -/
+    effects, revocation subjects, everything — that both pass the gates
+    produce the SAME decision. The advisory fields have no influence channel
+    into the decision value. -/
 theorem advisory_non_influence {authority₁ authority₂ : ByteArray}
     {reg₁ reg₂ : PrincipalRegistry} {mediator₁ mediator₂ : AdapterId}
     {e₁ e₂ : EffectEnvelope} {sig₁ sig₂ : String} {state : ApprovalState}
@@ -789,7 +798,12 @@ theorem nonmcp_nonempty_effect_blocks {authority : ByteArray}
     rw [if_neg (by simpa [beq_iff_eq] using hm)] at hg
     cases hg
 
-/-! ## Golden vector — the cross-language signed-message contract -/
+/-! ## Golden vector — the cross-language signed-message contract
+
+These `#eval` pins are ALSO the kernel-side negative control for the strip:
+re-adding any killed field to the structure or message changes the golden
+hex (and the Rust twin corpus), so reverting the strip breaks the build
+here, not just review. -/
 
 /-- Hex of a byte array (lowercase) — for golden-vector pins. -/
 def bytesToHex (b : ByteArray) : String :=
@@ -800,12 +814,12 @@ def bytesToHex (b : ByteArray) : String :=
       if n < 10 then Char.ofNat (48 + n) else Char.ofNat (87 + n)
     [digit hi, digit lo])
 
-/-- info: "7365616c2e6566666563742f763100" -/
+/-- info: "7365616c2e6566666563742f763200" -/
 #guard_msgs in
 #eval bytesToHex effectTag.toUTF8
 
 /--
-info: "7365616c2e6566666563742f763100a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000000000004d200000000000000077b226d223a317d00000000000000036d6370000000000000000a323032352d30362d31380000000000000006736573732d31000000000000000a64622e65786563757465000000000000000463616c6c00000000000000077b2271223a317d00000000000000066964656d2d310000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000000000004d200000000000000077b226d223a317d00000000000000036d6370000000000000000a323032352d30362d31380000000000000006736573732d31000000000000000a64622e65786563757465000000000000000463616c6c00000000000000077b2271223a317d0000000000000000"
 -/
 #guard_msgs in
 #eval bytesToHex (effectMessage
@@ -820,14 +834,7 @@ info: "7365616c2e6566666563742f763100a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b
     effectResource := "db.execute"
     effectAction := "call"
     effectArgs := "{\"q\":1}"
-    idempotencyKey := "idem-1"
-    policyVersion := ""
-    onBehalfOf := ""
-    parentCapabilityRef := ""
-    revocationSubject := ""
-    audience := ""
-    causalityToken := ""
-    expiresAt := 0 })
+    revocationSubject := "" })
 
 /-! ## Axiom pins — the honesty razor, machine-checked
 
@@ -850,6 +857,10 @@ axioms; `ed25519Verify` is `opaque` (TCB seam), not an axiom. -/
 #guard_msgs in
 #print axioms frame_cancel
 
+/-- info: 'SealV2.Effect.frame_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms frame_inj
+
 /-- info: 'SealV2.Effect.wireSizedB_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms wireSizedB_spec
@@ -861,6 +872,10 @@ axioms; `ed25519Verify` is `opaque` (TCB seam), not an axiom. -/
 /-- info: 'SealV2.Effect.prefix_byte_separated' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms prefix_byte_separated
+
+/-- info: 'SealV2.Effect.effect_cross_version_v1_separated' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms effect_cross_version_v1_separated
 
 /-- info: 'SealV2.Effect.effect_cross_version_v22_separated' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
