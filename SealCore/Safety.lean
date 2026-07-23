@@ -36,7 +36,12 @@ theorem approval_binds_to_target
     exact beq_false_of_ne hneq
   simp [hbeq]
 
-theorem confused_deputy_blocks_from_single_other_approval
+/-- An approval for one target does not transfer to another: with only an
+    approval for `approvedTarget` in state, a guarded call for a different
+    target blocks. Target-binding removes one precondition of confused-deputy
+    attacks at this boundary; it does not model the deputy scenario (there is
+    no deputy in the model). -/
+theorem approval_not_transferable_across_targets
     (now deadline : Nat) (approvedTarget guardedTarget : TargetHash)
     (hneq : approvedTarget ≠ guardedTarget) :
     (step now { approved := (∅ : Std.HashMap TargetHash Nat).insert approvedTarget deadline }

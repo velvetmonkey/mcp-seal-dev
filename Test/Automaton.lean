@@ -27,7 +27,7 @@ def main : IO UInt32 := do
   assertEq "guarded before approval" (step now empty (.guarded targetA)).1 .block
   let approved := (step now empty (.approval targetA deadline)).2
   assertEq "approved target allowed" (step now approved (.guarded targetA)).1 .allow
-  assertEq "confused deputy blocked" (step now approved (.guarded targetB)).1 .block
+  assertEq "approval not transferable across targets" (step now approved (.guarded targetB)).1 .block
   let consumed := (step now approved (.guarded targetA)).2
   assertEq "replay blocked" (step now consumed (.guarded targetA)).1 .block
   -- Time-based expiry: the same approval, evaluated at different clock readings.
