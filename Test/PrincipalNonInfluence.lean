@@ -27,29 +27,30 @@ authenticating as two DISTINCT ids, or if either leg stops reaching `Allow`
 
 open SealV2 SealV2.Effect Test.V2ValidationFixtures
 
-/-- `alice`'s envelope with the advisory F3 trio SET to the parser-derived
-    effect of the judged line — the nonempty-F3 difference the kernel
-    witness cannot evaluate is exercised here at runtime. `none` if the
-    fixture line stops parsing as a capability request (that is a RED). -/
+/-- `alice`'s envelope with the F3 effect claim PRESENT (Option-encoded,
+    signed presence byte) and SET to the parser-derived effect of the judged
+    line — the present-claim difference the kernel witness cannot evaluate
+    is exercised here at runtime. `none` if the fixture line stops parsing
+    as a capability request (that is a RED). -/
 def aliceEffectful : Option EffectEnvelope :=
   match deriveEffect wAlice.line with
   | none => none
   | some (r, a, g) =>
       some { wAlice with
-        effectResource := r, effectAction := a, effectArgs := g }
+        effect := some { resource := r, action := a, args := g } }
 
 /-- Real Ed25519 signature (seed-`alice` key) over
     `effectMessage wAuthorityA aliceEffectful` — regenerate with
     `test/v2/principal_noninfluence_sign_fixture.py`. -/
 def sigAliceFxHex : String :=
-  "5b9a4408e2e1c00533ebc10093b754dfc52c9a84eb6822e34b4d1ac9769d1340a6095dcd59ab29f92ab139e26923223fb277bbc3ca5ea7ac7422c33d8288950d"
+  "57aae8430629cab61ea0649a6b5ac6ebaca5379e33ad8fbcbd68df55278eefaa6118b899b910b51a8318a1cd1953ca9408a80f5fa8db01dec1c793c85f8ae00a"
 
-/-- Tampered signature: `wSigAHex` with its last hex digit flipped (`07` →
+/-- Tampered signature: `wSigAHex` with its last hex digit flipped (`01` →
     `08`) — must fail verification. The control below asserts the coupling
     (same length, differs from the pin) so a regenerated `wSigAHex` cannot
     silently leave this stale-but-equal. -/
 def sigATampered : String :=
-  "a8af66064784e2356740da56dc6f486ced3969c9a5f9e5a7f6ea048bc2101abc1dda575c1dcde7ca5ae181374951507f6d7b20f947592a6b6b95d423baaf6b08"
+  "5ffa8362458db9fd4ee92098185b49ee72b3d83e3a833b0ff65d6e71c301d7d3e81300d05711f76e19050372cca53aa6bce314401aaae8b14ce145a5b1c42808"
 
 structure Outcome where
   failures : Nat := 0

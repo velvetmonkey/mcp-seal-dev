@@ -23,14 +23,18 @@ This module pins it:
   judged line and the same approval state produce the same decision, whatever
   their authenticated principals are (including distinct ones), and whatever
   their authorities, registries, mediators, envelopes and signatures are,
-  provided each run passes its own gates.
+  provided each run passes its own gates (all six of the Stage B2 reconciled
+  step: adapter, session, effect, expiry, issuedAt, policyVersion).
 * `witness_principal_non_influence` — the Step-0 non-vacuity witness: two
-  CONCRETE distinct principals (`alice` under an MCP mediator with a minimal
-  envelope, `bob` under a CLI mediator with every seat filled — the envelopes
-  differ in every field the gates allow to differ, sharing only the judged
-  line) both authenticate and instantiate the theorem. Conditional on exactly
+  CONCRETE distinct principals (`alice` under an MCP mediator, `bob` under a
+  CLI mediator — the envelopes differ in every field the gates allow to
+  differ: keyId, nonce, issuedAt, expiresAt, adapter type/version; the
+  Stage B2 MANDATORY bindings force session and policyVersion equal to the
+  state's, so those fields can no longer differ between gate-passing
+  envelopes, and the judged line is the theorem's fixed comparand) both
+  authenticate and instantiate the theorem. Conditional on exactly
   two `ed25519Verify = true` facts — the crypto TCB seam (A3); everything
-  else (registry lookup, hex decoding, wire widths, all three gates) is
+  else (registry lookup, hex decoding, wire widths, all six gates) is
   discharged inside the proof. The runnable control
   (`lake exe principal_non_influence_show`) discharges those two facts
   operationally with real TweetNaCl verification over real, checked-in
@@ -97,7 +101,8 @@ theorem effect_step_presence_form (authority : ByteArray)
     effectStep authority reg mediator e sigHex state
       = (if (verifyEffect authority reg e sigHex).isSome
             && adapterGate mediator e && sessionGate state e
-            && effectGate mediator e
+            && effectGate mediator e && expiryGate state e
+            && issuedAtGate state e && policyVersionGate state e
         then decide e.line state
         else .Block) := by
   unfold effectStep
@@ -113,11 +118,14 @@ theorem effect_step_value_of_gates {authority : ByteArray}
     (hv : verifyEffect authority reg e sigHex = some p)
     (hga : adapterGate mediator e = true)
     (hgs : sessionGate state e = true)
-    (hge : effectGate mediator e = true) :
+    (hge : effectGate mediator e = true)
+    (hgx : expiryGate state e = true)
+    (hgi : issuedAtGate state e = true)
+    (hgp : policyVersionGate state e = true) :
     effectStep authority reg mediator e sigHex state = decide e.line state := by
   unfold effectStep
   rw [hv]
-  simp [hga, hgs, hge]
+  simp [hga, hgs, hge, hgx, hgi, hgp]
 
 /-! ## THE theorem -/
 
@@ -145,26 +153,36 @@ theorem principal_non_influence {authority₁ authority₂ : ByteArray}
     (hga₁ : adapterGate mediator₁ e₁ = true)
     (hgs₁ : sessionGate state e₁ = true)
     (hge₁ : effectGate mediator₁ e₁ = true)
+    (hgx₁ : expiryGate state e₁ = true)
+    (hgi₁ : issuedAtGate state e₁ = true)
+    (hgp₁ : policyVersionGate state e₁ = true)
     (hga₂ : adapterGate mediator₂ e₂ = true)
     (hgs₂ : sessionGate state e₂ = true)
-    (hge₂ : effectGate mediator₂ e₂ = true) :
+    (hge₂ : effectGate mediator₂ e₂ = true)
+    (hgx₂ : expiryGate state e₂ = true)
+    (hgi₂ : issuedAtGate state e₂ = true)
+    (hgp₂ : policyVersionGate state e₂ = true) :
     effectStep authority₁ reg₁ mediator₁ e₁ sig₁ state
       = effectStep authority₂ reg₂ mediator₂ e₂ sig₂ state := by
-  rw [effect_step_value_of_gates h₁ hga₁ hgs₁ hge₁,
-    effect_step_value_of_gates h₂ hga₂ hgs₂ hge₂, hline]
+  rw [effect_step_value_of_gates h₁ hga₁ hgs₁ hge₁ hgx₁ hgi₁ hgp₁,
+    effect_step_value_of_gates h₂ hga₂ hgs₂ hge₂ hgx₂ hgi₂ hgp₂, hline]
 
 /-! ## Step-0 non-vacuity witness
 
 Two concrete, distinct, authenticated principals. The envelopes differ in
-EVERY field the gates allow to differ: keyId, nonce, issuedAt, adapter
-type/version (distinct mediators), session (seat vs bound), idempotencyKey,
-every F5/F6/F7/eighth-field seat, expiresAt — plus distinct authorities and
-signatures, one shared registry. They share exactly the judged `line` (the
-fixed comparand of the theorem). The advisory F3 trio is empty in BOTH
-kernel-witness envelopes because the F3 gate forces nonempty claims to equal
-the parser-derived effect (kernel evaluation of the parser is not available
-to `decide`-style proofs here); the nonempty-F3 difference is exercised by
-the runtime control instead (`aliceEffectful` run in the SHOW exe).
+EVERY field the gates allow to differ under the Stage B2 reconciled shape:
+keyId, nonce, issuedAt, expiresAt, adapter type/version (distinct
+mediators) — plus distinct authorities and signatures, one shared registry.
+The Stage B2 MANDATORY bindings (session and policyVersion must equal the
+state's, nonempty; expiresAt nonzero) mean session and policyVersion are
+FORCED equal between any two gate-passing envelopes over the same state:
+those two fields are no longer principal-differentiable, by design. They
+share exactly the judged `line` (the fixed comparand of the theorem). The
+F3 effect claim is DECLARED ABSENT (`none`) in BOTH kernel-witness
+envelopes because the F3 gate forces a present claim to equal the
+parser-derived effect (kernel evaluation of the parser is not available
+to `decide`-style proofs here); the present-claim difference is exercised
+by the runtime control instead (`aliceEffectful` run in the SHOW exe).
 
 Keys are the documented test keypairs (seeds `0x00..0x1f` and `0x01..0x20`,
 NOT real keys); signatures are real Ed25519, produced by
@@ -202,54 +220,40 @@ def wAuthorityB : ByteArray :=
     0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5,
     0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf]
 
-/-- `alice`: minimal envelope — MCP mediator claim, session seat empty,
-    advisory F3 empty, every optional seat empty. -/
+/-- `alice`: MCP mediator claim, F3 declared absent, earliest in-window
+    issuedAt, tight expiry. Session and policyVersion carry the MANDATORY
+    Stage B2 bindings (equal to the fixture state's — see the section
+    docstring: gate-passing envelopes cannot differ there). -/
 def wAlice : EffectEnvelope :=
   { keyId := "alice"
     nonce := ByteArray.mk #[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
       0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,
       0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f]
-    issuedAt := 1111
+    issuedAt := 3
+    expiresAt := 100
     line := wLine
     adapterType := "mcp"
     adapterVersion := "2025-06-18"
-    session := ""
-    effectResource := ""
-    effectAction := ""
-    effectArgs := ""
-    idempotencyKey := "idem-alice"
-    policyVersion := ""
-    onBehalfOf := ""
-    parentCapabilityRef := ""
-    revocationSubject := ""
-    audience := ""
-    causalityToken := ""
-    expiresAt := 0 }
+    session := "session-1"
+    policyVersion := "policy-1"
+    effect := none }
 
-/-- `bob`: maximal envelope — CLI mediator claim, session bound to the
-    boot/config session, every seat filled. Differs from `wAlice` in every
-    field except `line`. -/
+/-- `bob`: CLI mediator claim, F3 declared absent. Differs from `wAlice` in
+    every gate-differentiable field: keyId, nonce, issuedAt, expiresAt,
+    adapter type/version. -/
 def wBob : EffectEnvelope :=
   { keyId := "bob"
     nonce := ByteArray.mk #[0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
       0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32, 0x33,
       0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f]
-    issuedAt := 2222
+    issuedAt := 7
+    expiresAt := 777777
     line := wLine
     adapterType := "cli"
     adapterVersion := "9.9"
     session := "session-1"
-    effectResource := ""
-    effectAction := ""
-    effectArgs := ""
-    idempotencyKey := "idem-bob"
-    policyVersion := "policy-9"
-    onBehalfOf := "ops@corp"
-    parentCapabilityRef := "cap-parent-7"
-    revocationSubject := "rev-42"
-    audience := "aud-z"
-    causalityToken := "ct-13"
-    expiresAt := 777777 }
+    policyVersion := "policy-1"
+    effect := none }
 
 /-- The mediator `alice`'s run trusts as having mediated. -/
 def wMcp : AdapterId := { type := "mcp", version := "2025-06-18" }
@@ -261,12 +265,12 @@ def wCli : AdapterId := { type := "cli", version := "9.9" }
     `effectMessage wAuthorityA wAlice` — regenerate with
     `test/v2/principal_noninfluence_sign_fixture.py`. -/
 def wSigAHex : String :=
-  "a8af66064784e2356740da56dc6f486ced3969c9a5f9e5a7f6ea048bc2101abc1dda575c1dcde7ca5ae181374951507f6d7b20f947592a6b6b95d423baaf6b07"
+  "5ffa8362458db9fd4ee92098185b49ee72b3d83e3a833b0ff65d6e71c301d7d3e81300d05711f76e19050372cca53aa6bce314401aaae8b14ce145a5b1c42801"
 
 /-- Real Ed25519 signature (seed-`bob` key) over
     `effectMessage wAuthorityB wBob`. -/
 def wSigBHex : String :=
-  "8204df6e8afd9f325831dc5f9337b4a998937a80a595fb2a4cdc2b404128d85b915a213708bf5ffffc0a41a31c7fccbe9bad83aab3f9e84ae12ef9a619e26202"
+  "4348ecc34f07488b36349ed9eb9062818ed07cb7af9764b2c61f28ee000200993849adcf7a88c27dbb47e27c760bcd0690466f3696943a918b78522dd42c540a"
 
 /-- Decoded `alice` verifying key (the exact bytes `verifyEffect` hands to
     `ed25519Verify`). -/
@@ -279,16 +283,19 @@ def wSigA : ByteArray := (hexDecode? wSigAHex).getD default
 
 def wSigB : ByteArray := (hexDecode? wSigBHex).getD default
 
-/-- The approval state both witness runs share. Only its `session` plane is
-    read by the gates; the runtime control uses the full fixture
-    `baseState` (same session) to reach a genuine `Allow`. -/
+/-- The approval state both witness runs share. The gates read its
+    `session`, `policyVersion`, `now` and `maxApprovalTtl` planes (Stage B2
+    mandatory bindings + freshness windows); the runtime control uses the
+    full fixture `baseState` (same session, same policyVersion, same clock)
+    to reach a genuine `Allow`. -/
 def wState : ApprovalState :=
   { session := "session-1"
     now := 10
     publicKey := ""
     manifestDigest := ""
     tools := []
-    approvals := [] }
+    approvals := []
+    policyVersion := "policy-1" }
 
 -- The witness proofs kernel-evaluate `wireSizedB` over the 134-char judged
 -- line and 64/128-char hex decodes; the default recursion depth is too small
@@ -362,6 +369,7 @@ theorem witness_principal_non_influence
   obtain ⟨pB, hvB, hidB⟩ := witness_verify_bob hB
   exact ⟨pA, pB, hvA, hvB, witness_principals_distinct hidA hidB,
     principal_non_influence hvA hvB rfl
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)⟩
 
 /-! ## Build-time pins
@@ -373,20 +381,23 @@ any witness field drifts, the pin (and then the SHOW control) goes red. -/
 /-- info: true -/
 #guard_msgs in
 #eval adapterGate wMcp wAlice && sessionGate wState wAlice
-  && effectGate wMcp wAlice
+  && effectGate wMcp wAlice && expiryGate wState wAlice
+  && issuedAtGate wState wAlice && policyVersionGate wState wAlice
 
 /-- info: true -/
 #guard_msgs in
 #eval adapterGate wCli wBob && sessionGate wState wBob && effectGate wCli wBob
+  && expiryGate wState wBob && issuedAtGate wState wBob
+  && policyVersionGate wState wBob
 
 /--
-info: "7365616c2e6566666563742f763100a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f000000000000045700000000000000867b226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b226e616d65223a2264622e65786563757465222c22616374696f6e223a227772697465222c22617267756d656e7473223a7b226461746162617365223a2270726f64222c227461626c65223a227573657273222c22616d6f756e74223a31322e33347d7d7d00000000000000036d6370000000000000000a323032352d30362d31380000000000000000000000000000000000000000000000000000000000000000000000000000000a6964656d2d616c6963650000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f0000000000000003000000000000006400000000000000867b226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b226e616d65223a2264622e65786563757465222c22616374696f6e223a227772697465222c22617267756d656e7473223a7b226461746162617365223a2270726f64222c227461626c65223a227573657273222c22616d6f756e74223a31322e33347d7d7d00000000000000036d6370000000000000000a323032352d30362d3138000000000000000973657373696f6e2d310000000000000008706f6c6963792d3100"
 -/
 #guard_msgs in
 #eval bytesToHex (effectMessage wAuthorityA wAlice)
 
 /--
-info: "7365616c2e6566666563742f763100b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000003626f62202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000000000008ae00000000000000867b226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b226e616d65223a2264622e65786563757465222c22616374696f6e223a227772697465222c22617267756d656e7473223a7b226461746162617365223a2270726f64222c227461626c65223a227573657273222c22616d6f756e74223a31322e33347d7d7d0000000000000003636c690000000000000003392e39000000000000000973657373696f6e2d3100000000000000000000000000000000000000000000000000000000000000086964656d2d626f620000000000000008706f6c6963792d3900000000000000086f707340636f7270000000000000000c6361702d706172656e742d3700000000000000067265762d343200000000000000056175642d7a000000000000000563742d313300000000000bde31"
+info: "7365616c2e6566666563742f763200b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000003626f62202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f000000000000000700000000000bde3100000000000000867b226d6574686f64223a22746f6f6c732f63616c6c222c22706172616d73223a7b226e616d65223a2264622e65786563757465222c22616374696f6e223a227772697465222c22617267756d656e7473223a7b226461746162617365223a2270726f64222c227461626c65223a227573657273222c22616d6f756e74223a31322e33347d7d7d0000000000000003636c690000000000000003392e39000000000000000973657373696f6e2d310000000000000008706f6c6963792d3100"
 -/
 #guard_msgs in
 #eval bytesToHex (effectMessage wAuthorityB wBob)
