@@ -239,11 +239,13 @@ theorem p6_state_noninterference (s : Option ApprovalState)
 /-! ## Axiom pins
 
 Count, stated precisely: this file has 3 `#guard_msgs` axiom-diagnostic
-pins. The V2.3 package as a whole has 33 `#guard_msgs` commands — 31
-axiom-diagnostic pins (28 in `EffectEnvelope.lean` + 3 here) plus 2 `#eval`
-golden-vector pins in `EffectEnvelope.lean`. An earlier summary said
-"31 `#guard_msgs` pins"; that number is correct only as the count of
-axiom-diagnostic pins, not of `#guard_msgs` commands. -/
+pins. The V2.3 package as a whole has 49 `#guard_msgs` commands — 45
+axiom-diagnostic pins (42 in `EffectEnvelope.lean` + 3 here), 3 `#eval`
+golden-vector pins in `EffectEnvelope.lean` (tag, effect-present,
+effect-absent — Stage B2 pins the option encoding as a pair), and 1
+envelope-completeness summary pin in `EnvelopeCompleteness.lean`. An
+earlier summary said "31 `#guard_msgs` pins"; that number counted the
+pre-Stage-B axiom-diagnostic pins only, not `#guard_msgs` commands. -/
 
 /-- info: 'SealV2.ResponseNI.p6_response_noninterference' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

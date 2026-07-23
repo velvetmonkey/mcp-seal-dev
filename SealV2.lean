@@ -13,6 +13,7 @@ import SealV2.TamperTheorems
 import SealV2.LifecycleTheorems
 import SealV2.EffectEnvelope
 import SealV2.PrincipalNonInfluence
+import SealV2.EnvelopeCompleteness
 import SealV2.ResponseNI
 import SealV2.ResponseTransport
 import SealV2.ClassifyTransport
