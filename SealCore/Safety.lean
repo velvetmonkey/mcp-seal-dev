@@ -58,7 +58,7 @@ theorem consumed_approval_not_live (now : Nat) (s : State) (target : TargetHash)
   · simp [hlive]
 
 /-- An approval whose deadline is at or before `now` is not live: the gate
-    blocks once a ticket has expired. -/
+    blocks once an approval has expired. -/
 theorem expired_not_live (s : State) (target : TargetHash) (now deadline : Nat)
     (hfound : s.approved[target]? = some deadline) (hexp : deadline ≤ now) :
     live s target now = false := by

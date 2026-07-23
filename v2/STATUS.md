@@ -49,10 +49,10 @@ Status: implemented; local review gate passed.
 M2 adds:
 
 ```lean
-validate : AST -> ApprovalState -> Option (Σ ast, ValidCapability ast state)
+validate : AST -> ApprovalState -> Option (Σ ast, ValidApproval ast state)
 ```
 
-Validation is constructive. A successful result carries a `ValidCapability` witness, not a boolean. The witness contains the decoded request, matching tool spec, exact target binding, exact approval, session binding, `consumed = false`, expiry proof, and `SignatureVerified`.
+Validation is constructive. A successful result carries a `ValidApproval` witness, not a boolean. The witness contains the decoded request, matching tool spec, exact target binding, exact approval, session binding, `consumed = false`, expiry proof, and `SignatureVerified`.
 
 ### Signed message seam for M5
 
@@ -64,11 +64,11 @@ M2 defines the signed message as exactly:
 
 The message is represented as a canonical AST-shaped value through `signedMessageAst`. M2's crypto was stubbed by `stubSignatureFor`, but the shape is this five-field value. M3 serializes the same canonical message value; M5 verifies Ed25519 over those canonical bytes, not over a separate ad-hoc encoding.
 
-M3 scaffold strengthening: `ValidCapability` now carries `ast_canonical : IsCanonical ast`. This is additive to M2's witness facts; the six M2 witness lemmas remain unchanged. The strengthening is required so `serialize` can be proof-gated without making canonicality circular through `parse` or `serialize`.
+M3 scaffold strengthening: `ValidApproval` now carries `ast_canonical : IsCanonical ast`. This is additive to M2's witness facts; the six M2 witness lemmas remain unchanged. The strengthening is required so `serialize` can be proof-gated without making canonicality circular through `parse` or `serialize`.
 
 ### M6 atomic consume carry-forward
 
-`ValidCapability` proves `approval.consumed = false`; M2 does not consume. M6 must make the validate-and-consume transition atomic inside `decide`, with no TOCTOU window between proving an approval live and consuming it. The M6 `state_monotonicity` theorem must connect directly to the `consumed = false` fact carried by the M2 witness.
+`ValidApproval` proves `approval.consumed = false`; M2 does not consume. M6 must make the validate-and-consume transition atomic inside `decide`, with no TOCTOU window between proving an approval live and consuming it. The M6 `state_monotonicity` theorem must connect directly to the `consumed = false` fact carried by the M2 witness.
 
 ## M3 canonical serialization
 
@@ -79,7 +79,7 @@ M3 adds a standalone structural canonicality predicate and proof-gated serializa
 ```lean
 IsCanonical : AST -> Prop
 serializeAst : {ast // IsCanonical ast} -> CanonicalBytes
-serialize : (Σ ast, ValidCapability ast state) -> CanonicalBytes
+serialize : (Σ ast, ValidApproval ast state) -> CanonicalBytes
 ```
 
 `IsCanonical` is structural only. It does not reference `parse` or `serialize`. `serializeAst` computes on the AST value only, so proof terms cannot influence emitted bytes.
@@ -120,7 +120,7 @@ M4 proves:
 non_bypass :
   decide raw state = Decision.Allow out ->
     ∃ ast, parse raw = some ast ∧
-      ∃ w : ValidCapability ast state, out = serialize ⟨ast, w⟩
+      ∃ w : ValidApproval ast state, out = serialize ⟨ast, w⟩
 
 default_deny :
   (parse raw = none ∨
@@ -130,7 +130,7 @@ default_deny :
 decide_emit_unique :
   decide raw state = Decision.Allow out ↔
     ∃ ast, parse raw = some ast ∧
-      ∃ w : ValidCapability ast state,
+      ∃ w : ValidApproval ast state,
         validate ast state = some ⟨ast, w⟩ ∧
           out = serialize ⟨ast, w⟩
 ```

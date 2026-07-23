@@ -8,9 +8,9 @@ server (@modelcontextprotocol/server-everything) and exercises every approval
 behaviour end to end, printing PASS/FAIL for each:
 
   1. default-deny        - a guarded tool is blocked with no approval
-  2. one-shot ticket     - one approval row = exactly one allowed call
-  3. wall-clock expiry   - an unused ticket dies `ttl_seconds` after ingest
-  4. mint-time issuedAt  - a ticket minted in the past is dead on arrival
+  2. one-shot approval   - one approval row = exactly one allowed call
+  3. wall-clock expiry   - an unused approval dies `ttl_seconds` after ingest
+  4. mint-time issuedAt  - an approval minted in the past is dead on arrival
 
 No API key, no network beyond a one-time `npx` fetch. Requires only Node/npx
 and a built seal binary.
@@ -133,8 +133,8 @@ def main():
     print(f"server:  {' '.join(SERVER_CMD)}")
     print(f"workdir: {tmp}")
 
-    # --- Scenarios 1 + 2: default-deny and one-shot ticket (ttl 120s) -------
-    banner("Policy A (ttl_seconds = 120): default-deny + one-shot ticket")
+    # --- Scenarios 1 + 2: default-deny and one-shot approval (ttl 120s) -------
+    banner("Policy A (ttl_seconds = 120): default-deny + one-shot approval")
     ctrl_a = os.path.join(tmp, "approvals_a.ndjson")
     open(ctrl_a, "w").close()
     pol_a = write_policy(tmp, 120, ctrl_a)
@@ -149,15 +149,15 @@ def main():
 
     with open(ctrl_a, "a") as f:
         f.write(json.dumps({"target": echo_hash}) + "\n")
-    print(f"  minted one ticket: {{\"target\": {echo_hash}}}")
+    print(f"  minted one approval: {{\"target\": {echo_hash}}}")
     got, text = a.call(3, "echo", message="hi")
-    check("2a. one ticket -> first call allowed", got, "ALLOW", f"-> {text!r}")
+    check("2a. one approval -> first call allowed", got, "ALLOW", f"-> {text!r}")
     got, _ = a.call(4, "echo", message="hi")
-    check("2b. same ticket -> second call blocked (consumed)", got, "BLOCK")
+    check("2b. same approval -> second call blocked (consumed)", got, "BLOCK")
     a.close()
 
-    # --- Scenario 3: wall-clock expiry of an unused ticket (ttl 2s) ---------
-    banner("Policy B (ttl_seconds = 2): an unused ticket expires by the clock")
+    # --- Scenario 3: wall-clock expiry of an unused approval (ttl 2s) ---------
+    banner("Policy B (ttl_seconds = 2): an unused approval expires by the clock")
     ctrl_b = os.path.join(tmp, "approvals_b.ndjson")
     open(ctrl_b, "w").close()
     pol_b = write_policy(tmp, 2, ctrl_b)
@@ -165,17 +165,17 @@ def main():
     b.initialize()
     with open(ctrl_b, "a") as f:
         f.write(json.dumps({"target": echo_hash}) + "\n")
-    # Ingest the echo ticket WITHOUT consuming it, by calling a different
+    # Ingest the echo approval WITHOUT consuming it, by calling a different
     # guarded tool. This stamps echo's deadline at now + 2s.
     b.call(2, "add", a=1, b=2)
-    print("  minted an echo ticket and stamped its deadline (via an add call).")
+    print("  minted an echo approval and stamped its deadline (via an add call).")
     print("  waiting 3s (> 2s TTL) without using it...")
     time.sleep(3.0)
     got, _ = b.call(3, "echo", message="too late")
-    check("3. unused ticket blocked after TTL elapsed", got, "BLOCK")
+    check("3. unused approval blocked after TTL elapsed", got, "BLOCK")
     b.close()
 
-    # --- Scenario 4: mint-time issuedAt, stale ticket dead on arrival -------
+    # --- Scenario 4: mint-time issuedAt, stale approval dead on arrival -------
     banner("Policy C (ttl_seconds = 60): issuedAt binds TTL to mint time")
     now_ms = int(time.time() * 1000)
     # Stale mint: issued 2 minutes ago under a 60s TTL.

@@ -18,7 +18,7 @@ axiom gate green.
 ## Named theorems (all locked to `[propext, Classical.choice, Quot.sound]`)
 
 - `non_bypass` — `decide raw state = Allow out` implies the output came through
-  `parse` then a `ValidCapability` witness then `serialize`. No other path yields `Allow`.
+  `parse` then a `ValidApproval` witness then `serialize`. No other path yields `Allow`.
 - `default_deny` — parse-fail or validate-fail implies `decide = Block`.
 - `decide_emit_unique` — `decide = Allow out` iff the full mediated path holds, and the
   emitted bytes are exactly `serialize` of that witness.

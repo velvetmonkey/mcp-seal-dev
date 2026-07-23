@@ -7,7 +7,7 @@
 
 > **We do not prove the agent is safe; we prove the environment is safe from the agent.**
 
-seal v2 is a **verified compiler for capability payloads, not a filter.** It does not forward the
+seal v2 is a **verified compiler for approved payloads, not a filter.** It does not forward the
 agent's bytes. It parses them to an AST, validates that AST to a *proof term*, re-serialises a fresh
 canonical byte stream, and forwards only that. The target server never sees the agent's original
 bytes. This document names the adversary, draws the trust boundary, states what each machine-checked
@@ -27,13 +27,13 @@ byte stream it emits.
 **Capabilities (in scope — seal must hold against all of these):**
 - Arbitrary raw bytes at the seal entrypoint, including malformed, ambiguous, oversized, non-ASCII,
   duplicate-key, and non-canonical-numeric payloads.
-- **Replay** — re-presenting a previously valid capability token.
+- **Replay** — re-presenting a previously valid approval token.
 - **Target mismatch** — a request whose tool/action/arguments do not match any live approval.
 - **Expired-token reuse** — presenting a token past its TTL, or one whose lifetime exceeds the cap.
 - **Forged or tampered signatures** — an approval token with a bad, wrong-key, or mutated signature.
 
 Against this adversary the verified core is **fail-closed**: anything that is not a fully validated,
-signed, live, single-use capability for the exact target becomes `Block`. The agent's bytes are never
+signed, live, single-use approval for the exact target becomes `Block`. The agent's bytes are never
 forwarded; only bytes seal itself re-serialised from a validated AST reach the target.
 
 **Out of scope (mapped to the residual assumptions, §4):**
@@ -66,7 +66,7 @@ forwarded; only bytes seal itself re-serialised from a validated AST reach the t
  ┌─────────────────────────────────────────────────────────────────┐
  │  VERIFIED CORE  (Lean 4, axiom-frozen M1–M7:                      │
  │                  [propext, Classical.choice, Quot.sound])         │
- │  parse → validate (→ ValidCapability proof term) → decide →       │
+ │  parse → validate (→ ValidApproval proof term) → decide →       │
  │  serialize ; lifecycle consume over listReplayStore.              │
  │  The agent's raw bytes STOP here. Only re-serialised canonical    │
  │  bytes leave.                                                     │
@@ -104,14 +104,14 @@ footprint), build-locked by the `v2_m*_axiom_check` `#guard_msgs` gates.
 
 ### `default_deny`
 - **Guarantees:** if `parse` fails or `validate` rejects, `decide` returns `Block` — output bytes are
-  unreachable. The only constructor that emits bytes requires a `ValidCapability` proof term.
+  unreachable. The only constructor that emits bytes requires a `ValidApproval` proof term.
 - **Does NOT guarantee:** it says nothing about whether a *validated* request is what the human meant
   (that is the human-oracle limit, §4).
 - **Formal:** `default_deny`.
 
 ### `non_bypass` — the capstone
 - **Guarantees:** `decide raw state = Allow out` implies there exists an AST with `parse raw = some
-  ast`, a `ValidCapability ast state` witness, and `out = serialize ⟨ast, witness⟩`. Every ALLOW
+  ast`, a `ValidApproval ast state` witness, and `out = serialize ⟨ast, witness⟩`. Every ALLOW
   reaches the target *only* through the verified parse → validate → serialize path, by construction.
 - **Does NOT guarantee (stated as loudly as `canonical_roundtrip`):** this is **complete
   seal-INTERNAL mediation**. It does **NOT** prove the target server interprets the re-serialised

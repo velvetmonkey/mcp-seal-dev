@@ -295,7 +295,7 @@ def approvalLiveFor (state : ApprovalState) (target : Target) (approval : Approv
 def findApproval (state : ApprovalState) (target : Target) : Option Approval :=
   state.approvals.find? (approvalLiveFor state target)
 
-structure ValidCapability (ast : AST) (state : ApprovalState) where
+structure ValidApproval (ast : AST) (state : ApprovalState) where
   ast_canonical : IsCanonical ast
   request : CapabilityRequest
   request_from_ast : requestFromAst ast = some request
@@ -312,7 +312,7 @@ structure ValidCapability (ast : AST) (state : ApprovalState) where
   approval_unexpired : state.now <= approval.expiresAt
   signature_verified : SignatureVerified state.publicKey approval
 
-def validate (ast : AST) (state : ApprovalState) : Option (Σ checkedAst, ValidCapability checkedAst state) :=
+def validate (ast : AST) (state : ApprovalState) : Option (Σ checkedAst, ValidApproval checkedAst state) :=
   if hCanonical : IsCanonical ast then
     match hReq : requestFromAst ast with
     | none => none
@@ -363,7 +363,7 @@ def validate (ast : AST) (state : ApprovalState) : Option (Σ checkedAst, ValidC
   else
     none
 
-def serialize {state : ApprovalState} (checked : Σ ast, ValidCapability ast state) : CanonicalBytes :=
+def serialize {state : ApprovalState} (checked : Σ ast, ValidApproval ast state) : CanonicalBytes :=
   serializeAst ⟨checked.fst, checked.snd.ast_canonical⟩
 
 /-- Errors a host-side replay store may report. Any error is treated as a denial. -/
@@ -390,7 +390,7 @@ structure ReplayStoreOps (σ : Type) where
 def validateAndConsumeWithStore {σ : Type}
     (ops : ReplayStoreOps σ) (store : σ)
     (ast : AST) (state : ApprovalState) :
-    Option (σ × Σ checkedAst, ValidCapability checkedAst state) :=
+    Option (σ × Σ checkedAst, ValidApproval checkedAst state) :=
   match validate ast state with
   | none => none
   | some checked =>

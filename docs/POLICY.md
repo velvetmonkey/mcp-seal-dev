@@ -70,7 +70,7 @@ is relayed unchanged; see [THREAT_MODEL.md](../THREAT_MODEL.md).
   a string; a JSON number is ignored (the record is dropped).
 - `issuedAt` — optional, epoch **milliseconds** the approval was minted. The
   expiry deadline is `min(issuedAt, now) + ttl`: a past `issuedAt` shortens the
-  ticket's remaining life (mint-time semantics), a future or absent one falls
+  approval's remaining life (mint-time semantics), a future or absent one falls
   back to ingest time. Fail-safe: a record can only expire sooner than
   `now + ttl`, never later.
 - Each approval is **one-shot**: consumed by the first allowed call.
