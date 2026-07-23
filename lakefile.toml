@@ -157,3 +157,13 @@ root = "Test.PrincipalNonInfluence"
 [[lean_exe]]
 name = "k5_framing_show"
 root = "Test.K5FramingShow"
+
+# K3/K4: STEP 0 enumerator + SHOW control for the classify seam.
+[[lean_exe]]
+name = "classify_enum"
+root = "Test.ClassifyEnum"
+
+# K3/K4 part 3: escape-events non-influence SHOW (real-crypto Allow witness).
+[[lean_exe]]
+name = "escape_events_show"
+root = "Test.EscapeEventsShow"

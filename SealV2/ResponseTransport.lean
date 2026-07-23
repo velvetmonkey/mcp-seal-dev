@@ -82,7 +82,12 @@ Modeling conventions, stated so they can be frisked:
 
 **Honesty boundary.** Still a hand-written abstraction, NOT a refinement
 proof from the compiled Rust; no theorem here transfers to the deployed
-binary. Unmodeled after this round: the 64-slot output queue's backpressure
+binary. NOTE ALSO: every `request` event in THIS file is decided
+(`reqDecision` is total) — the deployed seal-host router instead classifies
+each wire line first and forwards non-`tools/call` lines to the child with
+NO decision. That classify seam, and exactly which byte class escapes
+undecided, is modeled and characterised in `SealV2/ClassifyTransport.lean`;
+theorems here must not be read as covering it. Unmodeled after this round: the 64-slot output queue's backpressure
 and interleaving (`rust/src/output.rs` — next gap), seal-host's multi-kernel
 state and registry, the A3 host-owned inputs, the client-side stdin framing
 outcomes (an oversized CLIENT request draws RESOURCE_LIMIT_RESPONSE and the

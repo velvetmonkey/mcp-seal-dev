@@ -15,5 +15,7 @@ def main (args : List String) : IO Unit :=
   | ["ttl"] =>
       IO.println (signedMessageRawFor
         (signedMessage { unsignedApproval with issuedAt := 0, expiresAt := 400, nonce := nonceB }))
+  | ["orders"] =>
+      IO.println (signedMessageRawFor (signedMessage unsignedOrdersApproval))
   | _ =>
       IO.println (signedMessageRawFor (signedMessage validApproval))
