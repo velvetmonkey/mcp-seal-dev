@@ -22,9 +22,14 @@ mkdir -p "$TMP" "$ROOT/.lake/build/lib"
 [ -f "$ROOT/c/build/libsealcrypto.o" ] || bash "$ROOT/c/build.sh"
 ( cd "$ROOT" && lake build ffi_shared )
 
-# Project objects: Ffi + SealV2 modules. Exclude Test/* and Seal/Main (own `main`).
+# Project objects: Ffi + SealV2 + Seal modules. Exclude Test/* and Seal/Main —
+# both emit their own `main`, which collides with the `main` in Ffi.c.o.export
+# (ffi_shared's throwaway exe root). The rest of Seal/* must stay in: since
+# SealV2/ClassifyTransport imports Seal.Classify and Seal.JsonUtil, they are in
+# the FFI transitive closure and the .so leaves their symbols undefined without
+# them (rust-lld links with --no-allow-shlib-undefined and rejects that).
 mapfile -t PROJ_OBJS < <(find "$ROOT/.lake/build/ir" -name '*.c.o.export' \
-  ! -path '*/Test/*' ! -name 'Test.c.o.export' ! -path '*/Seal/*' | sort)
+  ! -path '*/Test/*' ! -name 'Test.c.o.export' ! -path '*/Seal/Main.c.o.export' | sort)
 [ "${#PROJ_OBJS[@]}" -gt 0 ] || { echo "no project objects; run lake build ffi_shared first" >&2; exit 1; }
 
 ARCHIVES=()
