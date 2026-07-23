@@ -293,12 +293,12 @@ theorem serializeAst_deterministic (ast : AST)
     serializeAst ⟨ast, left⟩ = serializeAst ⟨ast, right⟩ := by
 ```
 
-## Group D: ValidCapability-backed lift
+## Group D: ValidApproval-backed lift
 
 File: `SealV2/SerializationTheorems.lean:123`
 
 ```lean
 theorem serialize_validCapability_roundtrip {state : ApprovalState}
-    (ast : AST) (witness : ValidCapability ast state) :
+    (ast : AST) (witness : ValidApproval ast state) :
     parse (serialize ⟨ast, witness⟩) = some ast := by
 ```

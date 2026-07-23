@@ -5,9 +5,9 @@ import SealV2.Decide
 namespace SealV2
 
 private theorem validate_success_shape (ast : AST) (state : ApprovalState)
-    (checked : Sigma fun checkedAst => ValidCapability checkedAst state) :
+    (checked : Sigma fun checkedAst => ValidApproval checkedAst state) :
     validate ast state = some checked →
-      ∃ witness : ValidCapability ast state, checked = Sigma.mk ast witness := by
+      ∃ witness : ValidApproval ast state, checked = Sigma.mk ast witness := by
   intro h
   unfold validate at h
   split at h <;> try contradiction
@@ -42,7 +42,7 @@ private theorem validate_success_shape (ast : AST) (state : ApprovalState)
 theorem decide_emit_unique (raw : RawBytes) (state : ApprovalState) (out : CanonicalBytes) :
     decide raw state = Decision.Allow out ↔
       ∃ ast, parse raw = some ast ∧
-        ∃ witness : ValidCapability ast state,
+        ∃ witness : ValidApproval ast state,
           validate ast state = some (Sigma.mk ast witness) ∧
             out = serialize (Sigma.mk ast witness) := by
   constructor
@@ -67,7 +67,7 @@ theorem decide_emit_unique (raw : RawBytes) (state : ApprovalState) (out : Canon
 theorem non_bypass (raw : RawBytes) (state : ApprovalState) (out : CanonicalBytes) :
     decide raw state = Decision.Allow out →
       ∃ ast, parse raw = some ast ∧
-        ∃ witness : ValidCapability ast state,
+        ∃ witness : ValidApproval ast state,
           out = serialize (Sigma.mk ast witness) := by
   intro hAllow
   obtain ⟨ast, hParse, witness, _hValidate, hOut⟩ :=

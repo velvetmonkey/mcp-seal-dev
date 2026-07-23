@@ -26,10 +26,10 @@ private def jsonToTargetHash? (j : Json) : Option SealCore.TargetHash :=
 
     A record is `{"target": <hash>}` and may optionally carry `"issuedAt": <epoch ms>`,
     the wall-clock time the human minted it. The deadline is `base + ttlMs` where
-    `base = min(issuedAt, now)`: an `issuedAt` in the past shortens the ticket's
+    `base = min(issuedAt, now)`: an `issuedAt` in the past shortens the approval's
     remaining life (mint-time semantics), while a future or absent `issuedAt`
     falls back to ingest time. This is fail-safe: a record can only ever make a
-    ticket expire SOONER than `now + ttlMs`, never later. -/
+    approval expire SOONER than `now + ttlMs`, never later. -/
 private def parseApprovalRecord (now ttlMs : Nat) (line : String) : Option Event :=
   let trimmed := line.trimAscii.toString
   if trimmed.isEmpty then none else

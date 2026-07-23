@@ -12,27 +12,27 @@ theorem validate_none_no_witness_result (ast : AST) (state : ApprovalState) :
   contradiction
 
 theorem valid_capability_has_unused_approval {ast : AST} {state : ApprovalState}
-    (witness : ValidCapability ast state) :
+    (witness : ValidApproval ast state) :
     witness.approval.consumed = false :=
   witness.approval_unused
 
 theorem valid_capability_has_unexpired_approval {ast : AST} {state : ApprovalState}
-    (witness : ValidCapability ast state) :
+    (witness : ValidApproval ast state) :
     state.now <= witness.approval.expiresAt :=
   witness.approval_unexpired
 
 theorem valid_capability_has_signature_verified {ast : AST} {state : ApprovalState}
-    (witness : ValidCapability ast state) :
+    (witness : ValidApproval ast state) :
     SignatureVerified state.publicKey witness.approval :=
   witness.signature_verified
 
 theorem valid_capability_target_bound {ast : AST} {state : ApprovalState}
-    (witness : ValidCapability ast state) :
+    (witness : ValidApproval ast state) :
     (witness.approval.target == witness.target) = true :=
   witness.approval_target_matches
 
 theorem valid_capability_session_bound {ast : AST} {state : ApprovalState}
-    (witness : ValidCapability ast state) :
+    (witness : ValidApproval ast state) :
     witness.approval.session = state.session :=
   witness.approval_session_matches
 

@@ -19,8 +19,8 @@ These are the theorems [CLAIMS.md](../CLAIMS.md) and [ASSURANCE_CASE.md](../ASSU
 
 | Claim | Theorem | Location | Axiom footprint |
 |---|---|---|---|
-| An `Allow` implies a parsed AST plus a `ValidCapability` witness, and the output is the canonical serialization of that witness | `SealV2.non_bypass` | `SealV2/DecideTheorems.lean:67` | `{propext, Classical.choice, Quot.sound}` |
-| Output bytes are unreachable unless a `ValidCapability` term is built (default deny) | `SealV2.default_deny` | `SealV2/DecideTheorems.lean:77` | `{propext, Classical.choice, Quot.sound}` |
+| An `Allow` implies a parsed AST plus a `ValidApproval` witness, and the output is the canonical serialization of that witness | `SealV2.non_bypass` | `SealV2/DecideTheorems.lean:67` | `{propext, Classical.choice, Quot.sound}` |
+| Output bytes are unreachable unless a `ValidApproval` term is built (default deny) | `SealV2.default_deny` | `SealV2/DecideTheorems.lean:77` | `{propext, Classical.choice, Quot.sound}` |
 | The decide path emits exactly one output for a given input and state | `SealV2.decide_emit_unique` | `SealV2/DecideTheorems.lean:42` | `{propext, Classical.choice, Quot.sound}` |
 | Canonical serialize/parse roundtrip is self-consistent and deterministic | `SealV2.canonical_roundtrip` | `SealV2/SerializationTheorems.lean:1257` | `{propext, Classical.choice, Quot.sound}` |
 | The signature is checked over exactly the canonical signed-message bytes | `SealV2.signed_parse_canonical` | `SealV2/ValidationTheorems.lean:39` | `{propext, Classical.choice, Quot.sound}` |

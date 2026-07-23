@@ -1276,10 +1276,10 @@ theorem serializeAst_deterministic (ast : AST)
     (left right : IsCanonical ast) :
     serializeAst ⟨ast, left⟩ = serializeAst ⟨ast, right⟩ := by rfl
 
-/- GROUP D: ValidCapability-backed lift. -/
+/- GROUP D: ValidApproval-backed lift. -/
 
 theorem serialize_validCapability_roundtrip {state : ApprovalState}
-    (ast : AST) (witness : ValidCapability ast state) :
+    (ast : AST) (witness : ValidApproval ast state) :
     parse (serialize ⟨ast, witness⟩) = some ast := by
   unfold serialize
   exact canonical_roundtrip ⟨ast, witness.ast_canonical⟩

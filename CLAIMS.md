@@ -21,8 +21,8 @@ bypassed."
 
 | Claim | Artifact | Proof status | Trusted assumptions | Known residuals | Say publicly? |
 |---|---|---|---|---|---|
-| An `Allow` implies a parsed AST + a `ValidCapability` witness, and the output is the canonical serialization of that witness | `SealV2/DecideTheorems.lean` non_bypass | Lean theorem, axiom-gated `{propext, Classical.choice, Quot.sound}` | Lean kernel/runtime | none | yes (for the v2 canonical core only) |
-| Default-deny: output bytes are unreachable unless a `ValidCapability` term is built | `default_deny` | Lean theorem | as above | none | yes |
+| An `Allow` implies a parsed AST + a `ValidApproval` witness, and the output is the canonical serialization of that witness | `SealV2/DecideTheorems.lean` non_bypass | Lean theorem, axiom-gated `{propext, Classical.choice, Quot.sound}` | Lean kernel/runtime | none | yes (for the v2 canonical core only) |
+| Default-deny: output bytes are unreachable unless a `ValidApproval` term is built | `default_deny` | Lean theorem | as above | none | yes |
 | Canonical serialize/parse roundtrip is self-consistent and deterministic | `canonical_roundtrip` | Lean theorem | as above | round-trip fidelity in-core is NOT parse-equivalence to the target server (A2) | yes |
 | Approval lifecycle: issue -> target-bind -> one-shot consume -> TTL expiry, no replay after expiry | `LifecycleTheorems.lean` | Lean theorem | as above | A6 cross-restart durability | yes |
 | Ed25519 signature verification over canonical `(target, session, issuedAt, expiry, nonce)` signed-message bytes | `SealV2/Crypto.lean` `ed25519Verify` (`@[extern]`, TweetNaCl leaf) | code + trusted crypto leaf | TweetNaCl verify computes the cofactorless group equation; it does **not** enforce the RFC 8032 §5.1.7 S-range check, so signatures are malleable — see **A3-S** | S-range/malleability deviation: **A3-S** below (not "none"). Blast radius bounded — replay identity is the nonce, not the signature | yes (with A3-S stated) |
@@ -48,7 +48,7 @@ profile boundary, working as specified.
 
 ## MCP action binding (define it, do not surprise the reviewer)
 
-seal's capability abstraction uses an **`action`** field. Standard MCP
+seal's approval abstraction uses an **`action`** field. Standard MCP
 `tools/call` carries `params.name` + `params.arguments`; seal additionally reads
 `params.action`. This is a seal extension, not a change to MCP. The binding:
 
@@ -57,7 +57,7 @@ MCP wire request:
   { "method": "tools/call",
     "params": { "name": <tool>, "action": <action>, "arguments": { ... } } }
 
-Capability target:
+Approval target:
   tool   <- params.name
   action <- params.action
   args   <- selected fields of params.arguments

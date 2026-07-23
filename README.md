@@ -75,7 +75,7 @@ For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.
 ## Demos
 
 - `python3 demo/blocked_call_smoke.py` — block, approve, allow-once, block again, against a mock MCP server. Needs only python3 and a built `seal` (`bash c/build.sh && lake build`).
-- `python3 demo/ttl_demo.py` — default-deny, one-shot tickets, and TTL expiry live against the official MCP reference server. Additionally needs Node/npx (fetches `@modelcontextprotocol/server-everything` once).
+- `python3 demo/ttl_demo.py` — default-deny, one-shot approvals, and TTL expiry live against the official MCP reference server. Additionally needs Node/npx (fetches `@modelcontextprotocol/server-everything` once).
 
 ## The Seal family
 

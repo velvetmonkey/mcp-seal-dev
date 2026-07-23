@@ -82,7 +82,7 @@ theorem allow_implies_witness_signature_verified (raw : RawBytes)
     (state : ApprovalState) (out : CanonicalBytes)
     (hallow : decide raw state = Decision.Allow out) :
     ∃ ast, parse raw = some ast ∧
-      ∃ witness : ValidCapability ast state,
+      ∃ witness : ValidApproval ast state,
         verifySignature state.publicKey witness.approval = true ∧
         out = serialize (Sigma.mk ast witness) := by
   obtain ⟨ast, hparse, witness, hout⟩ := non_bypass raw state out hallow

@@ -32,8 +32,8 @@ file:line locations are indexed in
 | 1 | **Complete mediation**: every guarded invocation passes the monitor | MITM transport: only `tools/call` inspected, all else relayed unchanged; `decide` is the single entry to Allow | **Architectural** (see note) |
 | 2 | **Non-bypass**: `Allow` only via parse -> validate -> serialize | `non_bypass`, `decide_emit_unique` | Proven |
 | 3 | **Default deny**: malformed / unmatched / expired / unsigned / replayed / non-canonical block | `default_deny`; M1 strict parser total + fail-closed (`parse raw = some ast -> IsCanonical ast`) | Proven |
-| 4 | **Target binding**: approval for A cannot authorize B | `approval_binds_to_target` (v1 core); v2 `ValidCapability` witness binds exact target | Proven |
-| 5 | **Session binding**: approval scoped to a session | `ValidCapability` witness binds session | Proven |
+| 4 | **Target binding**: approval for A cannot authorize B | `approval_binds_to_target` (v1 core); v2 `ValidApproval` witness binds exact target | Proven |
+| 5 | **Session binding**: approval scoped to a session | `ValidApproval` witness binds session | Proven |
 | 6 | **One-shot consume + approval expiry**: a consumed (v1) or expired approval is rejected at validation | v1 one-shot consumption; `valid_capability_has_unexpired_approval` | Proven |
 | 6b | **Cross-message replay set + TTL cap**: a re-presented nonce is refused and stale approvals are capped | v2 A3 `validateAndConsumeWithStore`, `ttlWithinCap`, `nonceConsumed` over an in-memory, per-session fail-closed replay store (`listReplayStore`; cross-restart persistence is on the roadmap) | Host-enforced, fail-closed; the no-replay-after-consume lifecycle invariant (A5, state monotonicity) is on the sprint plan, not yet a theorem |
 | 7 | **Canonical signed approval**: signature over exact canonical `(target, session, issuedAt, expiry, nonce)` bytes | `signed_parse_canonical` (byte-guard: `raw == serializeAst` + `eq_of_beq`) | Proven |
@@ -61,7 +61,7 @@ scoped to the `tools/call` boundary.** We do not claim "complete" as a proof.
 
 ### Proof-carrying pipeline (v2)
 - **M1 parse** `RawBytes -> Option AST`: total, fail-closed; canonical decimal grammar; `IsCanonical` proven on success.
-- **M2 validate** `AST -> ApprovalState -> Option (Σ ast, ValidCapability ast state)`: success returns a proof-carrying witness binding request, tool spec, exact target, exact approval, session, `consumed = false`, expiry, signature.
+- **M2 validate** `AST -> ApprovalState -> Option (Σ ast, ValidApproval ast state)`: success returns a proof-carrying witness binding request, tool spec, exact target, exact approval, session, `consumed = false`, expiry, signature.
 - **M3 serialize**: one canonical serializer for output bytes and the signed-message shape; roundtrip + canonicality proven.
 - **M4 decide** `RawBytes -> ApprovalState -> Decision`: single fail-closed emit path.
 

@@ -3,14 +3,14 @@
 M2 implements constructive validation:
 
 ```lean
-validate : AST -> ApprovalState -> Option (Σ ast, ValidCapability ast state)
+validate : AST -> ApprovalState -> Option (Σ ast, ValidApproval ast state)
 ```
 
-Success returns a proof-carrying witness. Failure returns `none`, so parse-valid but policy-invalid payloads cannot produce a `ValidCapability` term.
+Success returns a proof-carrying witness. Failure returns `none`, so parse-valid but policy-invalid payloads cannot produce a `ValidApproval` term.
 
 ## Witness contents
 
-`ValidCapability ast state` carries:
+`ValidApproval ast state` carries:
 
 - decoded `tools/call` request from `ast`
 - matching tool spec and allowed action
