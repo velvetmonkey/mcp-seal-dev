@@ -168,6 +168,13 @@ root = "Test.ClassifyEnum"
 name = "escape_events_show"
 root = "Test.EscapeEventsShow"
 
+# Nonce ledger: fail-closed generation pin SHOW (GREEN honest run + honest
+# limits / RED --tamper: deleted replay check, generation-blind gate,
+# fenceless executor).
+[[lean_exe]]
+name = "nonce_ledger_show"
+root = "Test.NonceLedgerShow"
+
 [[lean_exe]]
 name = "field_warrant_tests"
 root = "Test.FieldWarrant"
