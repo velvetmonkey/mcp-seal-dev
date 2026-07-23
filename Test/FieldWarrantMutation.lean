@@ -18,11 +18,18 @@ runs a reusable *negative witness* over the whole control corpus
    (flips-under-signature-mutant, gates-that-flip-it) and check it matches the
    declared reason (`Control.profileMatches`). A mismatch is a control passing
    for the wrong reason — the machine form of frisk F1.
-3. **Claim-list join** — a HAND-AUTHORED list of every signed field that MUST
-   have a profile-passing signature witness. Existence in the corpus is not
-   adequacy: a required field with no passing witness renders LOUDLY (`MISSING`)
-   and fails the run, rather than silently not appearing.
-4. **Frisk reproduction** — run the same profile over the pre-F1 naive-forgery
+3. **Field adequacy** (frisk F-HARNESS-1 repair) — each control's declared
+   `field` is checked against the DERIVED perturbation set (`envDiff` vs the
+   mint-verified preimage). A control cannot claim a field it does not touch.
+4. **Claim-list join** — a HAND-AUTHORED list of every signed field that MUST
+   have a profile-passing signature witness. The join is keyed on the DERIVED
+   perturbation singleton, not the label string: existence is not adequacy,
+   and a mislabelled witness cannot satisfy a required field. A required field
+   with no passing witness renders LOUDLY (`MISSING`) and fails the run.
+5. **Coverage partition** (frisk F-HARNESS-2 repair) — every label `envDiff`
+   can emit must be either a required signature claim or an explicitly named
+   gap; dropping an entry from `requiredSignatureFields` fails LOUDLY.
+6. **Frisk reproduction** — run the same profile over the pre-F1 naive-forgery
    corpus and count how many pass for the wrong reason, recovering frisk F1's
    9-of-14 mechanically.
 -/
@@ -44,16 +51,60 @@ def reproducesSuiteVerdict (c : Control) : Bool :=
   let verified := (verifyEffect authority c.reg c.e c.sig).isSome
   let allGatesPass := allGates.all (fun g => gateValue g c.med c.st c.e)
   match c.reason with
+  -- `allGatesPass` here is PROVEN redundant with the profile section's
+  -- `flipSig` (theorem `flipSig_implies_allGatesPass` below) but KEPT: the
+  -- drift guard must stand alone as an interlock if the profile section is
+  -- ever edited.
   | .signature => blocked && !verified && allGatesPass
   | .gate g => blocked && verified && (gateValue g c.med c.st c.e == false)
   | .registry => blocked && !verified
 
-/-- The HAND-AUTHORED adequacy claim: every signed field that must carry a
-    step-level signature witness. Joined against the generated corpus below;
-    a field here with no profile-passing `.signature` control renders LOUDLY. -/
-def requiredSignatureFields : List String :=
-  ["keyId", "nonce", "issuedAt", "expiresAt", "line", "adapterType",
-   "adapterVersion", "policyVersion", "effectPresence"]
+/-- `M_sig` (or the identity mutant) can only reach `decide` — and thus
+    Allow — through the FULL gate conjunction, so a mutant Allow forces every
+    gate to pass. -/
+theorem mutant_allow_implies_gates
+    (neuter : Bool) (auth : ByteArray) (reg : PrincipalRegistry)
+    (med : AdapterId) (e : EffectEnvelope) (sig : String) (st : ApprovalState)
+    (h : outAllow (mutantStep neuter [] auth reg med e sig st) = true) :
+    allGates.all (fun g => gateValue g med st e) = true := by
+  simp only [mutantStep] at h
+  by_cases hgates : (allGates.all fun g => gateValue g med st e) = true
+  · exact hgates
+  · exfalso
+    -- `[].contains g || x` is definitionally `x`, so the mutant's gate
+    -- conjunction (with `disabled = []`) is the plain one.
+    have hb : (allGates.all fun g => List.contains [] g || gateValue g med st e) = false :=
+      Bool.eq_false_iff.mpr (fun hx => hgates hx)
+    rw [hb] at h
+    simp [outAllow] at h
+
+/-- FRISK STRUCTURAL NOTE, settled: for a Blocked control, `flipSig = true`
+    already implies every gate passes (the drift guard's `allGatesPass` clause
+    for `.signature` is redundant with the profile section). Proven, and the
+    clause is kept anyway as an independent interlock. -/
+theorem flipSig_implies_allGatesPass (c : Control)
+    (hbase : c.baseOutcome = false) (hflip : c.flipSig = true) :
+    allGates.all (fun g => gateValue g c.med c.st c.e) = true := by
+  unfold Control.flipSig at hflip
+  rw [hbase] at hflip
+  exact mutant_allow_implies_gates true authority c.reg c.med c.e c.sig c.st
+    (by revert hflip
+        cases outAllow (mutantStep true [] authority c.reg c.med c.e c.sig c.st) <;> simp)
+
+/-- Every label `envDiff` can emit, DERIVED from `envDiff` itself: diff a
+    fully-perturbed probe (every scalar seat and every claim sub-field moved)
+    plus the presence flip against the warrant base. Feeds the COVERAGE
+    PARTITION below (frisk F-HARNESS-2): each derivable label must be either
+    a required signature claim or an explicitly named gap — dropping an entry
+    from `requiredSignatureFields` now fails LOUDLY. -/
+def envDiffLabels : List String :=
+  envDiff
+    { keyId := "probe", nonce := forgedNonce, issuedAt := 6, expiresAt := 101
+      line := spacedRaw, adapterType := "probe", adapterVersion := "probe"
+      session := "probe", policyVersion := "probe"
+      effect := some { resource := "probe", action := "probe", args := "probe" } }
+    baseEnvelope
+  ++ envDiff { baseEnvelope with effect := none } baseEnvelope
 
 /-- Signed material with NO step-level signature witness — the NAMED GAPS, each
     with its REASON. Witnessed instead by MESSAGE DISTINCTNESS (recomputed
@@ -110,16 +161,37 @@ def main : IO UInt32 := do
     let sens := (c.sensGates.map (·.name))
     IO.println s!"{if ok then "PASS" else "FAIL"}  [{c.reason.describe}] {c.name}: flipSig={c.flipSig} sensGates={sens}"
 
-  IO.println "\n== CLAIM-LIST JOIN (every required field has a passing signature witness) =="
+  IO.println "\n== FIELD ADEQUACY (derived perturbation matches the declared field) =="
+  for c in corpus do
+    let ok := c.fieldAdequate
+    if !ok then fails := fails + 1
+    IO.println s!"{if ok then "PASS" else "FAIL"}  [{c.reason.describe}] {c.name}: declared={c.field} derived={c.perturbedFields}"
+
+  IO.println "\n== CLAIM-LIST JOIN (keyed on the DERIVED perturbation, not the label) =="
   for field in requiredSignatureFields do
     let witnesses := corpus.filter (fun c =>
-      c.field == field && c.reason == Reason.signature && c.profileMatches)
+      c.reason == Reason.signature && c.profileMatches &&
+      c.sigAdequate && c.perturbedFields == [field])
     match witnesses with
     | [] =>
         fails := fails + 1
         IO.println s!"FAIL  MISSING SIGNATURE WITNESS: {field}"
     | w :: _ =>
-        IO.println s!"PASS  {field}: witnessed by \"{w.name}\""
+        IO.println s!"PASS  {field}: witnessed by \"{w.name}\" (derived={w.perturbedFields})"
+
+  IO.println "\n== COVERAGE PARTITION (every derivable field label claimed or gap-named) =="
+  let gapFields := encodingOnlyFields.map (·.1)
+  for lbl in envDiffLabels do
+    let claimed := requiredSignatureFields.contains lbl
+    let gapped := gapFields.contains lbl
+    if claimed && gapped then
+      fails := fails + 1
+      IO.println s!"FAIL  {lbl}: BOTH claimed and gap-named (partition broken)"
+    else if !claimed && !gapped then
+      fails := fails + 1
+      IO.println s!"FAIL  {lbl}: UNCLAIMED — neither a required signature claim nor a named gap"
+    else
+      IO.println s!"PASS  {lbl}: {if claimed then "required signature claim" else "named gap"}"
 
   IO.println "\n== NAMED GAPS (no step-level sig control — MESSAGE DISTINCTNESS + kernel proofs) =="
   for (field, why) in encodingOnlyFields do
@@ -145,7 +217,7 @@ def main : IO UInt32 := do
   let pct := wrongReason * 100 / naiveCorpus.length
   IO.println s!"  = {pct}% (frisk hand-analysis said 9/14; council threshold was ≥20% more than honest)"
 
-  IO.println s!"\nnegative-witness harness: {fails} failures across drift+profile+claim-list+gap"
+  IO.println s!"\nnegative-witness harness: {fails} failures across drift+profile+adequacy+claim-list+partition+gap"
   if fails == 0 then
     IO.println "REPAIRED CORPUS: 0 controls pass for the wrong reason; every required field witnessed."
   pure (if fails == 0 then 0 else 1)

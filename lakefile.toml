@@ -156,3 +156,7 @@ root = "Test.FieldWarrant"
 [[lean_exe]]
 name = "field_warrant_mutation"
 root = "Test.FieldWarrantMutation"
+
+[[lean_exe]]
+name = "field_warrant_dishonest_probe"
+root = "Test.FieldWarrantDishonest"

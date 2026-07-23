@@ -205,6 +205,14 @@ structure Control where
   med : AdapterId
   reg : PrincipalRegistry
   reason : Reason
+  /-- The envelope this control's `sig` was actually MINTED over — the diff
+      base for the DERIVED perturbation set (frisk F-HARNESS-1 repair). For a
+      `.signature` control this is the honestly-signed preimage the forgery
+      departed from; `sigAdequate` mechanically re-verifies `sig` over it, so
+      an invented preimage cannot pass. Gate/registry rows ignore it (their
+      sig signs `e` itself; their perturbation is measured against
+      `baseEnvelope`). -/
+  mintedE : EffectEnvelope := baseEnvelope
 
 /-- Real value of a named gate for a control's envelope + verifier config. -/
 def gateValue : GateSel → AdapterId → ApprovalState → EffectEnvelope → Bool
@@ -291,6 +299,124 @@ def Control.profileMatches (c : Control) : Bool :=
   | .gate g => (!c.flipSig) && c.gateFalseSet.contains g && c.gatesAreSoleBlocker
   | .registry => (!c.flipSig) && c.sensGates.isEmpty && (!c.gatesAreSoleBlocker)
 
+/-! ## Derived perturbation (frisk F-HARNESS-1 repair)
+
+The claim-list join used to key on `Control.field` — an UNVERIFIED string —
+so a genuine signature red could claim credit for a field it never touches
+(the frisk's DISHONEST-A). The repair: DERIVE the perturbed field set by
+diffing the presented envelope against the envelope the signature was minted
+over, and key the join on that derived set. The label becomes a checked
+display name, not a trust root. -/
+
+/-- Field-labelled diff of the F3 claim seat (presence flip first). -/
+def claimDiff : Option EffectClaim → Option EffectClaim → List String
+  | none, none => []
+  | some _, none => ["effectPresence"]
+  | none, some _ => ["effectPresence"]
+  | some a, some b =>
+      (if a.resource != b.resource then ["effect.resource"] else []) ++
+      (if a.action != b.action then ["effect.action"] else []) ++
+      (if a.args != b.args then ["effect.args"] else [])
+
+/-- Field-labelled diff of two envelopes: one label per signed seat that
+    differs. Completeness against structure growth is NOT assumed here — the
+    `patchField` roundtrip in `sigAdequate` closes that hole mechanically. -/
+def envDiff (e base : EffectEnvelope) : List String :=
+  (if e.keyId != base.keyId then ["keyId"] else []) ++
+  (if e.nonce != base.nonce then ["nonce"] else []) ++
+  (if e.issuedAt != base.issuedAt then ["issuedAt"] else []) ++
+  (if e.expiresAt != base.expiresAt then ["expiresAt"] else []) ++
+  (if e.line != base.line then ["line"] else []) ++
+  (if e.adapterType != base.adapterType then ["adapterType"] else []) ++
+  (if e.adapterVersion != base.adapterVersion then ["adapterVersion"] else []) ++
+  (if e.session != base.session then ["session"] else []) ++
+  (if e.policyVersion != base.policyVersion then ["policyVersion"] else []) ++
+  claimDiff e.effect base.effect
+
+/-- Copy ONE named signed field from `src` onto `dst`; `none` for an unknown
+    label. Used by the roundtrip check: patching the single derived field onto
+    the minted envelope must reproduce the forgery under the DERIVED `BEq`
+    over the WHOLE structure — so a field `envDiff` cannot see (e.g. a seat
+    added to `EffectEnvelope` later without updating `envDiff`) cannot hide a
+    second perturbation. -/
+def patchField (f : String) (src dst : EffectEnvelope) : Option EffectEnvelope :=
+  match f with
+  | "keyId" => some { dst with keyId := src.keyId }
+  | "nonce" => some { dst with nonce := src.nonce }
+  | "issuedAt" => some { dst with issuedAt := src.issuedAt }
+  | "expiresAt" => some { dst with expiresAt := src.expiresAt }
+  | "line" => some { dst with line := src.line }
+  | "adapterType" => some { dst with adapterType := src.adapterType }
+  | "adapterVersion" => some { dst with adapterVersion := src.adapterVersion }
+  | "session" => some { dst with session := src.session }
+  | "policyVersion" => some { dst with policyVersion := src.policyVersion }
+  | "effectPresence" => some { dst with effect := src.effect }
+  | "effect.resource" =>
+      match src.effect, dst.effect with
+      | some s, some d => some { dst with effect := some { d with resource := s.resource } }
+      | _, _ => none
+  | "effect.action" =>
+      match src.effect, dst.effect with
+      | some s, some d => some { dst with effect := some { d with action := s.action } }
+      | _, _ => none
+  | "effect.args" =>
+      match src.effect, dst.effect with
+      | some s, some d => some { dst with effect := some { d with args := s.args } }
+      | _, _ => none
+  | _ => none
+
+/-- The reference envelope a control's perturbation is measured against:
+    the signature's true preimage for `.signature` rows (mint-checked in
+    `sigAdequate`), the warrant base for gate/registry rows (whose own sig
+    signs `e` itself). -/
+def Control.diffBase (c : Control) : EffectEnvelope :=
+  match c.reason with
+  | .signature => c.mintedE
+  | _ => baseEnvelope
+
+/-- The DERIVED perturbed-field set — what the control actually touches,
+    computed from envelope bytes, not read off a label. -/
+def Control.perturbedFields (c : Control) : List String :=
+  envDiff c.e c.diffBase
+
+/-- ADEQUACY for a `.signature` control — the label is derived-checked, never
+    trusted (frisk F-HARNESS-1):
+
+    1. **Mint validity** — `sig` genuinely verifies over `mintedE` under the
+       control's own registry, so the diff base cannot be invented;
+    2. **Singleton** — the forgery differs from the minted envelope in EXACTLY
+       ONE derived field, and that field is the declared one;
+    3. **Patch roundtrip** — copying that single field from the forgery onto
+       the minted envelope reproduces the forgery under whole-structure `BEq`,
+       so a seat `envDiff` misses cannot smuggle a second perturbation;
+    4. **Bytes move** — the signed message bytes actually differ, tying the
+       perturbation to the signature domain. -/
+def Control.sigAdequate (c : Control) : Bool :=
+  let mintValid := (verifyEffect authority c.reg c.mintedE c.sig).isSome
+  let singleton :=
+    match envDiff c.e c.mintedE with
+    | [f] =>
+        f == c.field &&
+        (match patchField f c.e c.mintedE with
+         | some patched => patched == c.e
+         | none => false)
+    | _ => false
+  let bytesMove := effectMessage authority c.e != effectMessage authority c.mintedE
+  mintValid && singleton && bytesMove
+
+/-- Label adequacy for the WHOLE corpus. `.signature` rows get the full
+    derived check; gate/registry rows must at least name a field they
+    genuinely perturb relative to the warrant base (`effect.claim` is the
+    umbrella label for the all-empty claim row, where every sub-field moves
+    at once). -/
+def Control.fieldAdequate (c : Control) : Bool :=
+  match c.reason with
+  | .signature => c.sigAdequate
+  | _ =>
+      let d := envDiff c.e baseEnvelope
+      d.contains c.field ||
+      (c.field == "effect.claim" && !d.isEmpty && d.all (·.startsWith "effect."))
+
 /-- **The authoritative negative-control corpus** — every step-executing row of
     the SHOW suite, as data. 15 gate reds, 1 registry fail-closed, 11 signature
     reds. The two GREEN positives and the pure-encoding MESSAGE DISTINCTNESS
@@ -363,7 +489,8 @@ def corpus : List Control :=
   , { name := "forged adapterType=mcp2 (absent-form base)", field := "adapterType"
       e := { baseEnvelope with effect := none, adapterType := "mcp2" }, sig := sigNoEffectClaim
       st := baseState, med := { type := "mcp2", version := "2025-06-18" }
-      reg := registry, reason := .signature }
+      reg := registry, reason := .signature
+      mintedE := { baseEnvelope with effect := none } }
   , { name := "forged adapterVersion=2025-06-19", field := "adapterVersion"
       e := { baseEnvelope with adapterVersion := "2025-06-19" }, sig := sigBase
       st := baseState, med := { type := "mcp", version := "2025-06-19" }
@@ -384,7 +511,19 @@ def corpus : List Control :=
       st := baseState, med := mediator, reg := registry, reason := .signature }
   , { name := "forged effect presence none→some", field := "effectPresence"
       e := baseEnvelope, sig := sigNoEffectClaim
-      st := baseState, med := mediator, reg := registry, reason := .signature } ]
+      st := baseState, med := mediator, reg := registry, reason := .signature
+      mintedE := { baseEnvelope with effect := none } } ]
+
+/-- The HAND-AUTHORED adequacy claim: every signed field that must carry a
+    step-level signature witness. Lives with the corpus so both the mutation
+    harness and the dishonest-control probe join against the SAME list; still
+    hand-authored, independent of the corpus rows. The mutation harness's
+    COVERAGE PARTITION cross-checks it against every label `envDiff` can emit,
+    so dropping an entry fails LOUDLY instead of silently shrinking coverage
+    (frisk F-HARNESS-2). -/
+def requiredSignatureFields : List String :=
+  ["keyId", "nonce", "issuedAt", "expiresAt", "line", "adapterType",
+   "adapterVersion", "policyVersion", "effectPresence"]
 
 /-- The naive one-signature forgery for a field, reusing `sigBase` against the
     base verifier config — the OLD (pre-F1) control shape. Used only by the
