@@ -148,3 +148,8 @@ root = "Test.V2VerifyLine"
 [[lean_exe]]
 name = "v2_lifecycle_tests"
 root = "Test.V2Lifecycle"
+
+# K3/K4: STEP 0 enumerator + SHOW control for the classify seam.
+[[lean_exe]]
+name = "classify_enum"
+root = "Test.ClassifyEnum"
