@@ -11,6 +11,7 @@ import Seal.SignedPolicy
 import Seal.EffectCommitment
 import Seal.GuardTheorems
 import SealV2.TamperTheorems
+import SealV2.ClassifyTransport
 
 #print axioms SealCore.default_deny_never_allowed
 #print axioms SealCore.no_allow_guarded_without_matching_approval_in_state
@@ -77,5 +78,16 @@ import SealV2.TamperTheorems
 #print axioms SealV2.tampered_approvals_validate_none
 #print axioms SealV2.tampered_approvals_deny
 #print axioms SealV2.allow_implies_witness_signature_verified
+
+-- K3/K4: the classify-seam characterisation capstones
+#print axioms SealV2.ClassifyTransport.classes_partition
+#print axioms SealV2.ClassifyTransport.strictCallShape_eq_toolsCall?
+#print axioms SealV2.ClassifyTransport.forwarded_iff_escapes
+#print axioms SealV2.ClassifyTransport.decided_iff_mediated
+#print axioms SealV2.ClassifyTransport.forwarded_never_decided
+#print axioms SealV2.ClassifyTransport.lenient_extends_strict
+#print axioms SealV2.ClassifyTransport.mediated_lenient
+#print axioms SealV2.ClassifyTransport.widened_fail_closed
+#print axioms SealV2.ClassifyTransport.widened_relay_verbatim
 
 def main : IO UInt32 := pure 0
