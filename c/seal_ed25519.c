@@ -41,6 +41,30 @@ LEAN_EXPORT uint8_t lean_seal_ed25519_verify(b_lean_obj_arg pk_obj,
     const uint8_t *msg = lean_sarray_cptr(msg_obj);
     const uint8_t *sig = lean_sarray_cptr(sig_obj);
 
+    /* RFC 8032 sec 5.1.7 step 1: decode the second signature half as an integer
+     * S "in the range 0 <= s < L"; if S is out of range the signature is invalid.
+     * Vendored TweetNaCl crypto_sign_open (c/tweetnacl.c:796) feeds S straight to
+     * scalarbase with no range test, which per RFC 8032 sec 8.4 is exactly what
+     * makes an Ed25519 verifier malleable (S' = S + m*L verifies too). We enforce
+     * the check HERE, above the leaf, so the vendored file stays byte-for-byte
+     * upstream. sig[32..63] is S in little-endian; L is the group order. */
+    {
+        /* L = 2^252 + 27742317777372353535851937790883648493, little-endian. */
+        static const uint8_t ED25519_L[32] = {
+            0xed,0xd3,0xf5,0x5c,0x1a,0x63,0x12,0x58,0xd6,0x9c,0xf7,0xa2,0xde,0xf9,0xde,0x14,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x10 };
+        const uint8_t *S = sig + 32;
+        /* Lexicographic compare from the most-significant byte: reject unless
+         * S < L. Operates on public signature bytes, so timing is not secret. */
+        int lt = 0, gt = 0;
+        for (int i = 31; i >= 0; i--) {
+            int s = S[i], l = ED25519_L[i];
+            lt |= (~gt) & (s < l);
+            gt |= (~lt) & (s > l);
+        }
+        if (!lt) return 0;  /* S >= L (or S == L): out of range, invalid. */
+    }
+
     unsigned long long smlen = (unsigned long long)sig_len + (unsigned long long)msg_len;
     uint8_t *sm = (uint8_t *)malloc((size_t)smlen ? (size_t)smlen : 1);
     uint8_t *m  = (uint8_t *)malloc((size_t)smlen ? (size_t)smlen : 1);
