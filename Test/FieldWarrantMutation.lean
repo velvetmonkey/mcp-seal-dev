@@ -106,26 +106,9 @@ def envDiffLabels : List String :=
     baseEnvelope
   ++ envDiff { baseEnvelope with effect := none } baseEnvelope
 
-/-- Signed material with NO step-level signature witness — the NAMED GAPS, each
-    with its REASON. Witnessed instead by MESSAGE DISTINCTNESS (recomputed
-    below) plus the kernel injectivity proofs. Listed EXPLICITLY so the gap
-    renders rather than hides.
-
-    * `authority` — not an `EffectEnvelope` field (config trust root threaded
-      separately); no per-field step forgery to construct.
-    * `effect.resource/action/args` — `effectGate` pins a present claim to
-      `deriveEffect` of the UNCHANGED signed line, so no verifier config makes
-      the gate pass while only a sub-field's signature discriminates.
-    * `session` — coupled into the decision layer's SIGNED approval
-      (`approvalLiveFor` re-verifies the approval, which covers session), so no
-      state alignment isolates the envelope signature at the step without
-      minting a fresh approval fixture. -/
-def encodingOnlyFields : List (String × String) :=
-  [ ("authority", "not an envelope field")
-  , ("effect.resource", "effectGate pins claim to deriveEffect(line)")
-  , ("effect.action", "effectGate pins claim to deriveEffect(line)")
-  , ("effect.args", "effectGate pins claim to deriveEffect(line)")
-  , ("session", "coupled to decide's signed approval") ]
+/- `encodingOnlyFields` (the NAMED GAPS) moved to `Test.FieldWarrantCorpus`:
+   `sigAdequate`'s GAP EXCLUSION and this harness's partition + gap sections
+   must read the SAME list (frisk F-ADEQ-1 repair). -/
 
 /-- MESSAGE DISTINCTNESS witnesses for the encoding-only fields, recomputed
     here so the claim-list is self-contained. Each pair differs ONLY in the
@@ -148,7 +131,20 @@ def encodingWitness (field : String) : Option Bool :=
 def main : IO UInt32 := do
   let mut fails : Nat := 0
 
-  IO.println "== DRIFT GUARD (corpus reproduces the SHOW-suite verdict) =="
+  IO.println "== ANCHOR VALIDATION (both mint anchors GREEN under canonical config) =="
+  -- The F-ADEQ-1 pin is only as good as the anchors: each canonical
+  -- (envelope, sig) pair must verify AND Allow under the canonical
+  -- state/mediator/registry. A corrupted anchor fails the WHOLE corpus here —
+  -- it cannot selectively fabricate one field's credit.
+  for (a, sig) in mintAnchors do
+    let verified := (verifyEffect authority registry a sig).isSome
+    let allowed := match effectStep authority registry mediator a sig baseState with
+      | .Allow _ => true | .Block => false
+    let ok := verified && allowed
+    if !ok then fails := fails + 1
+    IO.println s!"{if ok then "PASS" else "FAIL"}  anchor effect={if a.effect.isSome then "present" else "absent"}: sigVerifies={verified} step={if allowed then "Allow" else "Block"}"
+
+  IO.println "\n== DRIFT GUARD (corpus reproduces the SHOW-suite verdict) =="
   for c in corpus do
     let ok := reproducesSuiteVerdict c
     if !ok then fails := fails + 1
@@ -193,6 +189,22 @@ def main : IO UInt32 := do
     else
       IO.println s!"PASS  {lbl}: {if claimed then "required signature claim" else "named gap"}"
 
+  IO.println "\n== GAP EXCLUSION (a declared named-gap field can NEVER be credited) =="
+  -- Frisk F-ADEQ-1's forward-looking danger: a fabricated-base control
+  -- "closing" a named gap would defeat the gap machinery's whole purpose.
+  -- Assert the join yields NO witness for any gap field over the live corpus
+  -- (sigAdequate also refuses gap fields structurally; this is the join-level
+  -- interlock).
+  for (field, _) in encodingOnlyFields do
+    let credited := corpus.filter (fun c =>
+      c.reason == Reason.signature && c.profileMatches &&
+      c.sigAdequate && c.perturbedFields == [field])
+    match credited with
+    | [] => IO.println s!"PASS  {field}: no signature control credits the gap"
+    | w :: _ =>
+        fails := fails + 1
+        IO.println s!"FAIL  {field}: GAP CREDITED by \"{w.name}\" — named-gap machinery defeated"
+
   IO.println "\n== NAMED GAPS (no step-level sig control — MESSAGE DISTINCTNESS + kernel proofs) =="
   for (field, why) in encodingOnlyFields do
     match encodingWitness field with
@@ -217,7 +229,7 @@ def main : IO UInt32 := do
   let pct := wrongReason * 100 / naiveCorpus.length
   IO.println s!"  = {pct}% (frisk hand-analysis said 9/14; council threshold was ≥20% more than honest)"
 
-  IO.println s!"\nnegative-witness harness: {fails} failures across drift+profile+adequacy+claim-list+partition+gap"
+  IO.println s!"\nnegative-witness harness: {fails} failures across anchor+drift+profile+adequacy+claim-list+partition+gap-exclusion+gap"
   if fails == 0 then
     IO.println "REPAIRED CORPUS: 0 controls pass for the wrong reason; every required field witnessed."
   pure (if fails == 0 then 0 else 1)

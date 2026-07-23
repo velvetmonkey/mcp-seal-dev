@@ -143,6 +143,13 @@ def baseEnvelope : EffectEnvelope :=
     policyVersion := "policy-1"
     effect := some baseClaim }
 
+/-- The SECOND canonical mint anchor: the declared-absent green (GREEN #2 in
+    the SHOW suite — `effect := none`, signed presence byte). `sigNoEffectClaim`
+    is its honest signature. Together with `baseEnvelope`/`sigBase` these are
+    the ONLY diff bases a `.signature` control may measure against
+    (frisk F-ADEQ-1 repair — see `mintAnchors`). -/
+def absentAnchor : EffectEnvelope := { baseEnvelope with effect := none }
+
 /-- The old suite's line forgery / gate-red line: swaps to an fs.read call,
     so `deriveEffect` changes and `effectGate` trips. -/
 def swappedLine : String :=
@@ -206,12 +213,13 @@ structure Control where
   reg : PrincipalRegistry
   reason : Reason
   /-- The envelope this control's `sig` was actually MINTED over — the diff
-      base for the DERIVED perturbation set (frisk F-HARNESS-1 repair). For a
-      `.signature` control this is the honestly-signed preimage the forgery
-      departed from; `sigAdequate` mechanically re-verifies `sig` over it, so
-      an invented preimage cannot pass. Gate/registry rows ignore it (their
-      sig signs `e` itself; their perturbation is measured against
-      `baseEnvelope`). -/
+      base for the DERIVED perturbation set (frisk F-HARNESS-1 repair). NOT a
+      free choice: `sigAdequate` pins `(mintedE, sig)` to one of the TWO
+      canonical anchors (`mintAnchors`), because with a free `mintedE` the
+      author steers the credited field at will — the diff of two authored
+      envelopes is itself authored (frisk F-ADEQ-1, ATTACK-D). Gate/registry
+      rows ignore it (their sig signs `e` itself; their perturbation is
+      measured against `baseEnvelope`). -/
   mintedE : EffectEnvelope := baseEnvelope
 
 /-- Real value of a named gate for a control's envelope + verifier config. -/
@@ -299,14 +307,19 @@ def Control.profileMatches (c : Control) : Bool :=
   | .gate g => (!c.flipSig) && c.gateFalseSet.contains g && c.gatesAreSoleBlocker
   | .registry => (!c.flipSig) && c.sensGates.isEmpty && (!c.gatesAreSoleBlocker)
 
-/-! ## Derived perturbation (frisk F-HARNESS-1 repair)
+/-! ## Derived perturbation (frisk F-HARNESS-1 repair, hardened per F-ADEQ-1)
 
 The claim-list join used to key on `Control.field` — an UNVERIFIED string —
 so a genuine signature red could claim credit for a field it never touches
-(the frisk's DISHONEST-A). The repair: DERIVE the perturbed field set by
+(the frisk's DISHONEST-A). First repair: DERIVE the perturbed field set by
 diffing the presented envelope against the envelope the signature was minted
-over, and key the join on that derived set. The label becomes a checked
-display name, not a trust root. -/
+over, and key the join on that derived set. That MOVED the trust root rather
+than removing it: `mintedE` was author-supplied, so the diff of two authored
+envelopes was itself authored (frisk F-ADEQ-1, ATTACK-D fabricated a witness
+for the declared session gap). Second repair: pin the diff base to the two
+canonical `mintAnchors`, pin the registry keys, and structurally exclude
+named-gap fields from credit — the credited field is now a function of the
+presented envelope and validated corpus-singleton constants only. -/
 
 /-- Field-labelled diff of the F3 claim seat (presence flip first). -/
 def claimDiff : Option EffectClaim → Option EffectClaim → List String
@@ -365,6 +378,47 @@ def patchField (f : String) (src dst : EffectEnvelope) : Option EffectEnvelope :
       | _, _ => none
   | _ => none
 
+/-- Signed material with NO step-level signature witness — the NAMED GAPS, each
+    with its REASON. Witnessed instead by MESSAGE DISTINCTNESS (recomputed in
+    the mutation harness) plus the kernel injectivity proofs. Listed EXPLICITLY
+    so the gap renders rather than hides — and consumed by `sigAdequate`'s GAP
+    EXCLUSION: a field the harness admits is un-witnessable can NEVER be
+    credited by a signature control (frisk F-ADEQ-1 repair). Lives here, with
+    the corpus, so the exclusion and the partition read the SAME list.
+
+    * `authority` — not an `EffectEnvelope` field (config trust root threaded
+      separately); no per-field step forgery to construct.
+    * `effect.resource/action/args` — `effectGate` pins a present claim to
+      `deriveEffect` of the UNCHANGED signed line, so no verifier config makes
+      the gate pass while only a sub-field's signature discriminates.
+    * `session` — coupled into the decision layer's SIGNED approval
+      (`approvalLiveFor` re-verifies the approval, which covers session), so no
+      state alignment isolates the envelope signature at the step without
+      minting a fresh approval fixture. -/
+def encodingOnlyFields : List (String × String) :=
+  [ ("authority", "not an envelope field")
+  , ("effect.resource", "effectGate pins claim to deriveEffect(line)")
+  , ("effect.action", "effectGate pins claim to deriveEffect(line)")
+  , ("effect.args", "effectGate pins claim to deriveEffect(line)")
+  , ("session", "coupled to decide's signed approval") ]
+
+/-- The TWO canonical mint anchors — the ONLY `(mintedE, sig)` pairs a
+    `.signature` control may measure its perturbation against: the strong-form
+    green and the declared-absent green, each with its honest signature. Both
+    are re-validated GREEN (sig verifies, all gates pass, step Allows under the
+    canonical config) by the mutation harness's ANCHOR VALIDATION section.
+
+    This pin is the F-ADEQ-1 repair's load-bearing move: with `mintedE` free,
+    "carries a verifying signature" is satisfiable by unlimited distinct
+    envelopes (public test seed), so the credited field
+    `envDiff c.e c.mintedE` was a pure function of the author's `mintedE`
+    choice. Pinned, the credited field is a function of `c.e` and a validated
+    corpus-singleton constant — the frisk's own criterion. An anchor cannot be
+    corrupted selectively: breaking one breaks the green check for the whole
+    corpus, not just one field's credit. -/
+def mintAnchors : List (EffectEnvelope × String) :=
+  [(baseEnvelope, sigBase), (absentAnchor, sigNoEffectClaim)]
+
 /-- The reference envelope a control's perturbation is measured against:
     the signature's true preimage for `.signature` rows (mint-checked in
     `sigAdequate`), the warrant base for gate/registry rows (whose own sig
@@ -379,30 +433,43 @@ def Control.diffBase (c : Control) : EffectEnvelope :=
 def Control.perturbedFields (c : Control) : List String :=
   envDiff c.e c.diffBase
 
-/-- ADEQUACY for a `.signature` control — the label is derived-checked, never
-    trusted (frisk F-HARNESS-1):
+/-- ADEQUACY for a `.signature` control, v3 — the label is derived-checked and
+    the diff base is PINNED, never authored (frisk F-HARNESS-1 + F-ADEQ-1):
 
-    1. **Mint validity** — `sig` genuinely verifies over `mintedE` under the
-       control's own registry, so the diff base cannot be invented;
-    2. **Singleton** — the forgery differs from the minted envelope in EXACTLY
-       ONE derived field, and that field is the declared one;
-    3. **Patch roundtrip** — copying that single field from the forgery onto
-       the minted envelope reproduces the forgery under whole-structure `BEq`,
-       so a seat `envDiff` misses cannot smuggle a second perturbation;
-    4. **Bytes move** — the signed message bytes actually differ, tying the
+    1. **Anchor pin** — `(mintedE, sig)` is one of the two canonical
+       `mintAnchors`. Kills ATTACK-D/E: the author no longer chooses the other
+       side of the diff, so the credited field is a function of `c.e` alone.
+    2. **Key pin** — every registry entry carries the canonical test pubkey,
+       so mint validity cannot be met with an attacker-generated keypair
+       (frisk F-ADEQ-2).
+    3. **Mint validity** — `sig` genuinely verifies over `mintedE` under the
+       control's own registry (kills A2-style invented preimages, and with
+       the pins above it now means: a true signature over a canonical green).
+    4. **Singleton** — the forgery differs from the anchor in EXACTLY ONE
+       derived field, and that field is the declared one;
+    5. **Gap exclusion** — that field is NOT a declared named gap: a field the
+       harness admits is un-witnessable at the step level can never be
+       credited, so the named-gap machinery is structurally undefeatable.
+    6. **Patch roundtrip** — copying that single field from the forgery onto
+       the anchor reproduces the forgery under whole-structure `BEq`, so a
+       seat `envDiff` misses cannot smuggle a second perturbation;
+    7. **Bytes move** — the signed message bytes actually differ, tying the
        perturbation to the signature domain. -/
 def Control.sigAdequate (c : Control) : Bool :=
+  let anchorPinned := mintAnchors.any (fun a => c.mintedE == a.1 && c.sig == a.2)
+  let keysPinned := c.reg.all (fun k => k.pubkey == testPublicKeyHex)
   let mintValid := (verifyEffect authority c.reg c.mintedE c.sig).isSome
   let singleton :=
     match envDiff c.e c.mintedE with
     | [f] =>
         f == c.field &&
+        !(encodingOnlyFields.map (·.1)).contains f &&
         (match patchField f c.e c.mintedE with
          | some patched => patched == c.e
          | none => false)
     | _ => false
   let bytesMove := effectMessage authority c.e != effectMessage authority c.mintedE
-  mintValid && singleton && bytesMove
+  anchorPinned && keysPinned && mintValid && singleton && bytesMove
 
 /-- Label adequacy for the WHOLE corpus. `.signature` rows get the full
     derived check; gate/registry rows must at least name a field they
@@ -417,11 +484,91 @@ def Control.fieldAdequate (c : Control) : Bool :=
       d.contains c.field ||
       (c.field == "effect.claim" && !d.isEmpty && d.all (·.startsWith "effect."))
 
+/-! ## Generated signature rows (frisk F-ADEQ-1 repair, declaration removal)
+
+A `.signature` control used to DECLARE its label, its diff base and its mint
+signature — three authored objects checked only against each other, so each
+frisk moved the trust root one object over. The generated form removes the
+attribution-bearing declarations: a seed authors ONLY the perturbation and the
+verifier-side config alignment; the label, diff base and mint signature are
+OUTPUTS. The seed cannot lie about attribution — `field := envDiff e anchor`
+by construction — and it cannot fake a witness, because credit still requires
+the execution-measured sensitivity profile, which no input choice can forge
+for a gap-coupled field (that impossibility is exactly why the named gaps are
+gaps). The checks (`sigAdequate` etc.) remain authoritative over ANY `Control`
+value, generated or hand-built: generation shrinks the authored surface, the
+checks defend it. -/
+
+/-- Seed for ONE generated signature control. Authored inputs: the seat
+    perturbation (values must dodge the gates — e.g. issuedAt 6 stays inside
+    the freshness window) and the config alignment that lets every gate pass
+    over the forgery. Nothing here names a field or a mint base. -/
+structure SigSeed where
+  note : String := ""
+  tweak : EffectEnvelope → EffectEnvelope
+  st : ApprovalState := baseState
+  med : AdapterId := mediator
+  reg : PrincipalRegistry := registry
+  /-- Ride the declared-absent anchor (GREEN #2) instead of the strong form. -/
+  absentForm : Bool := false
+
+/-- Generate the control: anchor and mint signature come from the pinned
+    `mintAnchors` pair selected by `absentForm`; the label is DERIVED from the
+    diff. A seed whose tweak does not produce a singleton diff poisons its own
+    label (`NON-SINGLETON-SEED:…`), which fails `sigAdequate`/`fieldAdequate`
+    LOUDLY in the harness instead of vanishing. -/
+def genSigControl (s : SigSeed) : Control :=
+  let (anchor, sig) := if s.absentForm then (absentAnchor, sigNoEffectClaim)
+                       else (baseEnvelope, sigBase)
+  let e := s.tweak anchor
+  let field := match envDiff e anchor with
+    | [f] => f
+    | d => s!"NON-SINGLETON-SEED:{d}"
+  { name := s!"forged {field}{if s.note.isEmpty then "" else s!" ({s.note})"}"
+    field, e, sig
+    st := s.st, med := s.med, reg := s.reg
+    reason := .signature, mintedE := anchor }
+
+/-- The ten signature-red seeds — same envelopes, configs and coverage as the
+    previous hand-written rows, minus the authored label/base/mint.
+    NO session seed: session is coupled into the decision layer's SIGNED
+    approval (`approvalLiveFor` re-verifies the approval, which covers
+    session). Aligning `sessionGate` desyncs that approval, so `decide` blocks
+    independently of the envelope signature — no seed can pass the profile
+    without minting a fresh approval fixture. Named gap; witnessed at the
+    encoding level instead (`bytes[session]` + `effect_message_injective`),
+    and structurally excluded from credit by `sigAdequate`. -/
+def sigSeeds : List SigSeed :=
+  [ { note := "alice2 twin-registered, same pubkey"
+      tweak := fun a => { a with keyId := "alice2" }, reg := registryTwin }
+  , { note := "+1 bytes"
+      tweak := fun a => { a with nonce := forgedNonce } }
+  , { note := "6, still in freshness window"
+      tweak := fun a => { a with issuedAt := 6 } }
+  , { note := "101, still unexpired, nonzero"
+      tweak := fun a => { a with expiresAt := 101 } }
+  , { note := "whitespace variant, same derived effect"
+      tweak := fun a => { a with line := spacedRaw } }
+  , { note := "mcp2, mediator aligned, absent-form base"
+      tweak := fun a => { a with adapterType := "mcp2" }
+      med := { type := "mcp2", version := "2025-06-18" }, absentForm := true }
+  , { note := "2025-06-19, mediator aligned"
+      tweak := fun a => { a with adapterVersion := "2025-06-19" }
+      med := { type := "mcp", version := "2025-06-19" } }
+  , { note := "policy-1x, state aligned"
+      tweak := fun a => { a with policyVersion := "policy-1x" }
+      st := { baseState with policyVersion := "policy-1x" } }
+  , { note := "presence flip some→none"
+      tweak := fun a => { a with effect := none } }
+  , { note := "presence flip none→some"
+      tweak := fun a => { a with effect := some baseClaim }, absentForm := true } ]
+
 /-- **The authoritative negative-control corpus** — every step-executing row of
-    the SHOW suite, as data. 15 gate reds, 1 registry fail-closed, 11 signature
-    reds. The two GREEN positives and the pure-encoding MESSAGE DISTINCTNESS
-    rows are not here: greens are not negative controls, and the byte rows do
-    not execute a step (they compare `effectMessage` bytes directly). -/
+    the SHOW suite, as data. 13 gate reds, 1 registry fail-closed, 10 GENERATED
+    signature reds. The two GREEN positives and the pure-encoding MESSAGE
+    DISTINCTNESS rows are not here: greens are not negative controls, and the
+    byte rows do not execute a step (they compare `effectMessage` bytes
+    directly). -/
 def corpus : List Control :=
   -- GATE REDS (valid signature, one gate tripped)
   [ { name := "adapterType=cli", field := "adapterType"
@@ -469,50 +616,11 @@ def corpus : List Control :=
   -- REGISTRY fail-closed (no gate; verifyEffect none on unregistered id)
   , { name := "keyId=mallory (unregistered)", field := "keyId"
       e := { baseEnvelope with keyId := "mallory" }, sig := sigBase
-      st := baseState, med := mediator, reg := registry, reason := .registry }
-  -- SIGNATURE REDS (all gates pass, only the signature blocks)
-  , { name := "forged keyId=alice2 (twin-registered)", field := "keyId"
-      e := { baseEnvelope with keyId := "alice2" }, sig := sigBase
-      st := baseState, med := mediator, reg := registryTwin, reason := .signature }
-  , { name := "forged nonce", field := "nonce"
-      e := { baseEnvelope with nonce := forgedNonce }, sig := sigBase
-      st := baseState, med := mediator, reg := registry, reason := .signature }
-  , { name := "forged issuedAt=6 (in window)", field := "issuedAt"
-      e := { baseEnvelope with issuedAt := 6 }, sig := sigBase
-      st := baseState, med := mediator, reg := registry, reason := .signature }
-  , { name := "forged expiresAt=101 (unexpired)", field := "expiresAt"
-      e := { baseEnvelope with expiresAt := 101 }, sig := sigBase
-      st := baseState, med := mediator, reg := registry, reason := .signature }
-  , { name := "forged line (whitespace variant)", field := "line"
-      e := { baseEnvelope with line := spacedRaw }, sig := sigBase
-      st := baseState, med := mediator, reg := registry, reason := .signature }
-  , { name := "forged adapterType=mcp2 (absent-form base)", field := "adapterType"
-      e := { baseEnvelope with effect := none, adapterType := "mcp2" }, sig := sigNoEffectClaim
-      st := baseState, med := { type := "mcp2", version := "2025-06-18" }
-      reg := registry, reason := .signature
-      mintedE := { baseEnvelope with effect := none } }
-  , { name := "forged adapterVersion=2025-06-19", field := "adapterVersion"
-      e := { baseEnvelope with adapterVersion := "2025-06-19" }, sig := sigBase
-      st := baseState, med := { type := "mcp", version := "2025-06-19" }
-      reg := registry, reason := .signature }
-    -- NO session SIGNATURE RED: session is coupled into the decision layer's
-    -- SIGNED approval (`approvalLiveFor` re-verifies the approval's Ed25519
-    -- signature, which covers session). Aligning `sessionGate` desyncs that
-    -- approval, so `decide` blocks independently of the envelope signature —
-    -- the mutation harness proved no state alignment isolates session without
-    -- minting a fresh approval fixture. Named gap; witnessed at the encoding
-    -- level instead (`bytes[session]` + `effect_message_injective`).
-  , { name := "forged policyVersion=policy-1x (state aligned)", field := "policyVersion"
-      e := { baseEnvelope with policyVersion := "policy-1x" }, sig := sigBase
-      st := { baseState with policyVersion := "policy-1x" }, med := mediator
-      reg := registry, reason := .signature }
-  , { name := "forged effect presence some→none", field := "effectPresence"
-      e := { baseEnvelope with effect := none }, sig := sigBase
-      st := baseState, med := mediator, reg := registry, reason := .signature }
-  , { name := "forged effect presence none→some", field := "effectPresence"
-      e := baseEnvelope, sig := sigNoEffectClaim
-      st := baseState, med := mediator, reg := registry, reason := .signature
-      mintedE := { baseEnvelope with effect := none } } ]
+      st := baseState, med := mediator, reg := registry, reason := .registry } ]
+  -- SIGNATURE REDS (all gates pass, only the signature blocks) — GENERATED:
+  -- label, diff base and mint signature are outputs of `genSigControl`, not
+  -- authored row data (frisk F-ADEQ-1 repair).
+  ++ sigSeeds.map genSigControl
 
 /-- The HAND-AUTHORED adequacy claim: every signed field that must carry a
     step-level signature witness. Lives with the corpus so both the mutation
