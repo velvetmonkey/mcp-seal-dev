@@ -36,25 +36,10 @@ structure Entry where
   label : String
   line : String
 
+/-- Witness lines come from the module under test
+    (`SealV2.ClassifyTransport.mediatedWitness` etc.) — one definition, no
+    drift between the `#guard` pins there and this runtime control. -/
 def bom : String := "\uFEFF"
-
-/-- The golden mediated line (matches the perimeter Step-0 witness). -/
-def mediatedWitness : String :=
-  "{\"method\":\"tools/call\",\"params\":{\"name\":\"read_file\",\"arguments\":{\"path\":\"README.md\"}}}"
-
-/-- The three canonical escape∩lenient witnesses. -/
-def bomWitness : String := bom ++ mediatedWitness
-def caseWitness : String :=
-  "{\"method\":\"TOOLS/CALL\",\"params\":{\"name\":\"delete_all\",\"arguments\":{}}}"
-def batchWitness : String :=
-  "[{\"method\":\"tools/call\",\"params\":{\"name\":\"delete_all\",\"arguments\":{}}}]"
-
-/-- Escape-but-not-lenient (legitimate passthrough / junk). -/
-def listWitness : String := "{\"method\":\"tools/list\"}"
-def malformedWitness : String := "{oops"
-
-/-- Refused (monster decimal exponent, > maxExponentDigits digits). -/
-def monsterWitness : String := "{\"n\":1e9999999}"
 
 def methods : List String :=
   ["tools/call", "TOOLS/CALL", "Tools/Call", "tools/list", "initialize",
