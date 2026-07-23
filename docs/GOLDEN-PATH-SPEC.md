@@ -36,7 +36,9 @@ Structural guarantees of the generated policy:
 - **Every guard binds the full canonical arguments** (`target = full_arguments`),
   so an approval for `rm -rf /tmp/x` never authorizes `rm -rf /` — distinct
   argument bytes give distinct targets (structural half
-  `full_arguments_preimage_changes`; digest step is assumption A-CR).
+  `full_arguments_preimage_changes`; the digest step uses A-CR, the
+  idealised hash-injectivity assumption — strictly stronger than collision
+  resistance, see docs/ASSUMPTIONS.md).
 - **Duplicate manifest entries are safe.** If any entry for a name is
   dangerous, the name classifies guarded even if another entry says readonly
   (guard dominates allow — `guard_dominates_explicit_allow`; all scaffolded
@@ -125,8 +127,13 @@ never passed through the gate.
 2. **Annotations are trusted input.** See the row-1 caveat: `readOnlyHint`
    is the manifest author's claim, not a verified property.
 3. **Hash binding is A-CR.** "Different arguments ⇒ different target" is
-   proven at the pre-image level; the digest step assumes SHA-256 collision
-   resistance.
+   proven at the pre-image level; the digest step uses A-CR, an idealised
+   perfect-injectivity assumption about the hash — strictly stronger than
+   SHA-256 collision resistance and not satisfiable by any real fixed-output
+   hash over unbounded inputs. The digest conclusion holds in the idealised
+   collision-free model; in deployment it is the trust assumption that no
+   SHA-256 collision is findable for the relevant inputs, which Lean does
+   not prove (see docs/ASSUMPTIONS.md).
 4. **Crypto and glue are A3.** `ed25519Verify` correctness, the C/Rust
    transport, and key custody are TCB assumptions, same posture as
    `Ffi.lean`.

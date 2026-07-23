@@ -263,8 +263,10 @@ theorem encodeParts_toUTF8_injective :
 theorem assumptionEncInjective_holds : Seal.AssumptionEncInjective :=
   fun _ _ h => encodeParts_injective h
 
-/-- Stage-A commitment injectivity with A-ENC discharged: only A-CR and
-    A-COMPRESS remain as hypotheses. -/
+/-- Stage-A commitment injectivity with A-ENC discharged: only A-CR (the
+    idealised perfect-injectivity hash assumption — strictly stronger than
+    collision resistance, not satisfied by real SHA-256; see
+    `Seal/EffectCommitment.lean`) and A-COMPRESS remain as hypotheses. -/
 theorem effect_commitment_injective_of_cr_compress
     (hcr : Seal.AssumptionCR) (hcompress : Seal.AssumptionCompressInjective)
     (e₁ e₂ : Seal.Effect) (h : e₁.commitment = e₂.commitment) : e₁ = e₂ :=

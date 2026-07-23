@@ -32,11 +32,21 @@ The theorems below are conditional on FOUR named assumptions, stated as
 `Prop`-valued definitions and taken as hypotheses (never as axioms — the
 axiom gate stays `propext`/`Classical.choice`/`Quot.sound`):
 
-* `A-CR` (`AssumptionCR`): SHA-256 collision resistance, stated at the
-  lowercase-hex surface the system consumes. Hex encoding of a digest is
-  injective in reality, so this is exactly collision resistance; stating it
-  at the hex level avoids a separate (true but loop-shaped) `toHex`
-  injectivity proof over the runtime encoder.
+* `A-CR` (`AssumptionCR`): an IDEALISATION — perfect injectivity of the
+  digest pipeline, stated at the lowercase-hex surface the system consumes.
+  This is deliberately NOT computational collision resistance and is
+  strictly stronger than it: collision resistance says a collision is
+  infeasible to FIND; this premise says no collision EXISTS, which no
+  fixed-output hash over unbounded inputs can satisfy (pigeonhole), so
+  real SHA-256 does not satisfy it. Theorems conditional on A-CR hold in
+  the idealised collision-free model only and do NOT instantiate as
+  theorems about real SHA-256; the deployed guarantee is a TRUST
+  assumption (no SHA-256 collision is known or findable for the inputs
+  Seal hashes) that Lean does not and cannot prove. What the structure
+  buys, honestly: the cryptographic trust is isolated to this one named
+  leaf hypothesis. Stating it at the hex level avoids a separate (true
+  but loop-shaped) `toHex` injectivity proof over the runtime encoder.
+  See `docs/ASSUMPTIONS.md`.
 * `A-ENC` (`AssumptionEncInjective`): `encodeParts` is injective over
   `List String`. True (netstring frames are self-delimiting) and since K5
   PROVED in this repo — `Seal.Encoding.assumptionEncInjective_holds`
@@ -97,8 +107,15 @@ theorem preimage_shape (e : Effect) :
 
 /-! ## Named assumptions -/
 
-/-- A-CR: SHA-256 collision resistance over UTF-8 strings, at the
-    lowercase-hex surface (`(stableHashString ·).toHex = sha256HexStr ·`). -/
+/-- A-CR: idealised perfect injectivity of the digest pipeline over UTF-8
+    strings, at the lowercase-hex surface
+    (`(stableHashString ·).toHex = sha256HexStr ·`). Strictly stronger than
+    SHA-256 collision resistance: it asserts no collision EXISTS, which a
+    fixed-output hash over unbounded inputs cannot satisfy, so real SHA-256
+    does not satisfy this Prop. It is consumed only as a hypothesis — never
+    proved, never axiomatised — and theorems conditional on it hold in the
+    idealised collision-free model, not for real SHA-256. See the module
+    docstring and `docs/ASSUMPTIONS.md`. -/
 def AssumptionCR : Prop :=
   ∀ a b : String, (stableHashString a).toHex = (stableHashString b).toHex → a = b
 

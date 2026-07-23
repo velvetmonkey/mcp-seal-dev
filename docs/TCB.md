@@ -6,7 +6,7 @@ Seal keeps the proof boundary small, but deployment still has a TCB.
 
 - The Lean kernel and the stated axiom footprint.
 - The theorem statements and axiom gates in the Lean repositories.
-- The SHA-256 target-commitment assumption A-CR.
+- The target-commitment hash assumption A-CR — an idealised perfect-injectivity premise, strictly stronger than SHA-256 collision resistance and not satisfied by real SHA-256; deployment trusts that no SHA-256 collision is findable for the relevant inputs (see [ASSUMPTIONS.md](ASSUMPTIONS.md)).
 
 ## Trusted for deployment
 
