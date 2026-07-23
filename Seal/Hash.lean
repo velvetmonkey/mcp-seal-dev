@@ -20,14 +20,24 @@ def auditHashString (s : String) : Hash :=
 Each part `s` becomes `<charCount>:<s>`, and the frames are concatenated. A
 frame is self-delimiting — read the decimal length up to `:`, then take exactly
 that many characters as the datum — so distinct part-lists never share an
-encoding: `encodeParts` is injective over `List String`.
+encoding: `encodeParts` is injective over `List String`, and so is the map to
+the UTF-8 bytes the hash actually consumes. Both facts are proved IN THIS REPO:
+`Seal.Encoding.encodeParts_injective` and
+`Seal.Encoding.encodeParts_toUTF8_injective` (K5); the seal-host
+`Host/CapabilityAdequacy` proof predates them and still stands independently.
+
+CAUTION — deliberate divergence from prior art: the length prefix counts
+CHARACTERS (Unicode scalars), not bytes. djb netstrings
+(https://cr.yp.to/proto/netstrings.txt) count BYTES. A reimplementation that
+frames by byte count produces byte-identical encodings for DISTINCT part-lists
+against this one (`Seal.Encoding.cross_scheme_collision` pins the witness:
+char-framed `["é1","","aaaaaaaa"]` = byte-framed `["é","8:aaaaaaaa"]`). Any
+port of this framing MUST count characters.
 
 This replaces the previous `"|".intercalate parts`, which was NOT injective:
 any part containing the separator collided (e.g. `["a", "b"]` and `["a|b"]` both
 encoded to `"a|b"`), letting an attacker-supplied part-list alias a distinct
-authorized one before the hash even ran. The formal `Function.Injective
-encodeParts` proof is discharged in seal-host `Host/CapabilityAdequacy` as the
-structural half of the unconditional (all-pg, no `pg∈U`) capability theorem. -/
+authorized one before the hash even ran. -/
 def encodeParts (parts : List String) : String :=
   String.join (parts.map fun s => toString s.length ++ ":" ++ s)
 

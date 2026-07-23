@@ -38,9 +38,13 @@ axiom gate stays `propext`/`Classical.choice`/`Quot.sound`):
   at the hex level avoids a separate (true but loop-shaped) `toHex`
   injectivity proof over the runtime encoder.
 * `A-ENC` (`AssumptionEncInjective`): `encodeParts` is injective over
-  `List String`. True (netstring frames are self-delimiting); formally
-  discharged in seal-host `Host/CapabilityAdequacy`, named here rather than
-  re-proven so there is exactly one obligation.
+  `List String`. True (netstring frames are self-delimiting) and since K5
+  PROVED in this repo — `Seal.Encoding.assumptionEncInjective_holds`
+  (`Seal/EncodingInjective.lean`, which also proves injectivity of the UTF-8
+  bytes the hash consumes). Kept in the hypothesis list so the statements
+  below are unchanged; use
+  `Seal.Encoding.effect_commitment_injective_of_cr_compress` for the
+  discharged form.
 * `A-COMPRESS` (`AssumptionCompressInjective`): `Lean.Json.compress` is
   injective. This is what "the commitment binds the JSON value, not a
   string" costs: two distinct `Json` values must not share canonical bytes.
@@ -98,8 +102,12 @@ theorem preimage_shape (e : Effect) :
 def AssumptionCR : Prop :=
   ∀ a b : String, (stableHashString a).toHex = (stableHashString b).toHex → a = b
 
-/-- A-ENC: injectivity of the netstring part framing. Discharged formally in
-    seal-host `Host/CapabilityAdequacy`; named here, not re-proven. -/
+/-- A-ENC: injectivity of the netstring part framing. No longer an
+    assumption in substance: `Seal.Encoding.assumptionEncInjective_holds`
+    (K5, `Seal/EncodingInjective.lean`) proves it in-repo, and
+    `Seal.Encoding.effect_commitment_injective_of_cr_compress` consumes the
+    theorems below with this hypothesis discharged. The `Prop` stays named so
+    existing statements and the seal-host discharge remain valid. -/
 def AssumptionEncInjective : Prop :=
   ∀ a b : List String, encodeParts a = encodeParts b → a = b
 

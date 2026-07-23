@@ -9,6 +9,7 @@ import Seal.Scaffold
 import Seal.GoldenPath
 import Seal.SignedPolicy
 import Seal.EffectCommitment
+import Seal.EncodingInjective
 import Seal.GuardTheorems
 import SealV2.TamperTheorems
 
@@ -58,6 +59,14 @@ import SealV2.TamperTheorems
 #print axioms Seal.preimage_shape
 #print axioms Seal.preimage_separates_tools
 #print axioms Seal.preimage_separates_servers
+
+-- K5: encoding injectivity at the hashed-byte surface, A-ENC discharged in-repo
+#print axioms Seal.Encoding.encodeParts_injective
+#print axioms Seal.Encoding.encodeParts_toUTF8_injective
+#print axioms Seal.Encoding.assumptionEncInjective_holds
+#print axioms Seal.Encoding.effect_commitment_injective_of_cr_compress
+#print axioms Seal.Encoding.cross_scheme_collision
+#print axioms Seal.Encoding.witness_no_collision_within_scheme
 
 -- Stage A: guard mode accepts ONLY the full-argument target
 #print axioms Seal.guard_requires_full_arguments

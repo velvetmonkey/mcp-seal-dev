@@ -148,3 +148,8 @@ root = "Test.V2VerifyLine"
 [[lean_exe]]
 name = "v2_lifecycle_tests"
 root = "Test.V2Lifecycle"
+
+# K5: framing-injectivity SHOW (GREEN kernel framing / RED --tamper byte-count)
+[[lean_exe]]
+name = "k5_framing_show"
+root = "Test.K5FramingShow"
