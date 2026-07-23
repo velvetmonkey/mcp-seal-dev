@@ -25,7 +25,7 @@ bypassed."
 | Default-deny: output bytes are unreachable unless a `ValidCapability` term is built | `default_deny` | Lean theorem | as above | none | yes |
 | Canonical serialize/parse roundtrip is self-consistent and deterministic | `canonical_roundtrip` | Lean theorem | as above | round-trip fidelity in-core is NOT parse-equivalence to the target server (A2) | yes |
 | Approval lifecycle: issue -> target-bind -> one-shot consume -> TTL expiry, no replay after expiry | `LifecycleTheorems.lean` | Lean theorem | as above | A6 cross-restart durability | yes |
-| Ed25519 signature verification over canonical `(target, session, issuedAt, expiry, nonce)` signed-message bytes | `SealV2/Crypto.lean` `ed25519Verify` (`@[extern]`, TweetNaCl leaf) | code + trusted crypto leaf | TweetNaCl correctness | none | yes |
+| Ed25519 signature verification over canonical `(target, session, issuedAt, expiry, nonce)` signed-message bytes | `SealV2/Crypto.lean` `ed25519Verify` (`@[extern]`, TweetNaCl leaf) | code + trusted crypto leaf | TweetNaCl verify computes the cofactorless group equation; it does **not** enforce the RFC 8032 §5.1.7 S-range check, so signatures are malleable — see **A3-S** | S-range/malleability deviation: **A3-S** below (not "none"). Blast radius bounded — replay identity is the nonce, not the signature | yes (with A3-S stated) |
 | Principal non-influence: for a fixed judged line and approval state, the decision VALUE is invariant under the authenticated principal — the policy language cannot express "who is asking" (model property; WHETHER a decision is produced still depends on the principal) | `SealV2/PrincipalNonInfluence.lean` `principal_non_influence` + runnable control `lake exe principal_non_influence_show` | Lean theorem, axiom-gated `{propext, Classical.choice, Quot.sound}`; witness conditional on the crypto seam, discharged at runtime with real Ed25519 | Lean kernel/runtime, TweetNaCl (SHOW leg) | approval issuance and host-side behaviour may depend on the principal; scope stated in the module docstring | yes (scoped exactly as stated) |
 | This does NOT prove every deployed MCP server is mediated | n/a | n/a | n/a | n/a | this is a NON-claim, state it |
 
@@ -75,6 +75,30 @@ target parts + control-file approvals): [docs/POLICY.md](docs/POLICY.md).
 ## Residuals
 
 - **A2** numeric/parse fidelity minimised by construction; per-server equivalence obligation remains.
+- **A3-S** Ed25519 S-range / signature malleability. The vendored TweetNaCl
+  verify leaf (`c/tweetnacl.c` `crypto_sign_open`, reached via
+  `SealV2/Crypto.lean` `ed25519Verify` → `c/seal_ed25519.c:30`) is
+  **cofactorless** and **omits the RFC 8032 §5.1.7 `0 ≤ S < L` check**
+  (`c/tweetnacl.c:796` feeds `S` straight to `scalarbase`, no range test, no
+  reduction). RFC 8032 §5.1.7 *mandates* that check ("If any of the decodings
+  fail (including S being out of range), the signature is invalid"); §8.4 names
+  it as what makes Ed25519 non-malleable. So the leaf is **non-conformant to
+  RFC 8032 on this point and accepts malleated signatures** (`S' = S + m·L`).
+  Measured on Wycheproof v1 `ed25519_test.json` @ `b61843a9`: **5 of 62
+  must-reject signatures accepted** — 4 `SignatureMalleability` (tcId 63-66) +
+  1 S-above-bound (tcId 85); the other **57 of 62 invalid rejected, all 88 valid
+  accepted**. What it buys an attacker: many verifying signatures for one
+  message. What it does **not** buy: a double-spend. Seal's replay identity is
+  the **nonce**, not the signature bytes — `ConsumedNonce = {ns, nonce,
+  expiresAt}` (`SealV2/Validation.lean:88-92`), the namespace excludes the
+  signature (`:260-270`), and `replay_denied` (`SealV2/LifecycleTheorems.lean:84`)
+  proves re-presentation of a consumed nonce Blocks. Verified live end-to-end: a
+  valid approval Allows and consumes the nonce, then the malleated variant
+  (same nonce) **Blocks**; the malleated variant alone Allows a fresh token,
+  confirming the Block is a replay block, not a rejection. No record in this repo
+  keys on signature bytes. Full variant label and citations: `docs/TCB.md`
+  ("Trusted crypto leaf"). Adding an `S < L` check to `c/seal_ed25519.c` would
+  restore conformance and is a separate decision (not taken here).
 - **A6** cross-restart replay durability: in-process store discharges A5 for the live process only; durable store is a stated deployment residual, first funded hardening item.
 
 ## Response egress
