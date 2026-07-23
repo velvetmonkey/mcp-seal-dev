@@ -101,6 +101,7 @@ Not proven, and stated so reviewers can weigh them:
 3. **Approval origin**: control-file permissions (v1) / signing-key management (v2); and that the human understood what they approved.
 4. **Lean compiler + kernel, child-process I/O, host/transport, OS.**
 5. **Out-of-band effects** that never emit `tools/call` through `seal`.
+6. **Revocation latency (revocation-by-re-sign).** `seal` has exactly one revocation channel: delete a `PrincipalKeyEntry` from the signed config's `principals` registry and re-sign. Verification is a registry lookup on the envelope's `keyId` (`SealV2/EffectEnvelope.lean:591`), so removing one entry revokes **that principal only** and leaves every other principal working. Granularity is per-principal, which is the finest unit that currently has meaning: sessions are config-scoped (`sessionGate` requires `e.session == state.session`, `SealV2/EffectEnvelope.lean:724`) and delegation is deliberately absent from the model. **The residual is latency, not granularity**: every revocation needs an authority signing ceremony plus a config push to every host, so revocation latency equals config-push latency. No fast path, no partial rollout, no "kill now and re-sign properly later". Accepted cost of keeping revocation on the authority plane rather than in request data (see THREAT_MODEL.md).
 
 ## Confidence statement
 
