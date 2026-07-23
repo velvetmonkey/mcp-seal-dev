@@ -709,8 +709,26 @@ widened model — `run_single_escape` exhibits the failing runs, one per
 escape-class line, and `forwarded_never_decided` shows no decision for such
 a line exists anywhere. That is the honest verdict: classifier passthrough
 IS a mediation bypass for exactly the escape class, `undecidedCallClass`
-being the sub-class a lenient child executes. What SURVIVES is fail-closed:
-no child bytes and no escaping line can mint an Allow. -/
+being the sub-class a lenient child executes.
+
+What SURVIVES splits by carrier — three parts, three different warrants:
+
+1. Child bytes can only truncate the Allow stream — carried by
+   `widened_fail_closed` below (run vs response-purged twin). The purge
+   removes RESPONSE events only, so that theorem is silent about escape
+   events.
+2. No escaping line is ever the SUBJECT of an Allow — carried by
+   `decision_mem_mediated` (every decision observation's line is in S; an
+   Allow observation is a decision, see `allowsOf`) together with
+   `classes_partition` (S disjoint from the escape class);
+   `forwarded_never_decided` states it for forwarded lines directly,
+   cross-run.
+3. Escape events cannot alter or reorder OTHER lines' Allows — carried by
+   NO theorem in this module. It holds by construction (the passthrough
+   arm of `runTrace` emits `.forwarded` and recurses on the unchanged
+   state; `non_act_state_invariant` pins the one-step state identity), but
+   there is no purge-escape-events analogue of `widened_fail_closed`
+   stating trace-level non-influence. Untheoremed reading, stated as such. -/
 
 /-- The Allow outputs of a widened trace, in order. Forwarded and refused
     lines contribute none, by construction of the trace — the content is
@@ -784,13 +802,17 @@ theorem dead_no_relays :
           exact ih _ (by simp [stepState, SealV2.ResponseTransport.stepState, h])
       | request raw now => simp [runTrace, h, relayedOf]
 
-/-- **Fail-closed survives the widening.** For ANY start state and ANY event
-    sequence — child bytes, escaping lines, refusals included — the Allow
-    outputs of the run form a prefix of the Allow outputs of the
-    response-purged run. Escaping lines are forwarded, but they cannot
-    create, alter, or reorder an Allow; child bytes can only truncate.
-    (Port of `ResponseTransport.p6_fail_closed`; the two new request arms
-    are Allow-silent and state-identity.) -/
+/-- **Fail-closed survives the widening — the child-bytes half ONLY.** For
+    ANY start state and ANY event sequence, the Allow outputs of the run
+    form a prefix of the Allow outputs of the response-purged run: child
+    bytes can only truncate the Allow stream. This theorem compares a run
+    against its RESPONSE-purged twin; `purgeResponses` removes no request
+    events, so it says nothing about escaping lines. The escaping-line
+    guarantee lives elsewhere: `decision_mem_mediated` (no escaping line is
+    ever the subject of an Allow), and — untheoremed, by construction only —
+    non-influence of escape events on other lines' Allows (see the section
+    comment above). (Port of `ResponseTransport.p6_fail_closed`; the two
+    new request arms are Allow-silent and state-identity.) -/
 theorem widened_fail_closed :
     ∀ (t : List HostEvent) (s : HostState),
       allowsOf (runTrace s t) <+: allowsOf (runTrace s (purgeResponses t)) := by
