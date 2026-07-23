@@ -56,10 +56,11 @@ namespace SealV2.Effect.Completeness
     without removing its exemption also fails. -/
 def exemptions : List (Name × String) := [
   (`nonce,
-    "BOUNDARY: envelope replay needs a durable host-side consumed-nonce " ++
-    "store (M6 twin on the effect plane); effectStep threads no store yet " ++
-    "— the ledger-vs-bind question is recorded for Ben (field-warrant " ++
-    "report section 6)")]
+    "BOUNDARY for THIS cone only: the bare effectStep deliberately " ++
+    "threads no store, so nonce is uninterpreted here. The ledgered step " ++
+    "(SealV2/NonceLedger.lean, effectStepLedgered) consumes it and " ++
+    "carries its own zero-exemption completeness check; host-side " ++
+    "threading of the durable store remains the A6 deployment residual")]
 
 /-- Encoding/width-only consumers of the whole tuple: consulting a field
     HERE is membership, not meaning. The closure walk cuts at these. -/

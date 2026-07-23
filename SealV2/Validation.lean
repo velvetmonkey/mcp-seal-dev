@@ -101,6 +101,15 @@ structure ApprovalState where
   policyVersion : String := ""
   maxApprovalTtl : Nat := 300
   consumedNonces : List ConsumedNonce := []
+  /-- The ledger generation the SIGNED CONFIG endorses (nonce-ledger lane,
+      council `1e92b551`). Same pattern as `policyVersion`: lives in the
+      signed config, MANDATORY nonzero at the gate
+      (`SealV2.Effect.Ledger.generationGate`), so the default `0` means
+      "unconfigured" and FAILS CLOSED — never a sentinel bypass. Rotating
+      the store requires re-signing the config at N+1: a deliberate
+      authority act. The store cannot mint this value (a store-minted epoch
+      is theatre: whoever can reset the store can mint the epoch). -/
+  ledgerGeneration : Nat := 0
   deriving Repr, BEq
 
 def signedMessage (approval : Approval) : SignedMessage :=
