@@ -70,3 +70,29 @@ for sym in seal_v2_init seal_v2_add_approval seal_v2_decide seal_v2_challenge se
   printf '%s\n' "$SYMS" | grep -E " T ${sym}\$" >/dev/null || { echo "FATAL: export $sym missing" >&2; exit 1; }
 done
 echo "all exports present"
+
+# Undefined-symbol guard. A -shared link legally leaves symbols undefined, so a
+# missing object here surfaces only at the END of CI, when rust-lld links the
+# host with --no-allow-shlib-undefined (that is exactly how the '*/Seal/*'
+# over-exclusion shipped: this script printed "all exports present" while the
+# .so carried five undefined Seal symbols). Lean-runtime / Init / Std / Lean /
+# libc symbols are LEGITIMATELY undefined — they resolve against libleanshared
+# at load — so any-undefined-is-fatal would fail every healthy build. Instead,
+# deny-list the namespaces WE ship objects for on this very command line:
+#   mcp_x2dseal   — this package's mangled prefix (initialize_/l_/lp_ forms)
+#   batteries|aesop — vendored packages, archived above; must resolve here
+#   Seal          — belt-and-braces for specialization mangles (e.g. _00Seal_)
+#   ^seal_ / ^lean_seal_ — ffi_shim exports / the ed25519 crypto leaf extern
+# None of these can legitimately come from libleanshared, so a hit is always a
+# closure gap (object dropped from PROJ_OBJS or a package archive gone stale).
+UNDEF_OWN="$(printf '%s\n' "$SYMS" | awk '$1=="U"{print $2}' \
+  | grep -E 'mcp_x2dseal|batteries|aesop|Seal|^seal_|^lean_seal_' || true)"
+if [ -n "$UNDEF_OWN" ]; then
+  echo "FATAL: $OUT leaves our own symbols undefined:" >&2
+  printf '  %s\n' $UNDEF_OWN >&2
+  echo "A project/vendored object is missing from the link (check the PROJ_OBJS" >&2
+  echo "find filter and the package archive loop). rust-lld would reject this" >&2
+  echo "downstream under --no-allow-shlib-undefined; failing here instead." >&2
+  exit 1
+fi
+echo "undefined-symbol guard: clean (no own-namespace symbols undefined)"
