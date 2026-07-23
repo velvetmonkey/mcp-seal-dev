@@ -152,3 +152,7 @@ root = "Test.V2Lifecycle"
 [[lean_exe]]
 name = "field_warrant_tests"
 root = "Test.FieldWarrant"
+
+[[lean_exe]]
+name = "field_warrant_mutation"
+root = "Test.FieldWarrantMutation"
