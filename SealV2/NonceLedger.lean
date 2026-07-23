@@ -115,11 +115,18 @@ open SealV2.Effect
 
 /-! ## The attestation and its canonical encoding (the Option-B shape) -/
 
-/-- What the store presents: its identity triple. Under Option A the
-    `generation` is compared (fail-closed) against the SIGNED config's
-    `ledgerGeneration`; `storeId` and `createdAt` ride along so that
-    Option B (an authority signature over `ledgerAttestationMessage`) is
-    an added check over unchanged bytes, not a reshape. -/
+/-- What the store presents: its identity triple. NOT an attestation in
+    the RFC 9334 (RATS) sense under Option A: RATS reserves the word for
+    Evidence cryptographically attributable to the attester, and under
+    Option A this is an UNSIGNED self-report. Only `generation` is
+    checked (fail-closed equality against the SIGNED config's
+    `ledgerGeneration`); `storeId` and `createdAt` are carried but
+    UNCHECKED, reserved for Option B. The name earns its RATS meaning
+    only when Option B's authority signature over
+    `ledgerAttestationMessage` is enforced — an added check over
+    unchanged bytes, not a reshape. The trust anchor is the config-pinned
+    `ledgerGeneration`, never the store's self-report: a store-minted
+    value is theatre (council `1e92b551`). -/
 structure LedgerAttestation where
   storeId : String
   generation : Nat
