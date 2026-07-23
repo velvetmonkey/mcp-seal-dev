@@ -10,6 +10,7 @@ import Seal.PolicyEquiv
 import Seal.Classify
 import Seal.PolicyV2Theorems
 import Seal.EffectCommitment
+import Seal.EncodingInjective
 import Seal.GuardTheorems
 import Seal.PolicyScan
 import Seal.Scaffold

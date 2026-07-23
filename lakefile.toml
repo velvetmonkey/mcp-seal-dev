@@ -152,3 +152,8 @@ root = "Test.V2Lifecycle"
 [[lean_exe]]
 name = "principal_non_influence_show"
 root = "Test.PrincipalNonInfluence"
+
+# K5: framing-injectivity SHOW (GREEN kernel framing / RED --tamper byte-count)
+[[lean_exe]]
+name = "k5_framing_show"
+root = "Test.K5FramingShow"
