@@ -89,5 +89,8 @@ import SealV2.ClassifyTransport
 #print axioms SealV2.ClassifyTransport.mediated_lenient
 #print axioms SealV2.ClassifyTransport.widened_fail_closed
 #print axioms SealV2.ClassifyTransport.widened_relay_verbatim
+#print axioms SealV2.ClassifyTransport.escape_events_no_influence
+#print axioms SealV2.ClassifyTransport.allows_eq_of_purgeEscapes_eq
+#print axioms SealV2.ClassifyTransport.escape_insertion_allows_invariant
 
 def main : IO UInt32 := pure 0

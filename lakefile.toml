@@ -153,3 +153,8 @@ root = "Test.V2Lifecycle"
 [[lean_exe]]
 name = "classify_enum"
 root = "Test.ClassifyEnum"
+
+# K3/K4 part 3: escape-events non-influence SHOW (real-crypto Allow witness).
+[[lean_exe]]
+name = "escape_events_show"
+root = "Test.EscapeEventsShow"

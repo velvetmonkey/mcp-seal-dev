@@ -96,4 +96,57 @@ def baseState : ApprovalState :=
 def validRaw : String :=
   requestRaw "db.execute" "write" "{\"database\":\"prod\",\"table\":\"users\",\"amount\":12.34}"
 
+/-! ### Second Allow vector (escape-events SHOW)
+
+Same tool/action, different arguments (`table:"orders"`), nonce B, in-cap
+expiry 120 — so a single run can produce TWO Allows with DISTINGUISHABLE
+canonical outputs, which is what makes the order-preservation half of
+`escape_events_no_influence` witnessable at runtime. Signature minted from
+the same fixed, documented test seed `0x000102…1f` (NOT a real key) via
+Python `cryptography`, over the canonical bytes printed by
+`lake exe v2_signed_bytes orders`. -/
+
+def ordersArgs : AST :=
+  .object [("database", .string "prod"), ("table", .string "orders"), ("amount", .number {
+    negative := false,
+    intDigits := "12",
+    fracDigits := some "34"
+  })]
+
+def ordersTarget : Target := { target with arguments := ordersArgs }
+
+def unsignedOrdersApproval : Approval :=
+  let message : SignedMessage := {
+    target := ordersTarget,
+    session := "session-1",
+    issuedAt := 0,
+    expiry := 120,
+    nonce := nonceB
+  }
+  {
+    target := ordersTarget,
+    session := "session-1",
+    issuedAt := 0,
+    expiresAt := 120,
+    consumed := false,
+    signedMessageRaw := signedMessageRawFor message,
+    signature := "",
+    nonce := nonceB
+  }
+
+/-- Ed25519 signature over the orders message (M_C: issuedAt 0, expiry 120,
+    nonce B, target arguments `table:"orders"`). -/
+def sigOverOrdersMessage : Signature :=
+  "8746f2922e89c360674d79e8ed7a7013f6ee509edd9b2699fbde8ec9474f88d37d5c1358b7c0ae40a393a02fff646cfdd9eedbe5f3c6f2e6e7f608bc9ba04e09"
+
+def validOrdersApproval : Approval :=
+  approvalWithSig unsignedOrdersApproval sigOverOrdersMessage
+
+/-- `baseState` carrying BOTH live approvals (nonce A: users; nonce B: orders). -/
+def twoApprovalState : ApprovalState :=
+  { baseState with approvals := [validApproval, validOrdersApproval] }
+
+def validOrdersRaw : String :=
+  requestRaw "db.execute" "write" "{\"database\":\"prod\",\"table\":\"orders\",\"amount\":12.34}"
+
 end Test.V2ValidationFixtures

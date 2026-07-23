@@ -724,11 +724,13 @@ What SURVIVES splits by carrier — three parts, three different warrants:
    `forwarded_never_decided` states it for forwarded lines directly,
    cross-run.
 3. Escape events cannot alter or reorder OTHER lines' Allows — carried by
-   NO theorem in this module. It holds by construction (the passthrough
-   arm of `runTrace` emits `.forwarded` and recurses on the unchanged
-   state; `non_act_state_invariant` pins the one-step state identity), but
-   there is no purge-escape-events analogue of `widened_fail_closed`
-   stating trace-level non-influence. Untheoremed reading, stated as such. -/
+   `escape_events_no_influence` below: the Allow outputs of any run EQUAL —
+   same content, same order — those of the same run with every escape-class
+   request event purged, for every start state and every interleaving.
+   `allows_eq_of_purgeEscapes_eq` and `escape_insertion_allows_invariant`
+   restate it as insertion/removal invariance. (Formerly an untheoremed
+   reading, true only by construction of the passthrough arm; the theorem
+   now states the trace-level fact the construction was read as.) -/
 
 /-- The Allow outputs of a widened trace, in order. Forwarded and refused
     lines contribute none, by construction of the trace — the content is
@@ -809,10 +811,10 @@ theorem dead_no_relays :
     against its RESPONSE-purged twin; `purgeResponses` removes no request
     events, so it says nothing about escaping lines. The escaping-line
     guarantee lives elsewhere: `decision_mem_mediated` (no escaping line is
-    ever the subject of an Allow), and — untheoremed, by construction only —
-    non-influence of escape events on other lines' Allows (see the section
-    comment above). (Port of `ResponseTransport.p6_fail_closed`; the two
-    new request arms are Allow-silent and state-identity.) -/
+    ever the subject of an Allow), and `escape_events_no_influence` (escape
+    events leave the Allow stream of the rest of the run unchanged — see
+    the section comment above). (Port of `ResponseTransport.p6_fail_closed`;
+    the two new request arms are Allow-silent and state-identity.) -/
 theorem widened_fail_closed :
     ∀ (t : List HostEvent) (s : HostState),
       allowsOf (runTrace s t) <+: allowsOf (runTrace s (purgeResponses t)) := by
@@ -957,6 +959,139 @@ theorem widened_relay_verbatim :
               | passthrough => simpa [relayedOf] using ih _
               | act n ar => simpa [relayedOf] using ih (stepState ⟨a, false⟩ (.request raw now))
 
+/-! ## Escape events: no influence on the Allow stream (part-3 carrier)
+
+The purge-escape-events analogue whose absence the frisk flagged. The purge
+deletes exactly the escape-class request events; the theorem states that the
+Allow outputs of ANY run — every start state, every interleaving — are EQUAL
+to those of the purged run: same content, same order. Contrast the response
+purge, where only a PREFIX survives (`widened_fail_closed`): child bytes can
+kill the session and truncate; escape events cannot even do that to the
+Allow stream (a dead transport allows nothing with or without them). -/
+
+/-- An escape event: a request whose bytes are in the escape class — exactly
+    the events the router forwards child-bound with no decision
+    (`forwarded_iff_escapes`). -/
+def isEscapeEvent : HostEvent → Bool
+  | .request raw _ => escapesClass raw
+  | _ => false
+
+/-- Delete every escape-class request event (same purge shape as
+    `purgeResponses`). -/
+def purgeEscapes (t : List HostEvent) : List HostEvent :=
+  t.filter (fun ev => !isEscapeEvent ev)
+
+/-- **Escape events cannot create, alter, or reorder Allows.** For ANY start
+    state and ANY event sequence, the Allow outputs of the run are EQUAL —
+    same content, same order, not merely a prefix — to the Allow outputs of
+    the same run with every escape-class request event deleted. Quantifying
+    over all traces `t` covers arbitrary interleavings: any number of escape
+    events at any positions (`allows_eq_of_purgeEscapes_eq` /
+    `escape_insertion_allows_invariant` restate this as insertion/removal
+    invariance between two traces).
+
+    Scope of the name, checked against the literature: this is a
+    Goguen–Meseguer-style purge equality on ONE observable — the `allowsOf`
+    projection. It is NOT von Oheimb "noninfluence" (no secret-variation or
+    paired-state bisimulation is stated), and NOT full-trace
+    non-interference: escape events visibly influence the trace (their own
+    `.forwarded` observations; on a dead transport an escape request still
+    terminates the run at the seam error), and their bytes DO reach the
+    child undecided (`run_single_escape` — that is the K3/K4 bypass
+    verdict, unretracted). The claim is exactly: the Allow stream is
+    invariant under inserting or removing escape events. -/
+theorem escape_events_no_influence :
+    ∀ (t : List HostEvent) (s : HostState),
+      allowsOf (runTrace s t) = allowsOf (runTrace s (purgeEscapes t)) := by
+  intro t
+  induction t with
+  | nil => intro s; rfl
+  | cons ev t ih =>
+      intro s
+      cases ev with
+      | init cfg =>
+          have hp : purgeEscapes (HostEvent.init cfg :: t)
+              = .init cfg :: purgeEscapes t := by
+            simp [purgeEscapes, isEscapeEvent]
+          rw [hp]
+          simp only [runTrace]
+          exact ih _
+      | approve r sig =>
+          have hp : purgeEscapes (HostEvent.approve r sig :: t)
+              = .approve r sig :: purgeEscapes t := by
+            simp [purgeEscapes, isEscapeEvent]
+          rw [hp]
+          simp only [runTrace]
+          exact ih _
+      | response r =>
+          have hp : purgeEscapes (HostEvent.response r :: t)
+              = .response r :: purgeEscapes t := by
+            simp [purgeEscapes, isEscapeEvent]
+          rw [hp]
+          simp only [runTrace]
+          rw [allowsOf_responseObs, allowsOf_responseObs]
+          exact ih _
+      | request raw now =>
+          cases he : escapesClass raw with
+          | false =>
+              have hp : purgeEscapes (HostEvent.request raw now :: t)
+                  = .request raw now :: purgeEscapes t := by
+                simp [purgeEscapes, isEscapeEvent, he]
+              rw [hp]
+              obtain ⟨a, d⟩ := s
+              cases d with
+              | true => simp [runTrace, allowsOf]
+              | false =>
+                  simp only [runTrace]
+                  simp only [Bool.false_eq_true, if_false]
+                  cases hc : classifyWire raw with
+                  | passthrough =>
+                      have := (classifyWire_passthrough_iff raw).mp hc
+                      rw [he] at this
+                      cases this
+                  | refuse => simpa [allowsOf] using ih _
+                  | act n ar =>
+                      cases hD : reqDecision a raw now with
+                      | Block => simpa [allowsOf] using ih _
+                      | Allow out =>
+                          simp only [allowsOf]
+                          rw [ih _]
+          | true =>
+              have hp : purgeEscapes (HostEvent.request raw now :: t)
+                  = purgeEscapes t := by
+                simp [purgeEscapes, isEscapeEvent, he]
+              rw [hp]
+              obtain ⟨a, d⟩ := s
+              cases d with
+              | true =>
+                  rw [dead_no_allows (purgeEscapes t) ⟨a, true⟩ rfl]
+                  simp [runTrace, allowsOf]
+              | false =>
+                  have hc := (classifyWire_passthrough_iff raw).mpr he
+                  simp only [runTrace]
+                  simp only [Bool.false_eq_true, if_false, hc]
+                  simpa [allowsOf] using ih _
+
+/-- The two-trace interleaving form: any two event sequences that agree
+    after deleting escape events — i.e. differ ONLY by inserted or removed
+    escape-class requests, at any positions — produce identical Allow
+    streams from every start state. -/
+theorem allows_eq_of_purgeEscapes_eq {t₁ t₂ : List HostEvent}
+    (h : purgeEscapes t₁ = purgeEscapes t₂) (s : HostState) :
+    allowsOf (runTrace s t₁) = allowsOf (runTrace s t₂) := by
+  rw [escape_events_no_influence t₁ s, escape_events_no_influence t₂ s, h]
+
+/-- Single-insertion corollary, the direct contrast to
+    `ResponseTransport.transport_p6_insertion_refuted`: injecting one
+    escape-class request at ANY position changes no Allow. -/
+theorem escape_insertion_allows_invariant (s : HostState)
+    (t₁ t₂ : List HostEvent) (raw : RawBytes) (now : Nat)
+    (h : escapesClass raw = true) :
+    allowsOf (runTrace s (t₁ ++ .request raw now :: t₂))
+      = allowsOf (runTrace s (t₁ ++ t₂)) := by
+  apply allows_eq_of_purgeEscapes_eq
+  simp [purgeEscapes, List.filter_append, isEscapeEvent, h]
+
 /-! ## Axiom pins -/
 
 /-- info: 'SealV2.ClassifyTransport.classes_partition' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -1054,5 +1189,17 @@ theorem widened_relay_verbatim :
 /-- info: 'SealV2.ClassifyTransport.widened_relay_verbatim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms widened_relay_verbatim
+
+/-- info: 'SealV2.ClassifyTransport.escape_events_no_influence' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms escape_events_no_influence
+
+/-- info: 'SealV2.ClassifyTransport.allows_eq_of_purgeEscapes_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms allows_eq_of_purgeEscapes_eq
+
+/-- info: 'SealV2.ClassifyTransport.escape_insertion_allows_invariant' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms escape_insertion_allows_invariant
 
 end SealV2.ClassifyTransport
