@@ -42,6 +42,18 @@ The theorem set behind [GOLDEN-PATH-SPEC.md](GOLDEN-PATH-SPEC.md); all printed b
 | With only unverifiable approvals in state, `decide` blocks every request | `SealV2.tampered_approvals_deny` | `SealV2/TamperTheorems.lean` | `{propext, Classical.choice, Quot.sound}` |
 | Every Allow carries a witness approval whose signature verified — a tampered token can never be the passing witness | `SealV2.allow_implies_witness_signature_verified` | `SealV2/TamperTheorems.lean` | `{propext, Classical.choice, Quot.sound}` |
 
+## V2.3 effect envelope — principal non-influence (K2)
+
+Axiom footprints are pinned in-module by `#guard_msgs` blocks (build-time
+kernel check). The runnable control is `lake exe principal_non_influence_show`
+(RED if the decision value ever becomes principal-dependent).
+
+| Claim | Theorem | Location | Axiom footprint |
+|---|---|---|---|
+| `effectStep` equals an expression in which the authenticated principal occurs only as a presence bit (`Option.isSome`) | `SealV2.Effect.effect_step_presence_form` | `SealV2/PrincipalNonInfluence.lean` | `{propext, Classical.choice, Quot.sound}` |
+| Principal non-influence: for a fixed judged line and approval state, two authenticated, gate-passing runs produce the same decision, whatever their principals (model property; the presence channel remains principal-dependent) | `SealV2.Effect.principal_non_influence` | `SealV2/PrincipalNonInfluence.lean` | `{propext, Classical.choice, Quot.sound}` |
+| Non-vacuity witness: two concrete DISTINCT authenticated principals instantiate the theorem, conditional only on two `ed25519Verify = true` facts (discharged at runtime by the SHOW control with real signatures) | `SealV2.Effect.witness_principal_non_influence` | `SealV2/PrincipalNonInfluence.lean` | `{propext, Classical.choice, Quot.sound}` |
+
 ## Host-level theorems
 
 Host-level theorems such as `Host.step_forward_non_bypass`, `Host.Record.tamper_evident`, `Host.Encoding.encodeParts_injective`, `Host.CapabilityAdequacy.approval_authorizes_only_its_target'`, `Host.NonInterference.observe_noninterference`, and `Host.ReplayIsolation.replay_isolation_trace` live in `seal-host`; their line references are recorded in that repository's `docs/PROOF-REFERENCE.md`.
