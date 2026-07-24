@@ -3,6 +3,7 @@
 import Batteries.Data.ByteArray
 import SealV2.EffectEnvelope
 import SealV2.EnvelopeCompleteness
+import SealV2.DecideTheorems
 
 /-!
 # Nonce ledger — config-pinned `ledgerGeneration`, fail-closed (Option A)
@@ -282,6 +283,122 @@ def effectStepLedgered (authority : ByteArray) (reg : PrincipalRegistry)
             | none => (⟨.Block, state.ledgerGeneration⟩, some v)
             | some v' => (⟨.Allow out, state.ledgerGeneration⟩, some v')
       else (⟨.Block, 0⟩, some v)
+
+/-! ## Generation declassification and the honest LOW view -/
+
+/-- **The generation declassification, made explicit.** The observable
+    fence is exactly the live config's `ledgerGeneration` when a ledger is
+    present and its generation gate passes. Store absence or a failed gate
+    produces the fail-closed `0` sentinel. This is definitional disclosure,
+    not an inferred side channel. -/
+theorem ledgered_generation_declassified (authority : ByteArray)
+    (reg : PrincipalRegistry) (mediator : AdapterId) (e : EffectEnvelope)
+    (sigHex : String) (state : ApprovalState)
+    (ledger? : Option LedgerView) :
+    (effectStepLedgered authority reg mediator e sigHex state
+      ledger?).1.generation =
+      match ledger? with
+      | none => 0
+      | some v =>
+          if generationGate state v then state.ledgerGeneration else 0 := by
+  cases ledger? with
+  | none => rfl
+  | some v =>
+      unfold effectStepLedgered
+      cases hg : generationGate state v with
+      | false => simp [hg]
+      | true =>
+          simp only [hg, ↓reduceIte]
+          cases effectStep authority reg mediator e sigHex state with
+          | Block => rfl
+          | Allow out =>
+              cases consumeNonce v authority e <;> rfl
+
+/-- The base ledger-path authorization bit. Unlike the host theorem's
+    parse/validate-only `authView`, this view covers the complete
+    `effectStep`, including its envelope binding and freshness gates. The
+    allowed bytes remain a function of the fixed judged line, so this one
+    bit determines the base decision for fixed LOW inputs. -/
+def effectAuthView (authority : ByteArray) (reg : PrincipalRegistry)
+    (mediator : AdapterId) (e : EffectEnvelope) (sigHex : String)
+    (state : ApprovalState) : Bool :=
+  match effectStep authority reg mediator e sigHex state with
+  | .Block => false
+  | .Allow _ => true
+
+/-- For fixed envelope inputs, the base authorization bit determines the
+    entire base decision. If both sides Allow, `decide_emit_unique` makes
+    their payload the serialization of the same parsed line; validation
+    witnesses cannot influence serialization. -/
+theorem effectAuthView_determines_decision (authority : ByteArray)
+    (reg : PrincipalRegistry) (mediator : AdapterId) (e : EffectEnvelope)
+    (sigHex : String) (s1 s2 : ApprovalState)
+    (h : effectAuthView authority reg mediator e sigHex s1 =
+      effectAuthView authority reg mediator e sigHex s2) :
+    effectStep authority reg mediator e sigHex s1 =
+      effectStep authority reg mediator e sigHex s2 := by
+  cases h1 : effectStep authority reg mediator e sigHex s1 with
+  | Block =>
+      cases h2 : effectStep authority reg mediator e sigHex s2 with
+      | Block => rfl
+      | Allow out2 => simp [effectAuthView, h1, h2] at h
+  | Allow out1 =>
+      cases h2 : effectStep authority reg mediator e sigHex s2 with
+      | Block => simp [effectAuthView, h1, h2] at h
+      | Allow out2 =>
+          have hd1 : SealV2.decide e.line s1 = .Allow out1 :=
+            allow_value_from_line_and_state h1
+          have hd2 : SealV2.decide e.line s2 = .Allow out2 :=
+            allow_value_from_line_and_state h2
+          obtain ⟨ast1, hp1, witness1, -, hout1⟩ :=
+            (SealV2.decide_emit_unique e.line s1 out1).mp hd1
+          obtain ⟨ast2, hp2, witness2, -, hout2⟩ :=
+            (SealV2.decide_emit_unique e.line s2 out2).mp hd2
+          have hast : ast1 = ast2 := by
+            rw [hp1] at hp2
+            exact Option.some.inj hp2
+          subst ast2
+          apply congrArg Decision.Allow
+          rw [hout1, hout2]
+          rfl
+
+/-- The honest LOW view for the ledgered path: the base envelope-step
+    authorization bit together with the config-pinned generation that is
+    copied into the returned fence. -/
+def ledgeredLowView (authority : ByteArray) (reg : PrincipalRegistry)
+    (mediator : AdapterId) (e : EffectEnvelope) (sigHex : String)
+    (state : ApprovalState) : Bool × Nat :=
+  (effectAuthView authority reg mediator e sigHex state,
+    state.ledgerGeneration)
+
+/-- **Ledgered non-interference with the honest LOW view.** For the same
+    request and ledger input, states agreeing on the complete base
+    authorization view and on `ledgerGeneration` produce identical
+    observable `FencedDecision`s. Ledger evolution is deliberately not in
+    this conclusion; only the fenced decision is the observer named here. -/
+theorem ledgered_lowView_noninterference (authority : ByteArray)
+    (reg : PrincipalRegistry) (mediator : AdapterId) (e : EffectEnvelope)
+    (sigHex : String) (s1 s2 : ApprovalState)
+    (ledger? : Option LedgerView)
+    (h : ledgeredLowView authority reg mediator e sigHex s1 =
+      ledgeredLowView authority reg mediator e sigHex s2) :
+    (effectStepLedgered authority reg mediator e sigHex s1 ledger?).1 =
+      (effectStepLedgered authority reg mediator e sigHex s2 ledger?).1 := by
+  have hauth : effectAuthView authority reg mediator e sigHex s1 =
+      effectAuthView authority reg mediator e sigHex s2 :=
+    congrArg Prod.fst h
+  have hgen : s1.ledgerGeneration = s2.ledgerGeneration :=
+    congrArg Prod.snd h
+  have hstep := effectAuthView_determines_decision authority reg mediator e
+    sigHex s1 s2 hauth
+  cases ledger? with
+  | none => rfl
+  | some v =>
+      have hgate : generationGate s1 v = generationGate s2 v := by
+        unfold generationGate
+        rw [hgen]
+      simp only [effectStepLedgered]
+      rw [hgate, hstep, hgen]
 
 /-! ## Fail-closed theorems -/
 
@@ -689,6 +806,58 @@ theorem content_blind_witness :
     [mintedEntry ByteArray.empty wEnv] ≠ ([] : List LedgerEntry) :=
   ⟨generation_gate_content_blind wState rfl, by simp⟩
 
+/-- **Non-vacuity for the honest ledgered LOW view.** These states differ
+    genuinely in the clock, agree on the full base authorization bit and
+    generation, and produce the same fenced decision against the same
+    ledger. As in the host NI witness, the deliberately malformed request
+    exercises the Block observation without any crypto assumption. -/
+theorem ledgered_lowView_noninterference_nonvacuous :
+    ∃ s1 s2 : ApprovalState, s1 ≠ s2 ∧
+      ledgeredLowView ByteArray.empty [] wMediator wEnv "" s1 =
+        ledgeredLowView ByteArray.empty [] wMediator wEnv "" s2 ∧
+      (effectStepLedgered ByteArray.empty [] wMediator wEnv "" s1
+        (some { att := wAtt2, entries := [] })).1 =
+      (effectStepLedgered ByteArray.empty [] wMediator wEnv "" s2
+        (some { att := wAtt2, entries := [] })).1 := by
+  refine ⟨wState, { wState with now := 11 }, ?_, rfl, rfl⟩
+  intro h
+  exact absurd (congrArg ApprovalState.now h) (by decide)
+
+/-- **Negative control: generation is not HIGH on this path.** The two
+    states are the same record except for `ledgerGeneration` (`1` versus
+    `2`). Against the same generation-2 ledger and all the same request
+    inputs, the observer sees different fenced decisions: generation `0`
+    from the mismatching state and generation `2` from the matching state.
+    The base decisions are both Block; the distinguishing field is exactly
+    the fence generation. -/
+theorem ledgered_generation_negative_control :
+    { wState with ledgerGeneration := 1 } ≠ wState ∧
+    (effectStepLedgered ByteArray.empty [] wMediator wEnv ""
+      { wState with ledgerGeneration := 1 }
+      (some { att := wAtt2, entries := [] })).1 = ⟨.Block, 0⟩ ∧
+    (effectStepLedgered ByteArray.empty [] wMediator wEnv "" wState
+      (some { att := wAtt2, entries := [] })).1 = ⟨.Block, 2⟩ ∧
+    (effectStepLedgered ByteArray.empty [] wMediator wEnv ""
+      { wState with ledgerGeneration := 1 }
+      (some { att := wAtt2, entries := [] })).1 ≠
+    (effectStepLedgered ByteArray.empty [] wMediator wEnv "" wState
+      (some { att := wAtt2, entries := [] })).1 := by
+  refine ⟨?_, rfl, rfl, ?_⟩
+  · intro h
+    exact absurd (congrArg ApprovalState.ledgerGeneration h) (by decide)
+  · intro h
+    exact absurd (congrArg FencedDecision.generation h) (by decide)
+
+/- Evaluated negative-control output:
+    `({ decision := Block, generation := 0 },
+      { decision := Block, generation := 2 })`. -/
+#eval (
+  (effectStepLedgered ByteArray.empty [] wMediator wEnv ""
+    { wState with ledgerGeneration := 1 }
+    (some { att := wAtt2, entries := [] })).1,
+  (effectStepLedgered ByteArray.empty [] wMediator wEnv "" wState
+    (some { att := wAtt2, entries := [] })).1)
+
 /-! ## Axiom pins — the build fails if any theorem picks up an axiom
 beyond the standard trio (no `sorry`, no `native_decide`, no
 `ofReduceBool`) -/
@@ -780,6 +949,30 @@ beyond the standard trio (no `sorry`, no `native_decide`, no
 /-- info: 'SealV2.Effect.Ledger.content_blind_witness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms content_blind_witness
+
+/-- info: 'SealV2.Effect.Ledger.ledgered_generation_declassified' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ledgered_generation_declassified
+
+/-- info: 'SealV2.Effect.Ledger.effectAuthView_determines_decision' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms effectAuthView_determines_decision
+
+/-- info: 'SealV2.Effect.Ledger.ledgered_lowView_noninterference' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ledgered_lowView_noninterference
+
+/--
+info: 'SealV2.Effect.Ledger.ledgered_lowView_noninterference_nonvacuous' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+-/
+#guard_msgs in
+#print axioms ledgered_lowView_noninterference_nonvacuous
+
+/-- info: 'SealV2.Effect.Ledger.ledgered_generation_negative_control' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ledgered_generation_negative_control
 
 end SealV2.Effect.Ledger
 
