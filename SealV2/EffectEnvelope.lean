@@ -158,6 +158,16 @@ def u64be (n : Nat) : ByteArray :=
 
 theorem u64be_size (n : Nat) : (u64be n).size = 8 := rfl
 
+/-- The one wire formula for an absolute V2 time:
+
+    `unixSecondsBE(t) = uint64_be(seconds_since_1970-01-01T00:00:00Z)`.
+
+    `UnixSeconds` fixes both the Unix epoch and the whole-second unit;
+    `u64be` fixes the eight-byte width and big-endian order. This wrapper is
+    definitionally byte-identical to the previously shipped `u64be` call. -/
+def unixSecondsBE (t : UnixSeconds) : ByteArray :=
+  u64be t
+
 /-- `u64be` is injective below `2^64` (the wire range). The framing lemma every
     length prefix stands on. -/
 theorem u64be_inj {n m : Nat} (hn : n < 2 ^ 64) (hm : m < 2 ^ 64)
@@ -181,6 +191,23 @@ theorem u64be_inj {n m : Nat} (hn : n < 2 ^ 64) (hm : m < 2 ^ 64)
   have e0 := congrArg UInt8.toNat h0
   simp only [UInt8.toNat_ofNat', Nat.shiftRight_eq_div_pow] at e7 e6 e5 e4 e3 e2 e1 e0
   omega
+
+/-- Unix-second timestamps have an injective wire encoding throughout the
+    verifier-enforced unsigned-64-bit range. -/
+theorem unixSecondsBE_inj {t₁ t₂ : UnixSeconds}
+    (h₁ : t₁ < 2 ^ 64) (h₂ : t₂ < 2 ^ 64)
+    (h : unixSecondsBE t₁ = unixSecondsBE t₂) : t₁ = t₂ :=
+  u64be_inj h₁ h₂ h
+
+/-- Negative control: interpreting the same logical instant as `1` Unix
+    second or as `1000` Unix milliseconds cannot silently produce the same
+    signed bytes under the pinned seconds formula. -/
+theorem unixSeconds_vs_milliseconds_negative_control :
+    unixSecondsBE 1 ≠ unixSecondsBE 1000 := by decide
+
+/- Evaluated negative-control output:
+   `([0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 0, 0, 3, 232])`. -/
+#eval ((unixSecondsBE 1).data.toList, (unixSecondsBE 1000).data.toList)
 
 /-- One variable-width field on the wire: `u64be(byte length) ‖ UTF-8 bytes`. -/
 def frame (s : String) : ByteArray :=
@@ -296,9 +323,9 @@ structure EffectEnvelope where
   keyId : String
   /-- 32 raw bytes (width enforced by `verifyEffect`). -/
   nonce : ByteArray
-  issuedAt : Nat
+  issuedAt : UnixSeconds
   /-- MANDATORY nonzero signer-declared deadline (`expiryGate`). -/
-  expiresAt : Nat
+  expiresAt : UnixSeconds
   /-- THE judged line, bound BY VALUE (non-negotiable). -/
   line : String
   /-- F1: the adapter the client believes is mediating. -/
@@ -339,7 +366,7 @@ def optEffect : Option EffectClaim → ByteArray
 def effectMessage (authority : ByteArray) (e : EffectEnvelope) : ByteArray :=
   effectTag.toUTF8 ++ authority
     ++ frame e.keyId ++ e.nonce
-    ++ u64be e.issuedAt ++ u64be e.expiresAt
+    ++ unixSecondsBE e.issuedAt ++ unixSecondsBE e.expiresAt
     ++ frame e.line
     ++ frame e.adapterType ++ frame e.adapterVersion
     ++ frame e.session ++ frame e.policyVersion
@@ -1006,7 +1033,7 @@ theorem expired_envelope_blocks {authority : ByteArray}
     with hb | hnb
   · exact hb
   · have h' := (envelope_expiry_respected hnb).2
-    omega
+    exact False.elim (Nat.not_lt_of_ge h' hlt)
 
 /-- **issuedAt is never future-dated** on anything not blocked. Ported from
     the field-warrant campaign. -/
@@ -1043,7 +1070,7 @@ theorem future_issued_envelope_blocks {authority : ByteArray}
     with hb | hnb
   · exact hb
   · have h' := issuedAt_not_future hnb
-    omega
+    exact False.elim (Nat.not_lt_of_ge h' hf)
 
 /-- issuedAt fail-closed, stale: an envelope older than the freshness
     window blocks — a signed envelope cannot be banked indefinitely. -/
@@ -1056,7 +1083,7 @@ theorem stale_envelope_blocks {authority : ByteArray}
     with hb | hnb
   · exact hb
   · have h' := issuedAt_within_window hnb
-    omega
+    exact False.elim (Nat.not_lt_of_ge h' hs)
 
 /-- **F3: MCP effect-equality.** Under the MCP mediator, anything not
     blocked that carries a PRESENT effect claim carries EXACTLY the
@@ -1172,6 +1199,10 @@ axioms; `ed25519Verify` is `opaque` (TCB seam), not an axiom. -/
 /-- info: 'SealV2.Effect.u64be_inj' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms u64be_inj
+
+/-- info: 'SealV2.Effect.unixSecondsBE_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms unixSecondsBE_inj
 
 /-- info: 'SealV2.Effect.sized_cancel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
