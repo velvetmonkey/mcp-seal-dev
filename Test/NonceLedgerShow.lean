@@ -59,6 +59,54 @@ def runLedgered (st : ApprovalState) (ledger? : Option LedgerView) :
     FencedDecision × Option LedgerView :=
   effectStepLedgered authority registry mediator baseEnvelope sigBase st ledger?
 
+/-- **Strong negative control: generation changes authorization, not only
+    the fence value.** The two states are literally record updates of the
+    same `baseState`, differing only in `ledgerGeneration` (`1` versus `2`).
+    Against the same fresh generation-1 ledger, a genuine base-step Allow is
+    released and consumed under the matching state, while the differing
+    state Blocks before the base step because `generationGate` fails.
+
+    The sole hypothesis is the repository's explicit crypto seam: the SHOW
+    executable below discharges it with the checked-in `sigBase` envelope
+    signature, the independently signed approval in `baseState`, and the
+    linked real Ed25519 verifier. -/
+theorem ledgered_generation_decision_flip {out : CanonicalBytes}
+    (hallow :
+      effectStep authority registry mediator baseEnvelope sigBase st1 =
+        .Allow out) :
+    ({ baseState with ledgerGeneration := 1 } : ApprovalState) ≠
+        { baseState with ledgerGeneration := 2 } ∧
+    runLedgered st1 (some v1) =
+        (⟨.Allow out, 1⟩,
+          some { v1 with
+            entries := [mintedEntry authority baseEnvelope] }) ∧
+    runLedgered st2 (some v1) = (⟨.Block, 0⟩, some v1) ∧
+    (runLedgered st1 (some v1)).1.decision ≠
+      (runLedgered st2 (some v1)).1.decision := by
+  have hgate1 : generationGate st1 v1 = true := by decide
+  have hgate2 : generationGate st2 v1 = false := by decide
+  have hconsume :
+      consumeNonce v1 authority baseEnvelope =
+        some { v1 with
+          entries := [mintedEntry authority baseEnvelope] } := by
+    simp [consumeNonce, v1]
+  have hrun1 :
+      runLedgered st1 (some v1) =
+        (⟨.Allow out, 1⟩,
+          some { v1 with
+            entries := [mintedEntry authority baseEnvelope] }) := by
+    unfold runLedgered effectStepLedgered
+    simp only [hgate1, hallow, hconsume]
+    rfl
+  have hrun2 :
+      runLedgered st2 (some v1) = (⟨.Block, 0⟩, some v1) := by
+    unfold runLedgered effectStepLedgered
+    simp only [hgate2, Bool.false_eq_true, ↓reduceIte]
+  refine ⟨?_, hrun1, hrun2, ?_⟩
+  · intro h
+    exact absurd (congrArg ApprovalState.ledgerGeneration h) (by decide)
+  · simp [hrun1, hrun2]
+
 def check (label : String) (ok : Bool) : IO Bool := do
   if ok then
     IO.println s!"  ok   {label}"
@@ -128,6 +176,10 @@ def main (args : List String) : IO UInt32 := do
   else
     let mut ok := true
     IO.println "nonce_ledger SHOW (real Ed25519 path)"
+    let mismatch := runLedgered st2 (some v1)
+    IO.println s!"decision flip evaluated: {repr
+      ((run1.1, ledger1.map (·.entries.length)),
+       (mismatch.1, mismatch.2.map (·.entries.length)))}"
     -- Live path: Allow + atomic consume.
     ok := (← check "generation 1 store + generation 1 config: Allow (real crypto)"
       (isAllow run1.1.decision)) && ok
@@ -142,6 +194,9 @@ def main (args : List String) : IO UInt32 := do
     -- STEP 0 positive: mismatch detectable, attributably.
     ok := (← check "generation MISMATCH (store 1, config 2): Block — detectable"
       (!(isAllow (runLedgered st2 (some v1)).1.decision))) && ok
+    ok := (← check "DECISION FLIP: matching generation Allows while the otherwise-identical differing generation Blocks"
+      (isAllow run1.1.decision && mismatch.1.decision == .Block
+        && run1.1.decision != mismatch.1.decision)) && ok
     ok := (← check "discriminator: bare six-gate step under config 2 still Allows (so the Block above is the LEDGER gate's)"
       (isAllow (effectStep authority registry mediator baseEnvelope sigBase st2))) && ok
     -- Fail-closed legs.
