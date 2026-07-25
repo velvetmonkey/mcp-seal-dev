@@ -13,6 +13,12 @@ abbrev ToolVersion := String
 abbrev Action := String
 abbrev ToolName := String
 
+/-- An absolute UTC timestamp: the number of whole seconds elapsed since the
+    Unix epoch, 1970-01-01T00:00:00Z. Fractional seconds are discarded before
+    constructing this value. This name is the normative unit/epoch contract
+    shared by signed approvals, effect envelopes, and the trusted clock. -/
+abbrev UnixSeconds := Nat
+
 structure CapabilityRequest where
   tool : ToolName
   action : Action
@@ -55,16 +61,16 @@ instance : Repr Nonce where
 structure SignedMessage where
   target : Target
   session : SessionId
-  issuedAt : Nat
-  expiry : Nat
+  issuedAt : UnixSeconds
+  expiry : UnixSeconds
   nonce : Nonce
   deriving Repr, BEq
 
 structure Approval where
   target : Target
   session : SessionId
-  issuedAt : Nat
-  expiresAt : Nat
+  issuedAt : UnixSeconds
+  expiresAt : UnixSeconds
   consumed : Bool
   signedMessageRaw : RawBytes
   signature : Signature
@@ -88,12 +94,13 @@ structure ReplayNamespace where
 structure ConsumedNonce where
   ns : ReplayNamespace
   nonce : Nonce
-  expiresAt : Nat
+  expiresAt : UnixSeconds
   deriving Repr, BEq
 
 structure ApprovalState where
   session : SessionId
-  now : Nat
+  /-- Trusted host clock in the same Unix-seconds domain as every signed time. -/
+  now : UnixSeconds
   publicKey : PublicKey
   manifestDigest : ManifestDigest
   tools : List ToolSpec
