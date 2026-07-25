@@ -71,7 +71,11 @@ theorem ambiguous_guard_targets_block (a b : TargetHash) (aText bText : String)
 
 /-- The structural half of full-arguments binding. A changed canonical JSON
     serialization changes the target pre-image. Concluding unequal SHA-256
-    digests additionally uses the named collision-resistance assumption A-CR. -/
+    digests additionally uses A-CR (`Seal.AssumptionCR`), the named IDEALISED
+    hash-injectivity assumption — strictly stronger than collision resistance
+    and not satisfied by real SHA-256; that step holds only in the idealised
+    collision-free model (see `Seal/EffectCommitment.lean`,
+    `docs/ASSUMPTIONS.md`). -/
 theorem full_arguments_preimage_changes (left right : Json)
     (h : left.compress ≠ right.compress) :
     [left.compress] ≠ [right.compress] := by

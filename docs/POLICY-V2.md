@@ -84,8 +84,10 @@ SHA256(encodeParts([server, tool, ...resolved target parts]))
 `full_arguments` is the recommended safe default because any change to the
 canonical Lean JSON value changes the pre-image. Object-key reordering alone is
 not a value change: `Lean.Json` canonicalizes object keys before `compress`.
-Concluding that the SHA-256 digest also changes uses the named
-collision-resistance assumption A-CR.
+Concluding that the SHA-256 digest also changes uses A-CR, the named
+idealised hash-injectivity assumption — strictly stronger than collision
+resistance and valid only in the idealised collision-free model (see
+docs/ASSUMPTIONS.md).
 
 ## The 7-kernel bundle
 

@@ -14,6 +14,6 @@
 
 **TCB**: Trusted computing base, the pieces that must be trusted rather than proven by the Lean theorem.
 
-**A-CR**: The named assumption that the deployed target commitment is collision-resistant for the relevant inputs.
+**A-CR**: The named *idealised* assumption that the target-commitment hash is perfectly injective — no two distinct inputs share a digest. This is strictly stronger than, and not the same as, computational collision resistance ("no collision exists" vs "a collision is infeasible to find"), and no fixed-output hash over unbounded inputs — including real SHA-256 — can satisfy it. Theorems conditional on A-CR hold in the idealised collision-free model only; the deployed guarantee is the trust assumption that no SHA-256 collision is known or findable for the inputs Seal hashes, which Lean does not prove. Canonical statement: [ASSUMPTIONS.md](ASSUMPTIONS.md).
 
 **Conformance corpus**: The finite set of traces used to compare model, native, wasm, Rust, and JavaScript behavior byte-for-byte.
