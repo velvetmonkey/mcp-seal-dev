@@ -58,6 +58,40 @@ private def processHostLine
   if !JsonUtil.wireNumbersSafe trimmed then
     writeLocked stdoutLock hostOut (blockResponseLine Json.null "unsafe numeric literal")
     return
+  -- Duplicate-key mediation gate. THIS MUST RUN BEFORE `Json.parse`.
+  --
+  -- It previously ran inside the `some (toolName, toolArgs)` branch below, i.e.
+  -- only after the PARSED view had already been recognised as a tools/call.
+  -- That was a mediation bypass, and it is the same defect class already closed
+  -- in the Rust-backed host (`seal-host` `Host/Canonical.lean:50-65`):
+  --
+  --   {"method":"tools/call","method":"initialize","params":{...}}
+  --
+  -- `Json.parse` collapses duplicate keys last-wins, so `toolsCall?` sees
+  -- `initialize`, returns `none`, and the ORIGINAL bytes are forwarded to the
+  -- child. A first-wins downstream parser sees `tools/call` and executes it
+  -- unmediated. The guard that would have caught it never ran, because
+  -- reaching it required the parse to agree it was a tool call.
+  --
+  -- A raw line carrying a duplicate or escaped object key is ambiguous about
+  -- WHICH request it even is, so it cannot be classified before it is refused.
+  -- Hence: refuse at the wire, before the parse destroys the evidence.
+  --
+  -- COST, accepted deliberately and identically to the Rust host: a
+  -- non-tools/call line carrying a duplicate key is now BLOCKED rather than
+  -- forwarded. Ambiguous wire input fails closed regardless of what it claims
+  -- to be. The id is `Json.null` because we have no trustworthy parsed id yet.
+  if !JsonUtil.wireKeysSafe trimmed then
+    writeLocked stdoutLock hostOut
+      (blockResponseLine Json.null "duplicate or escaped object key")
+    return
+  -- Stage-A pinned integer bound, hoisted for the same reason: a >18 significant
+  -- digit mantissa would diverge from the Stage-C i64 byte twin, and deciding
+  -- that after the parse means deciding it on a value the parse already chose.
+  if !JsonUtil.wireDigitsSafe trimmed then
+    writeLocked stdoutLock hostOut
+      (blockResponseLine Json.null "number exceeds significant-digit bound")
+    return
   let parsed := Json.parse trimmed
   match parsed with
   | .error _ =>
@@ -69,23 +103,11 @@ private def processHostLine
           childIn.putStr hostLine
           childIn.flush
       | some (toolName, toolArgs) =>
-          -- Duplicate-key mediation gate: `Json.parse` collapsed duplicate
-          -- object keys last-wins to produce `toolArgs`, but a downstream
-          -- tool parser may disagree (first-wins/reject) — a kernel-vs-tool
-          -- divergence no post-parse check can see. A tools/call line whose
-          -- RAW text carries a duplicate (or escaped) object key is a HARD
-          -- block, never a silent collapse. (Seal.JsonUtil.wireKeysSafe)
-          if !JsonUtil.wireKeysSafe trimmed then
-            writeLocked stdoutLock hostOut
-              (blockResponseLine (jsonId json) "duplicate or escaped object key in tool call")
-            return
-          -- Stage-A pinned integer bound: >18 significant mantissa digits in
-          -- an unquoted number would diverge from the Stage-C i64 byte twin;
-          -- fail closed here instead. (Seal.JsonUtil.wireDigitsSafe)
-          if !JsonUtil.wireDigitsSafe trimmed then
-            writeLocked stdoutLock hostOut
-              (blockResponseLine (jsonId json) "number exceeds significant-digit bound in tool call")
-            return
+          -- `wireKeysSafe` and `wireDigitsSafe` USED TO RUN HERE. They now run
+          -- pre-parse, at the top of this function; see the reasoning there.
+          -- Deliberately not re-run: reaching this point already proves the raw
+          -- line passed both, and a second post-parse check would suggest the
+          -- pre-parse one is optional. It is not, it is the mediation gate.
           -- One wall-clock epoch reading (ms) per tools/call. Wall-clock (not
           -- monotonic) so a record-supplied `issuedAt` is comparable: the deadline
           -- is computed in Channel as min(issuedAt, now) + ttlMs. The same `now`
