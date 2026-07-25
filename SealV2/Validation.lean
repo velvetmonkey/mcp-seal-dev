@@ -108,7 +108,16 @@ structure ApprovalState where
       "unconfigured" and FAILS CLOSED — never a sentinel bypass. Rotating
       the store requires re-signing the config at N+1: a deliberate
       authority act. The store cannot mint this value (a store-minted epoch
-      is theatre: whoever can reset the store can mint the epoch). -/
+      is theatre: whoever can reset the store can mint the epoch).
+
+      Information-flow warrant (`9a4c972`): this field is HIGH in the base
+      model — before this note its declaration was its only occurrence in
+      this file, and it is absent from `SealV2/Decide.lean`, so `authView`
+      and `decide` are ledger-blind. Do NOT transport that result to the
+      ledgered path: `effectStepLedgered` copies the value into three
+      returned fences. `SealV2/NonceLedger.lean` on
+      `feat/ledgered-ni-classification` makes that declassification explicit
+      in `ledgered_generation_declassified` and its negative controls. -/
   ledgerGeneration : Nat := 0
   deriving Repr, BEq
 
