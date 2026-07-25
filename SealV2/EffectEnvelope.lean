@@ -109,6 +109,16 @@ is DECLARED in the signed object, never implied by a sentinel value:
   fields raw (authority 32, nonce 32, u64be at 8); the F3 option block is
   `0x00`, or `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args)`.
 
+**Specification-only members of the byte-formula defect family:** a
+repository-wide fixed-string search at `6c74b61` found no kernel occurrence
+of `judged_request_sha256`, `trust_context_ref` /
+`canonical_plane_encoding`, threshold metadata `m_code`/`n_code` and
+`m_pol`/`n_pol`, nested registry or revocation row encoding, or
+`permitted_profiles[]`. They exist only in the design specification
+(`d017ac1` records the search). Do not add kernel machinery for them unless
+one becomes an actual signed input here; then its byte formula must be
+pinned at that boundary.
+
 **The proof package** (full-tuple injectivity alone is necessary, NOT
 sufficient — both council seats):
 1. `effect_message_injective` — equal messages ⇒ equal (authority, full field
@@ -296,6 +306,12 @@ structure EffectEnvelope where
   keyId : String
   /-- 32 raw bytes (width enforced by `verifyEffect`). -/
   nonce : ByteArray
+  /-- Absolute envelope times are whole Unix seconds since
+      1970-01-01T00:00:00Z. Commit `d017ac1` records why this is normative:
+      `u64be` already fixed width and endianness, but not meaning, so
+      seconds-vs-milliseconds verifiers could accept identical signed bytes
+      and disagree silently. A different epoch or unit requires a signed
+      format repin. -/
   issuedAt : Nat
   /-- MANDATORY nonzero signer-declared deadline (`expiryGate`). -/
   expiresAt : Nat
