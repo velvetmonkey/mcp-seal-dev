@@ -56,6 +56,10 @@ namespace Seal.JsonUtil
 #guard wireNumbersAgreementSafe "{\"v\":9007199254740991}" = true
 #guard firstAgreementUnsafeNumber? "{\"v\":9007199254740993}" =
   some "9007199254740993"
+#guard firstAgreementUnsafeNumber? "{\"v\":90071992547409910}" =
+  some "90071992547409910"
+#guard firstAgreementUnsafeNumber? "{\"v\":999999999999999000}" =
+  some "999999999999999000"
 #guard firstAgreementUnsafeNumber? "{\"v\":1e9999999}" = some "1e9999999"
 
 -- Quoted numeric text is inert.
