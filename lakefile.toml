@@ -163,6 +163,10 @@ root = "Test.K5FramingShow"
 name = "classify_enum"
 root = "Test.ClassifyEnum"
 
+[[lean_exe]]
+name = "numeric_agreement_show"
+root = "Test.NumericAgreementShow"
+
 # K3/K4 part 3: escape-events non-influence SHOW (real-crypto Allow witness).
 [[lean_exe]]
 name = "escape_events_show"

@@ -36,10 +36,10 @@ theorem with both sides witnessed.
 ## Binding the right object
 
 seal-host's `classifyLine` is a thin composition of functions DEFINED IN THIS
-REPOSITORY: `Seal.JsonUtil.wireNumbersSafe` (`Seal/JsonUtil.lean:95`),
-`Lean.Json.parse`, and `Seal.toolsCall?` (`Seal/Classify.lean:113`). The
-`classifyWire` mirror below composes those same definitions — not namesakes —
-in the same order as `Host/Canonical.lean:42-66` (trim, number-guard refuse,
+REPOSITORY: the raw-wire numeric gates in `Seal.JsonUtil`, `Lean.Json.parse`,
+and `Seal.toolsCall?` (`Seal/Classify.lean:113`). The `classifyWire` mirror
+below composes those same definitions — not namesakes — in the same order as
+`Host/Canonical.lean` (trim, parse-cost refusal, numeric-agreement refusal,
 parse, tools-call match). What remains hand-mirrored (cited, not proven) is
 only the composition itself and the router's use of it; there is no
 refinement proof from seal-host or from the compiled Rust, and no theorem
@@ -108,12 +108,12 @@ router forwards". -/
     `Host/Canonical.lean:44` (`line.trimAscii.toString`). -/
 def trimmed (line : String) : String := line.trimAscii.toString
 
-/-- **R** — the refused class: the pre-parse number guard rejects the line
-    (a pathological decimal exponent; `Seal/JsonUtil.lean:95`,
-    `Host/Canonical.lean:48-55`). Refused lines are neither mediated nor
-    forwarded. -/
+/-- **R** — the refused class: either independent pre-parse number guard
+    rejects the line (pathological exponent cost or binary64 disagreement).
+    Refused lines are neither mediated nor forwarded. -/
 def refusedClass (line : String) : Bool :=
   !Seal.JsonUtil.wireNumbersSafe (trimmed line)
+    || !Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line)
 
 /-- The strict `tools/call` shape, stated structurally on the parsed JSON
     value: a `method` member that is the string `"tools/call"` byte-exactly,
@@ -125,11 +125,12 @@ def strictCallShape (j : Json) : Bool :=
     && ((j.getObjVal? "params").toOption.bind
           (fun p => (p.getObjVal? "name").toOption.bind (·.getStr?.toOption))).isSome
 
-/-- **S** — the mediated class: number-guard safe, strict-parses, and has the
-    strict `tools/call` shape. A line is decided before forwarding iff it is
-    in S (`forwarded_iff_escapes` and friends below). -/
+/-- **S** — the mediated class: safe under both number guards, strict-parses,
+    and has the strict `tools/call` shape. A line is decided before forwarding
+    iff it is in S (`forwarded_iff_escapes` and friends below). -/
 def mediatedClass (line : String) : Bool :=
   Seal.JsonUtil.wireNumbersSafe (trimmed line)
+    && Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line)
     && (match Json.parse (trimmed line) with
         | .error _ => false
         | .ok j => strictCallShape j)
@@ -157,12 +158,14 @@ inductive WireClass where
   | act (tool : String) (args : Json)
   | refuse
 
-/-- The router mirror: the same `wireNumbersSafe → Json.parse → toolsCall?`
-    composition as `Host/Canonical.lean:42-66`, over THIS repository's own
-    `Seal.JsonUtil.wireNumbersSafe` and `Seal.toolsCall?` — the very
-    definitions seal-host imports. -/
+/-- The router mirror: the same parse-cost guard → numeric-agreement guard →
+    `Json.parse` → `toolsCall?` composition expected at the host boundary,
+    over THIS repository's own definitions — the very kernel definitions
+    seal-host imports on a deliberate repin. -/
 def classifyWire (line : String) : WireClass :=
   if !Seal.JsonUtil.wireNumbersSafe (trimmed line) then
+    .refuse
+  else if !Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line) then
     .refuse
   else
     match Json.parse (trimmed line) with
@@ -246,14 +249,21 @@ theorem classes_partition (line : String) :
     ∨ (refusedClass line = false ∧ mediatedClass line = false ∧ escapesClass line = true) := by
   rcases Bool.eq_false_or_eq_true (Seal.JsonUtil.wireNumbersSafe (trimmed line))
     with hw | hw
-  · have hr : refusedClass line = false := by simp [refusedClass, hw]
-    rcases Bool.eq_false_or_eq_true (mediatedClass line) with hm | hm
-    · have he : escapesClass line = false := by
-        simp [escapesClass, hr, hm]
-      exact .inr (.inl ⟨hr, hm, he⟩)
-    · have he : escapesClass line = true := by
-        simp [escapesClass, hr, hm]
-      exact .inr (.inr ⟨hr, hm, he⟩)
+  · cases ha : Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line) with
+    | false =>
+        have hr : refusedClass line = true := by simp [refusedClass, hw, ha]
+        have hm : mediatedClass line = false := by simp [mediatedClass, hw, ha]
+        have he : escapesClass line = false := by simp [escapesClass, hr]
+        exact .inl ⟨hr, hm, he⟩
+    | true =>
+        have hr : refusedClass line = false := by simp [refusedClass, hw, ha]
+        rcases Bool.eq_false_or_eq_true (mediatedClass line) with hm | hm
+        · have he : escapesClass line = false := by
+            simp [escapesClass, hr, hm]
+          exact .inr (.inl ⟨hr, hm, he⟩)
+        · have he : escapesClass line = true := by
+            simp [escapesClass, hr, hm]
+          exact .inr (.inr ⟨hr, hm, he⟩)
   · have hr : refusedClass line = true := by simp [refusedClass, hw]
     have hm : mediatedClass line = false := by simp [mediatedClass, hw]
     have he : escapesClass line = false := by
@@ -311,35 +321,42 @@ theorem classifyWire_act_iff (line : String) :
   cases hw : Seal.JsonUtil.wireNumbersSafe (trimmed line) with
   | false => simp [classifyWire, mediatedClass, hw]
   | true =>
-      cases hp : Json.parse (trimmed line) with
-      | error e => simp [classifyWire, mediatedClass, hw, hp]
-      | ok j =>
-          cases ht : Seal.toolsCall? j with
-          | none =>
-              simp [classifyWire, mediatedClass, hw, hp, ht,
-                strictCallShape_eq_toolsCall?]
-          | some c =>
-              obtain ⟨n, a⟩ := c
-              simp [classifyWire, mediatedClass, hw, hp, ht,
-                strictCallShape_eq_toolsCall?]
+      cases ha : Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line) with
+      | false => simp [classifyWire, mediatedClass, hw, ha]
+      | true =>
+          cases hp : Json.parse (trimmed line) with
+          | error e => simp [classifyWire, mediatedClass, hw, ha, hp]
+          | ok j =>
+              cases ht : Seal.toolsCall? j with
+              | none =>
+                  simp [classifyWire, mediatedClass, hw, ha, hp, ht,
+                    strictCallShape_eq_toolsCall?]
+              | some c =>
+                  obtain ⟨n, a⟩ := c
+                  simp [classifyWire, mediatedClass, hw, ha, hp, ht,
+                    strictCallShape_eq_toolsCall?]
 
 theorem classifyWire_passthrough_iff (line : String) :
     classifyWire line = .passthrough ↔ escapesClass line = true := by
   cases hw : Seal.JsonUtil.wireNumbersSafe (trimmed line) with
   | false => simp [classifyWire, escapesClass, refusedClass, hw]
   | true =>
-      cases hp : Json.parse (trimmed line) with
-      | error e =>
-          simp [classifyWire, escapesClass, refusedClass, mediatedClass, hw, hp]
-      | ok j =>
-          cases ht : Seal.toolsCall? j with
-          | none =>
-              simp [classifyWire, escapesClass, refusedClass, mediatedClass,
-                hw, hp, ht, strictCallShape_eq_toolsCall?]
-          | some c =>
-              obtain ⟨n, a⟩ := c
-              simp [classifyWire, escapesClass, refusedClass, mediatedClass,
-                hw, hp, ht, strictCallShape_eq_toolsCall?]
+      cases ha : Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line) with
+      | false =>
+          simp [classifyWire, escapesClass, refusedClass, mediatedClass, hw, ha]
+      | true =>
+          cases hp : Json.parse (trimmed line) with
+          | error e =>
+              simp [classifyWire, escapesClass, refusedClass, mediatedClass, hw, ha, hp]
+          | ok j =>
+              cases ht : Seal.toolsCall? j with
+              | none =>
+                  simp [classifyWire, escapesClass, refusedClass, mediatedClass,
+                    hw, ha, hp, ht, strictCallShape_eq_toolsCall?]
+              | some c =>
+                  obtain ⟨n, a⟩ := c
+                  simp [classifyWire, escapesClass, refusedClass, mediatedClass,
+                    hw, ha, hp, ht, strictCallShape_eq_toolsCall?]
 
 /-! ## The strict/lenient split, value level (kernel-checked)
 
@@ -448,6 +465,10 @@ def malformedWitness : String := "{oops"
 /-- Inside R: a monster decimal exponent. -/
 def monsterWitness : String := "{\"n\":1e9999999}"
 
+/-- Inside R by agreement (but inside the old exponent-cost bound). -/
+def agreementUnsafeWitness : String :=
+  "{\"method\":\"tools/call\",\"params\":{\"name\":\"x\",\"arguments\":{\"n\":-1e9999}}}"
+
 #guard mediatedClass mediatedWitness = true
 #guard undecidedCallClass bomWitness = true
 #guard undecidedCallClass caseWitness = true
@@ -455,6 +476,8 @@ def monsterWitness : String := "{\"n\":1e9999999}"
 #guard escapesClass listWitness = true && lenientClass listWitness = false
 #guard escapesClass malformedWitness = true && lenientClass malformedWitness = false
 #guard refusedClass monsterWitness = true
+#guard refusedClass agreementUnsafeWitness = true
+#guard (match classifyWire agreementUnsafeWitness with | .refuse => true | _ => false)
 
 /-! ## The widened transport model
 
