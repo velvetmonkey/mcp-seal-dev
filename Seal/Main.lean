@@ -58,6 +58,17 @@ private def processHostLine
   if !JsonUtil.wireNumbersSafe trimmed then
     writeLocked stdoutLock hostOut (blockResponseLine Json.null "unsafe numeric literal")
     return
+  -- Independent parser-agreement gate.  Unlike `wireNumbersSafe`, this does
+  -- not bound parse cost: it refuses a literal whose exact Lean value is not
+  -- preserved by the shortest decimal round-trip of an IEEE-754 binary64
+  -- reader.  Keep the raw token so the hard refusal names the cause.
+  match JsonUtil.firstAgreementUnsafeNumber? trimmed with
+  | some literal =>
+      writeLocked stdoutLock hostOut
+        (errorResponseLine Json.null
+          s!"numeric literal is not IEEE-754 agreement-safe: {literal}")
+      return
+  | none => pure ()
   -- Duplicate-key mediation gate. THIS MUST RUN BEFORE `Json.parse`.
   --
   -- It previously ran inside the `some (toolName, toolArgs)` branch below, i.e.

@@ -37,6 +37,8 @@ namespace Seal.JsonUtil
 -- `1e999999` overflow case (6 exponent digits, the boundary the bound keeps).
 #guard wireNumbersSafe "{\"v\":1e308}" = true
 #guard wireNumbersSafe "{\"v\":1e999999}" = true
+#guard wireNumbersSafe "{\"v\":-1e9999}" = true
+#guard wireNumbersSafe "{\"v\":9007199254740993}" = true
 
 -- A monster exponent INSIDE a string value is inert — NOT over-refused: a quoted
 -- `"1e9999999999"` never drives the parser's `10^exponent`.
@@ -45,6 +47,19 @@ namespace Seal.JsonUtil
 -- `true`/`false` carry an unquoted `e` with no trailing digits — a zero-length
 -- exponent run, so they never trip the bound.
 #guard wireNumbersSafe "{\"a\":true,\"b\":false}" = true
+
+-- The agreement guard is independent of the exponent-cost guard.  All four
+-- literals below pass `wireNumbersSafe`; only the values that survive a
+-- shortest binary64 decimal round-trip pass the new predicate.
+#guard firstAgreementUnsafeNumber? "{\"v\":-1e9999}" = some "-1e9999"
+#guard wireNumbersAgreementSafe "{\"v\":1e308}" = true
+#guard wireNumbersAgreementSafe "{\"v\":9007199254740991}" = true
+#guard firstAgreementUnsafeNumber? "{\"v\":9007199254740993}" =
+  some "9007199254740993"
+#guard firstAgreementUnsafeNumber? "{\"v\":1e9999999}" = some "1e9999999"
+
+-- Quoted numeric text is inert.
+#guard wireNumbersAgreementSafe "{\"v\":\"-1e9999\"}" = true
 
 /-- A non-digit character never raises the worst-seen exponent run: `worst` is
     only ever set to the length of a digit run. This is the structural invariant

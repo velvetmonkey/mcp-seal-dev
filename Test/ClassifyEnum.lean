@@ -6,7 +6,7 @@ import SealV2.ClassifyTransport
 # STEP 0 enumerator + runnable SHOW control for the classify seam (K3/K4)
 
 Runs the REAL classifier composition (`SealV2.ClassifyTransport.classifyWire`
-over this repo's `Seal.JsonUtil.wireNumbersSafe` / `Lean.Json.parse` /
+over this repo's two raw-wire numeric guards / `Lean.Json.parse` /
 `Seal.toolsCall?`) over a generated corpus plus an exhaustive 1-byte ASCII
 sweep, and enforces, RED on failure (exit 1):
 
@@ -76,6 +76,7 @@ def extraCorpus : List Entry :=
    ⟨"tools-list", listWitness⟩,
    ⟨"malformed", malformedWitness⟩,
    ⟨"monster", monsterWitness⟩,
+   ⟨"agreement-unsafe", agreementUnsafeWitness⟩,
    ⟨"empty", ""⟩,
    ⟨"open-brace", "{"⟩,
    ⟨"open-bracket", "["⟩,
@@ -155,6 +156,7 @@ def main : IO UInt32 := do
   let checks : List (String × String × Cell) :=
     [("golden-mediated", mediatedWitness, .mediated),
      ("monster-refused", monsterWitness, .refused),
+     ("agreement-unsafe-refused", agreementUnsafeWitness, .refused),
      ("monster-in-call-refused",
        "{\"method\":\"tools/call\",\"params\":{\"name\":\"x\",\"arguments\":{\"n\":1e9999999}}}",
        .refused),
