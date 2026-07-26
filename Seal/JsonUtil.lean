@@ -288,6 +288,16 @@ private def binaryRatio (b : Binary64Value) : Nat × Nat :=
   else
     (b.significand, 2 ^ (-b.exp2).toNat)
 
+/-- Whether a normalized decimal and a binary64 value denote the same exact
+    rational number. -/
+private def decimalEqualsBinary64 (d : DecimalValue) (b : Binary64Value) : Bool :=
+  let (binaryNumerator, binaryDenominator) := binaryRatio b
+  if d.exp10 ≥ 0 then
+    d.coeff * 10 ^ d.exp10.toNat * binaryDenominator == binaryNumerator
+  else
+    d.coeff * binaryDenominator ==
+      binaryNumerator * 10 ^ (-d.exp10).toNat
+
 private def negativeDecimalExponent? (numerator denominator : Nat) : Option Int :=
   (List.range 401).drop 1 |>.findSome? fun (k : Nat) =>
     if numerator * 10 ^ k ≥ denominator then some (-(k : Int)) else none
@@ -327,19 +337,29 @@ private def shortestDecimal? (b : Binary64Value) : Option DecimalValue :=
 
 /-- Decide one syntactically valid JSON numeric literal.
 
-Integer syntax follows the interoperability bound mandated by the agreement
-spec.  Decimal/exponent syntax is accepted exactly when its normalized
-mathematical value is the shortest decimal that round-trips through binary64.
+Integer syntax follows the significant-coefficient interoperability bound
+mandated by the agreement spec and is accepted only when the exponent-applied
+value is exactly representable in binary64.  Decimal/exponent syntax is
+accepted exactly when its normalized mathematical value is the shortest
+decimal that round-trips through binary64.
 -/
 def numberLiteralAgreementSafe? (literal : String) : Option Bool := do
   let parsed ← parseWireDecimal? literal
   if parsed.integerSyntax then
+    -- This significant-coefficient length gate is implied by the
+    -- `maxSafeInteger` comparison below.  Keep it only as a resource bound so
+    -- an arbitrarily long integer is refused before conversion to `Nat`.
     if parsed.digits.length > 16 then some false
     else
-      let magnitude ←
+      let coefficient ←
         if parsed.digits.isEmpty then some 0
         else String.ofList parsed.digits |>.toNat?
-      some (magnitude ≤ maxSafeInteger)
+      if coefficient > maxSafeInteger then some false
+      else
+        let value : DecimalValue := { coeff := coefficient, exp10 := parsed.exp10 }
+        match decimalToBinary64? value with
+        | none => some false
+        | some binary => some (decimalEqualsBinary64 value binary)
   else
     match parsedValue? parsed with
     | none => some false
