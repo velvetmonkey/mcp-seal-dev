@@ -108,8 +108,6 @@ searches the at-most-17 significant digits needed for binary64's shortest
 round-trip decimal.  That keeps the gate deterministic and kernel-reducible.
 -/
 
-def maxSafeInteger : Nat := 9007199254740991 -- 2^53 - 1
-
 structure ParsedWireDecimal where
   negative : Bool
   /-- Significant coefficient digits, with leading and trailing zeroes removed. -/
@@ -337,29 +335,26 @@ private def shortestDecimal? (b : Binary64Value) : Option DecimalValue :=
 
 /-- Decide one syntactically valid JSON numeric literal.
 
-Integer syntax follows the significant-coefficient interoperability bound
-mandated by the agreement spec and is accepted only when the exponent-applied
-value is exactly representable in binary64.  Decimal/exponent syntax is
-accepted exactly when its normalized mathematical value is the shortest
-decimal that round-trips through binary64.
+Integer syntax is subject to a significant-coefficient length resource bound
+before `Nat` conversion and is accepted only when the exponent-applied value is
+exactly representable in binary64.  Decimal/exponent syntax is accepted exactly
+when its normalized mathematical value is the shortest decimal that round-trips
+through binary64.
 -/
 def numberLiteralAgreementSafe? (literal : String) : Option Bool := do
   let parsed ← parseWireDecimal? literal
   if parsed.integerSyntax then
-    -- This significant-coefficient length gate is implied by the
-    -- `maxSafeInteger` comparison below.  Keep it only as a resource bound so
-    -- an arbitrarily long integer is refused before conversion to `Nat`.
+    -- Keep this significant-coefficient length gate as a resource bound so an
+    -- arbitrarily long integer is refused before conversion to `Nat`.
     if parsed.digits.length > 16 then some false
     else
       let coefficient ←
         if parsed.digits.isEmpty then some 0
         else String.ofList parsed.digits |>.toNat?
-      if coefficient > maxSafeInteger then some false
-      else
-        let value : DecimalValue := { coeff := coefficient, exp10 := parsed.exp10 }
-        match decimalToBinary64? value with
-        | none => some false
-        | some binary => some (decimalEqualsBinary64 value binary)
+      let value : DecimalValue := { coeff := coefficient, exp10 := parsed.exp10 }
+      match decimalToBinary64? value with
+      | none => some false
+      | some binary => some (decimalEqualsBinary64 value binary)
   else
     match parsedValue? parsed with
     | none => some false

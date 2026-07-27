@@ -22,7 +22,7 @@ private def cases : List Case :=
   [⟨"measured-vector", "-1e9999", false⟩,
    ⟨"negative-control", "1e308", true⟩,
    ⟨"integer-max-safe", "9007199254740991", true⟩,
-   ⟨"integer-bound-plus-one", "9007199254740992", false⟩,
+   ⟨"integer-two-pow-53", "9007199254740992", true⟩,
    ⟨"integer-2^53-plus-1", "9007199254740993", false⟩,
    ⟨"ordinary-fraction", "0.1", true⟩,
    ⟨"non-shortest-fraction", "0.10000000000000001", false⟩,
