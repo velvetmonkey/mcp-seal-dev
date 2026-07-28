@@ -2,6 +2,7 @@
 
 import SealV2.Serialization
 import SealV2.Crypto
+import Seal.EffectCommitment
 
 namespace SealV2
 
@@ -19,10 +20,77 @@ abbrev ToolName := String
     shared by signed approvals, effect envelopes, and the trusted clock. -/
 abbrev UnixSeconds := Nat
 
+/-- The complete structurally validated `_meta` identity carried by V2.
+
+    A present object is stored as the canonical JSON bytes produced by the
+    same `Lean.Json` object representation used by the stage-1 guard target.
+    This is deliberate: the V2 AST preserves object-member order, whereas
+    stage 1 uses a `TreeMap`. Normalising here prevents the two identity
+    layers from disagreeing merely because members were reordered. -/
+inductive MetaValue where
+  | absent
+  | present (canonicalObject : CanonicalBytes)
+  deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
+
+namespace MetaValue
+
+/-- The exact identity suffix shared with `Seal.ValidatedMeta.preimageParts`. -/
+def preimageParts : MetaValue → List String
+  | .absent => ["meta.absent", ""]
+  | .present canonicalObject => ["meta.present", canonicalObject]
+
+/-- Convert the stage-1 validated value without projection or reinterpretation. -/
+def ofStage1 : Seal.ValidatedMeta → MetaValue
+  | .absent => .absent
+  | .present object => .present (Lean.Json.obj object).compress
+
+/-- The V2 and stage-1 metadata preimages are definitionally identical. -/
+theorem ofStage1_preimageParts (metadata : Seal.ValidatedMeta) :
+    (ofStage1 metadata).preimageParts = metadata.preimageParts := by
+  cases metadata <;> rfl
+
+/-- Parse a V2 request `_meta` seat. Absence is first-class; a present value
+    must be an object. Re-parsing the V2 canonical AST serialization through
+    `Lean.Json` gives the same complete, order-normalized object value used by
+    the stage-1 path. -/
+def fromAst? : Option AST → Option MetaValue
+  | none => some .absent
+  | some (.object fields) =>
+      match Lean.Json.parse (serializeAstValue (.object fields)) with
+      | .ok (.obj object) => some (.present (Lean.Json.obj object).compress)
+      | _ => none
+  | some _ => none
+
+/-- Proof-friendly signed-target representation. The discriminator is
+    explicit, and the complete canonical present object is carried by value. -/
+def signedAst : MetaValue → AST
+  | .absent => .object [("presence", .string "absent")]
+  | .present canonicalObject =>
+      .object [
+        ("presence", .string "present"),
+        ("canonicalObject", .string canonicalObject)
+      ]
+
+/-- Structural inverse of `signedAst`. -/
+def fromSignedAst? : AST → Option MetaValue
+  | .object [("presence", .string "absent")] => some .absent
+  | .object [
+      ("presence", .string "present"),
+      ("canonicalObject", .string canonicalObject)] =>
+      match Lean.Json.parse canonicalObject with
+      | .ok (.obj object) =>
+          let normalized := (Lean.Json.obj object).compress
+          if normalized == canonicalObject then some (.present normalized) else none
+      | _ => none
+  | _ => none
+
+end MetaValue
+
 structure CapabilityRequest where
   tool : ToolName
   action : Action
   arguments : AST
+  metadata : MetaValue
   deriving Repr, BEq
 
 structure ToolSpec where
@@ -37,6 +105,7 @@ structure Target where
   toolVersion : ToolVersion
   manifestDigest : ManifestDigest
   arguments : AST
+  metadata : MetaValue
   deriving Repr, BEq
 
 /-- A nonce is a fixed-width 32-byte value rendered as exactly 64 lowercase hex characters. -/
@@ -139,7 +208,8 @@ def signedMessageAst (message : SignedMessage) : AST :=
       ("action", .string message.target.action),
       ("toolVersion", .string message.target.toolVersion),
       ("manifestDigest", .string message.target.manifestDigest),
-      ("arguments", message.target.arguments)
+      ("arguments", message.target.arguments),
+      ("metadata", message.target.metadata.signedAst)
     ]),
     ("session", .string message.session),
     ("issuedAt", .number { negative := false, intDigits := toString message.issuedAt, fracDigits := none }),
@@ -163,16 +233,17 @@ def signedMessageFromAst? (ast : AST) : Option SignedMessage :=
         ("action", .string action),
         ("toolVersion", .string toolVersion),
         ("manifestDigest", .string manifestDigest),
-        ("arguments", arguments)]),
+        ("arguments", arguments),
+        ("metadata", metadataAst)]),
       ("session", .string session),
       ("issuedAt", issuedAtAst),
       ("expiry", expiryAst),
       ("nonce", .string nonceStr)] =>
-    match astNat? issuedAtAst, astNat? expiryAst with
-    | some issuedAt, some expiry =>
+    match astNat? issuedAtAst, astNat? expiryAst, MetaValue.fromSignedAst? metadataAst with
+    | some issuedAt, some expiry, some metadata =>
         if h : isCanonicalNonceString nonceStr = true then
           some {
-            target := { tool, action, toolVersion, manifestDigest, arguments },
+            target := { tool, action, toolVersion, manifestDigest, arguments, metadata },
             session := session,
             issuedAt := issuedAt,
             expiry := expiry,
@@ -180,7 +251,7 @@ def signedMessageFromAst? (ast : AST) : Option SignedMessage :=
           }
         else
           none
-    | _, _ => none
+    | _, _, _ => none
   | _ => none
 
 def signedMessageCanonical? (message : SignedMessage) : Option {ast // IsCanonical ast} :=
@@ -250,7 +321,8 @@ def requestFromAst (ast : AST) : Option CapabilityRequest :=
             let tool ← lookupObj "name" params >>= astString?
             let action ← lookupObj "action" params >>= astString?
             let arguments ← lookupObj "arguments" params
-            some { tool, action, arguments }
+            let metadata ← MetaValue.fromAst? (lookupObj "_meta" params)
+            some { tool, action, arguments, metadata }
         | _ => none
   | _ => none
 
@@ -263,7 +335,8 @@ def targetFor (state : ApprovalState) (request : CapabilityRequest) (spec : Tool
     action := request.action,
     toolVersion := spec.version,
     manifestDigest := state.manifestDigest,
-    arguments := request.arguments
+    arguments := request.arguments,
+    metadata := request.metadata
   }
 
 /-- The default ceiling on an approval's lifetime, in seconds. -/
@@ -274,13 +347,14 @@ def defaultMaxApprovalTtl : Nat := 300
 def pruneConsumedNonces (now : Nat) (entries : List ConsumedNonce) : List ConsumedNonce :=
   entries.filter (fun e => now <= e.expiresAt)
 
-/-- A total, deterministic canonical string key for a target. Two targets share a key
-    iff they agree on tool / action / version / manifest digest and on the canonical
-    serialisation of their arguments. Uses the M3 total value serialiser. -/
+/-- A total, deterministic canonical string key for a target. Metadata uses
+    the same explicit absent/present suffix as the stage-1 guard target, so
+    absence and `{}` do not share a replay namespace. -/
 def serializeTargetKey (target : Target) : String :=
   String.intercalate " "
     [target.tool, target.action, target.toolVersion, target.manifestDigest,
-     serializeAstValue target.arguments]
+     serializeAstValue target.arguments] ++
+    " " ++ String.intercalate " " target.metadata.preimageParts
 
 def replayNamespace (state : ApprovalState) (target : Target) : ReplayNamespace :=
   { publicKey := state.publicKey,

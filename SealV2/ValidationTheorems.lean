@@ -31,6 +31,14 @@ theorem valid_capability_target_bound {ast : AST} {state : ApprovalState}
     (witness.approval.target == witness.target) = true :=
   witness.approval_target_matches
 
+/-- The validated V2 target carries exactly the complete metadata value parsed
+    from the request; `targetFor` neither projects nor replaces it. -/
+theorem valid_capability_metadata_bound {ast : AST} {state : ApprovalState}
+    (witness : ValidApproval ast state) :
+    witness.target.metadata = witness.request.metadata := by
+  rw [witness.target_matches]
+  rfl
+
 theorem valid_capability_session_bound {ast : AST} {state : ApprovalState}
     (witness : ValidApproval ast state) :
     witness.approval.session = state.session :=

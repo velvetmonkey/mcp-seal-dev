@@ -13,8 +13,9 @@ Message bytes come from the compiled kernel itself
 sign the wrong framing: if the pinned Lean-side message hex and the exe
 disagree, the build's `#guard_msgs` pin already went red. As of the
 kernel-2026-07-23 integration the witness envelopes carry the Stage B2
-reconciled shape (`seal.effect/v2`, 10 fields, Option-encoded F3 claim,
-mandatory session/policyVersion/expiresAt bindings).
+reconciled shape (`seal.effect/v2`, 10 envelope fields, Option-encoded F3
+claim including complete metadata, mandatory
+session/policyVersion/expiresAt bindings).
 
 Keys are the documented test seeds (NOT real keys):
   alice seed = 0x00 01 02 .. 1f   (same seed as testPublicKeyHex / m5)

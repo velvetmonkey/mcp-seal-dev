@@ -6,10 +6,13 @@ open SealV2
 
 namespace Test.V2ValidationFixtures
 
-def requestRaw (tool action args : String) : String :=
+def requestRaw (tool action args : String) (rawMeta : Option String := none) : String :=
   "{\"method\":\"tools/call\",\"params\":{\"name\":\"" ++ tool ++
     "\",\"action\":\"" ++ action ++
-    "\",\"arguments\":" ++ args ++ "}}"
+    "\",\"arguments\":" ++ args ++
+    match rawMeta with
+    | none => "}}"
+    | some value => ",\"_meta\":" ++ value ++ "}}"
 
 def baseArgs : AST :=
   .object [("database", .string "prod"), ("table", .string "users"), ("amount", .number {
@@ -27,7 +30,8 @@ def target : Target :=
     action := "write",
     toolVersion := "v1",
     manifestDigest := "manifest-001",
-    arguments := baseArgs
+    arguments := baseArgs,
+    metadata := .absent
   }
 
 -- Literal 64-lowercase-hex nonces for fixtures and tests.
@@ -65,12 +69,12 @@ def testPublicKeyHex : PublicKey :=
 
 /-- Ed25519 signature over the base message (M_A: issuedAt 0, expiry 120, nonce A). -/
 def sigOverBaseMessage : Signature :=
-  "ffbe15d60ae3d19a0f97465889f5e4927cdb3f36beebe649f546f9639fc3282966ecab0a0f7564af9cc1daa51a2903029f83f6b2668b710a7cb17dd20deeaf03"
+  "3a288732067e139854af6462daa1dce0265bdff175dba2e7e9e0eea70a1de36b00760ce4fb9fb55a0f6228f12ca64ecee920bbe76db6392556225c5269ea3b0f"
 
 /-- Ed25519 signature over the over-cap message (M_B: issuedAt 0, expiry 400, nonce B),
     used by the TTL-cap reject test so it rejects on TTL, not on a bad signature. -/
 def sigOverTtlMessage : Signature :=
-  "228b3400facb2bac68a54971754d70329885be7debfb99664303f784fdf38f19092652f51cd0bf5df7072136059c39c074024ff803bb7cee19b7cc3df1a1bb02"
+  "a839c3dab714836b9693bfb597b6f3c79852045dc2a0a8e4b896b2cde48032187de39d9b6cbee5f4022b938609bbc9c894071c2bed17d886e7a52f9e5c6fde0d"
 
 /-- Set an approval's signed-message bytes to its OWN canonical message and attach
     an externally-produced Ed25519 signature hex over exactly those bytes. -/
@@ -137,7 +141,7 @@ def unsignedOrdersApproval : Approval :=
 /-- Ed25519 signature over the orders message (M_C: issuedAt 0, expiry 120,
     nonce B, target arguments `table:"orders"`). -/
 def sigOverOrdersMessage : Signature :=
-  "8746f2922e89c360674d79e8ed7a7013f6ee509edd9b2699fbde8ec9474f88d37d5c1358b7c0ae40a393a02fff646cfdd9eedbe5f3c6f2e6e7f608bc9ba04e09"
+  "f08d9160de7ad0d2e22e343156ed0852ed1355a914e9a5bdbf0819e101bcf97c0f307a516d5e16018ffe4a8eb51d961050fca27a31388488acc7e824bdd88c0f"
 
 def validOrdersApproval : Approval :=
   approvalWithSig unsignedOrdersApproval sigOverOrdersMessage

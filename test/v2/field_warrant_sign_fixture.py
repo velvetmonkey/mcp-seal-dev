@@ -28,7 +28,8 @@ Stage B2 shape notes (vs the field-warrant campaign fixture this ports):
   * session is MANDATORY (empty was a fail-open bypass).
   * The F3 effect claim is `Option`-encoded with a signed presence byte
     (0x00 absent / 0x01 present) — absence is declared, not spelled as
-    three empty strings. `("", "", "")` is now a CLAIM and gets checked.
+    three empty strings. `("", "", "", absent-meta)` is now a CLAIM and gets
+    checked. A present claim also carries the complete validated metadata.
   * revocationSubject is STRIPPED (SEAT, wrong plane).
 
 Keys: the fixed, documented test seed 0x000102..1f (NOT a real key), the
@@ -72,6 +73,7 @@ GOLDEN_HEX_EFFECT_PRESENT = (
     "000000000000000a64622e65786563757465"
     "000000000000000463616c6c"
     "00000000000000077b2271223a317d"
+    "00"
 )
 GOLDEN_HEX_EFFECT_ABSENT = (
     "7365616c2e6566666563742f763200"
@@ -98,13 +100,24 @@ def frame(s: str) -> bytes:
     return u64be(len(b)) + b
 
 
-def opt_effect(effect: tuple[str, str, str] | None) -> bytes:
+def opt_meta(meta: str | None) -> bytes:
+    """0x00 = metadata absent; 0x01 ++ frame(canonical object) = present."""
+    if meta is None:
+        return b"\x00"
+    return b"\x01" + frame(meta)
+
+
+def opt_effect(effect: tuple[str, str, str, str | None] | None) -> bytes:
     """Wire form of the Option-encoded F3 claim: 0x00 = declared absent;
-    0x01 ++ frame(resource) ++ frame(action) ++ frame(args) = present."""
+    0x01 ++ frame(resource) ++ frame(action) ++ frame(args)
+    ++ opt_meta(metadata) = present."""
     if effect is None:
         return b"\x00"
-    resource, action, args = effect
-    return b"\x01" + frame(resource) + frame(action) + frame(args)
+    resource, action, args, meta = effect
+    return (
+        b"\x01" + frame(resource) + frame(action) + frame(args)
+        + opt_meta(meta)
+    )
 
 
 def effect_message(authority: bytes, e: dict) -> bytes:
@@ -133,7 +146,7 @@ GOLDEN_ENVELOPE = {
     "adapterVersion": "2025-06-18",
     "session": "sess-1",
     "policyVersion": "pol-1",
-    "effect": ("db.execute", "call", '{"q":1}'),
+    "effect": ("db.execute", "call", '{"q":1}', None),
 }
 
 GOLDEN_ENVELOPE_NO_EFFECT = dict(GOLDEN_ENVELOPE, effect=None)
@@ -159,7 +172,7 @@ BASE = {
     "adapterVersion": "2025-06-18",
     "session": "session-1",
     "policyVersion": "policy-1",
-    "effect": ("db.execute", "write", VALID_ARGS),
+    "effect": ("db.execute", "write", VALID_ARGS, None),
 }
 
 SWAPPED_LINE = (
@@ -180,13 +193,13 @@ GATE_VARIANTS = [
     ("ZeroExpiry", "expiresAt", 0, "expiryGate (mandatory — bypass killed)"),
     ("Expired", "expiresAt", 1, "expiryGate"),
     ("FutureIssued", "issuedAt", 11, "issuedAtGate"),
-    ("EmptyStringClaim", "effect", ("", "", ""),
+    ("EmptyStringClaim", "effect", ("", "", "", None),
      "effectGate (the retired all-empty sentinel is now a checked claim)"),
-    ("EffectResource", "effect", ("fs.read", "write", VALID_ARGS), "effectGate"),
-    ("EffectAction", "effect", ("db.execute", "delete", VALID_ARGS), "effectGate"),
+    ("EffectResource", "effect", ("fs.read", "write", VALID_ARGS, None), "effectGate"),
+    ("EffectAction", "effect", ("db.execute", "delete", VALID_ARGS, None), "effectGate"),
     ("EffectArgs", "effect",
      ("db.execute", "write",
-      '{"database":"prod","table":"users","amount":99}'), "effectGate"),
+      '{"database":"prod","table":"users","amount":99}', None), "effectGate"),
     ("Line", "line", SWAPPED_LINE, "effectGate"),
     ("NoEffectClaim", "effect", None,
      "none — F3 declared absent is a legitimate green (declared optionality)"),

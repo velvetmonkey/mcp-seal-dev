@@ -99,15 +99,17 @@ is DECLARED in the signed object, never implied by a sentinel value:
   against policy X cannot be judged under policy Y (`policy_version_bind`,
   `policy_version_spoof_blocks`). Mandatory equality against
   `state.policyVersion`.
-* BIND-declared-optional F3 `effect : Option {resource, action, args}` —
+* BIND-declared-optional F3
+  `effect : Option {resource, action, args, metadata}` —
   ADVISORY but INTERPRETED: a present claim is equality-enforced against the
   parser-derived effect (`mcp_effect_equality`), never the decision value
-  (`effect_step_presence_not_value`). The F3 triple is under a SEPARATE,
+  (`effect_step_presence_not_value`). The F3 claim is under a SEPARATE,
   FLAGGED strip decision (the ballot realized F3 as the kernel-computed
   `effect_commitment`); it is deliberately NOT stripped here.
 * Encoding: every variable-width field `u64be(len) ‖ bytes`; fixed-width
   fields raw (authority 32, nonce 32, u64be at 8); the F3 option block is
-  `0x00`, or `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args)`.
+  `0x00`, or
+  `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args) ‖ optMeta(metadata)`.
 
 **Specification-only members of the byte-formula defect family:** a
 repository-wide fixed-string search at `6c74b61` found no kernel occurrence
@@ -319,7 +321,9 @@ structure EffectClaim where
   resource : String
   action : String
   args : String
-  deriving Repr, BEq, DecidableEq
+  /-- Complete validated request `_meta`, including explicit absence. -/
+  metadata : MetaValue
+  deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 
 /-- The Stage B2 effect envelope — every field both authenticated AND
     interpreted; the killed seats (E1★ plus the Stage B2 revocation-subject
@@ -357,15 +361,21 @@ structure EffectEnvelope where
   effect : Option EffectClaim
   deriving BEq
 
+/-- Wire form of the metadata value inside a present effect claim. -/
+def optMeta : MetaValue → ByteArray
+  | .absent => ByteArray.mk #[0]
+  | .present canonicalObject => ByteArray.mk #[1] ++ frame canonicalObject
+
 /-- Wire form of the option-encoded F3 claim: `0x00` = declared absent;
-    `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args)` = present. The
+    `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args) ‖ optMeta(metadata)`
+    = present. The
     presence byte is INSIDE the signed message: absence is a distinct signed
     value, not an inference from empty strings, and flipping presence is a
     forgery (`optEffect_inj`). -/
 def optEffect : Option EffectClaim → ByteArray
   | none => ByteArray.mk #[0]
   | some c => ByteArray.mk #[1] ++ frame c.resource ++ frame c.action
-      ++ frame c.args
+      ++ frame c.args ++ optMeta c.metadata
 
 /-- **The canonical signed message** — the cross-language contract:
 
@@ -420,6 +430,9 @@ structure WireSized (e : EffectEnvelope) : Prop where
   effect : ∀ c, e.effect = some c →
     c.resource.utf8ByteSize < 2 ^ 64 ∧ c.action.utf8ByteSize < 2 ^ 64
       ∧ c.args.utf8ByteSize < 2 ^ 64
+      ∧ (match c.metadata with
+         | .absent => True
+         | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64)
 
 /-- Decidable form of `WireSized`, checked by `verifyEffect` at runtime. -/
 def wireSizedB (e : EffectEnvelope) : Bool :=
@@ -437,7 +450,11 @@ def wireSizedB (e : EffectEnvelope) : Bool :=
         | some c =>
             Decidable.decide (c.resource.utf8ByteSize < 2 ^ 64)
               && Decidable.decide (c.action.utf8ByteSize < 2 ^ 64)
-              && Decidable.decide (c.args.utf8ByteSize < 2 ^ 64))
+              && Decidable.decide (c.args.utf8ByteSize < 2 ^ 64)
+              && (match c.metadata with
+                  | .absent => true
+                  | .present canonicalObject =>
+                      Decidable.decide (canonicalObject.utf8ByteSize < 2 ^ 64)))
 
 theorem wireSizedB_spec {e : EffectEnvelope} (h : wireSizedB e = true) :
     WireSized e := by
@@ -448,7 +465,8 @@ theorem wireSizedB_spec {e : EffectEnvelope} (h : wireSizedB e = true) :
   intro c hc
   rw [hc] at heff
   simp only [Bool.and_eq_true, decide_eq_true_eq] at heff
-  exact ⟨heff.1.1, heff.1.2, heff.2⟩
+  refine ⟨heff.1.1.1, heff.1.1.2, heff.1.2, ?_⟩
+  cases hm : c.metadata <;> simp_all
 
 /-! ## 1 + 2: full-tuple injectivity, by sequential peel -/
 
@@ -469,15 +487,55 @@ theorem prefix_byte_separated {p₁ p₂ : ByteArray} {i : Nat}
     _ = (p₂ ++ r₂)[i]'hR := by simp only [h]
     _ = p₂[i]'hi₂ := ByteArray.getElem_append_left hi₂
 
+/-- The metadata block is injective: absence and presence have distinct first
+    bytes, and a present complete canonical object is length-framed. -/
+theorem optMeta_inj {m₁ m₂ : MetaValue}
+    (h₁ : match m₁ with
+      | .absent => True
+      | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64)
+    (h₂ : match m₂ with
+      | .absent => True
+      | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64)
+    (h : optMeta m₁ = optMeta m₂) : m₁ = m₂ := by
+  match m₁, m₂ with
+  | .absent, .absent => rfl
+  | .absent, .present value =>
+      exfalso
+      have h' := congrArg (· ++ ByteArray.empty) h
+      simp only [optMeta, ByteArray.append_assoc] at h'
+      exact prefix_byte_separated (i := 0)
+        (p₁ := ByteArray.mk #[0]) (p₂ := ByteArray.mk #[1])
+        (by decide) (by decide) (by decide) _ _ h'
+  | .present value, .absent =>
+      exfalso
+      have h' := congrArg (· ++ ByteArray.empty) h.symm
+      simp only [optMeta, ByteArray.append_assoc] at h'
+      exact prefix_byte_separated (i := 0)
+        (p₁ := ByteArray.mk #[0]) (p₂ := ByteArray.mk #[1])
+        (by decide) (by decide) (by decide) _ _ h'
+  | .present value₁, .present value₂ =>
+      have h' := congrArg (· ++ ByteArray.empty) h
+      simp only [optMeta, ByteArray.append_assoc] at h'
+      rw [ByteArray.append_right_inj] at h'
+      obtain ⟨hvalue, _⟩ := frame_cancel h₁ h₂ h'
+      cases hvalue
+      rfl
+
 /-- The option block is injective: the signed presence byte separates
     `none` from `some` (0x00 vs 0x01 at offset 0), and present claims peel
     field-by-field like the rest of the message. Flipping presence, or any
     claim component, is a distinct signed message. -/
 theorem optEffect_inj {o₁ o₂ : Option EffectClaim}
     (h₁ : ∀ c, o₁ = some c → c.resource.utf8ByteSize < 2 ^ 64
-      ∧ c.action.utf8ByteSize < 2 ^ 64 ∧ c.args.utf8ByteSize < 2 ^ 64)
+      ∧ c.action.utf8ByteSize < 2 ^ 64 ∧ c.args.utf8ByteSize < 2 ^ 64
+      ∧ (match c.metadata with
+         | .absent => True
+         | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64))
     (h₂ : ∀ c, o₂ = some c → c.resource.utf8ByteSize < 2 ^ 64
-      ∧ c.action.utf8ByteSize < 2 ^ 64 ∧ c.args.utf8ByteSize < 2 ^ 64)
+      ∧ c.action.utf8ByteSize < 2 ^ 64 ∧ c.args.utf8ByteSize < 2 ^ 64
+      ∧ (match c.metadata with
+         | .absent => True
+         | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64))
     (h : optEffect o₁ = optEffect o₂) : o₁ = o₂ := by
   match o₁, o₂ with
   | none, none => rfl
@@ -496,18 +554,22 @@ theorem optEffect_inj {o₁ o₂ : Option EffectClaim}
         (p₁ := ByteArray.mk #[0]) (p₂ := ByteArray.mk #[1])
         (by decide) (by decide) (by decide) _ _ h'
   | some c₁, some c₂ =>
-      obtain ⟨hr₁, ha₁, hg₁⟩ := h₁ c₁ rfl
-      obtain ⟨hr₂, ha₂, hg₂⟩ := h₂ c₂ rfl
+      obtain ⟨hr₁, ha₁, hg₁, hm₁⟩ := h₁ c₁ rfl
+      obtain ⟨hr₂, ha₂, hg₂, hm₂⟩ := h₂ c₂ rfl
       have h' := congrArg (· ++ ByteArray.empty) h
       simp only [optEffect, ByteArray.append_assoc] at h'
       rw [ByteArray.append_right_inj] at h'
       obtain ⟨hres, h'⟩ := frame_cancel hr₁ hr₂ h'
       obtain ⟨hact, h'⟩ := frame_cancel ha₁ ha₂ h'
-      obtain ⟨hargs, _⟩ := frame_cancel hg₁ hg₂ h'
+      obtain ⟨hargs, hmeta⟩ := frame_cancel hg₁ hg₂ h'
+      have hmeta' : optMeta c₁.metadata = optMeta c₂.metadata := by
+        simpa using hmeta
+      have hmetadata : c₁.metadata = c₂.metadata :=
+        optMeta_inj hm₁ hm₂ hmeta'
       have hc : c₁ = c₂ := by
         cases c₁; cases c₂
         simp only [EffectClaim.mk.injEq]
-        exact ⟨hres, hact, hargs⟩
+        exact ⟨hres, hact, hargs, hmetadata⟩
       rw [hc]
 
 /-- **The Stage B2 bind, at the encoding.** Equal messages force equal
@@ -739,18 +801,24 @@ structure AdapterId where
 def mcpAdapterType : String := "mcp"
 
 /-- The effect the VERIFIED parser derives from the judged line:
-    (resource = tool, action, canonical args serialization) of the parsed
+    (resource = tool, action, canonical args serialization, complete
+    validated metadata) of the parsed
     `tools/call`. `none` when the line does not parse as a capability request.
     Kernel twin of the host receipt's `seal.effect-view/v0` (which is
     explicitly `authoritative: false`); THIS derivation is the authoritative
     comparand for the F3 equality gate. -/
-def deriveEffect (line : RawBytes) : Option (String × String × String) :=
+def deriveEffect (line : RawBytes) : Option EffectClaim :=
   match parse line with
   | none => none
   | some ast =>
       match requestFromAst ast with
       | none => none
-      | some req => some (req.tool, req.action, serializeAstValue req.arguments)
+      | some req => some {
+          resource := req.tool,
+          action := req.action,
+          args := serializeAstValue req.arguments,
+          metadata := req.metadata
+        }
 
 /-- F1 gate: the signed adapter claim must equal the adapter that actually
     mediated. -/
@@ -803,7 +871,7 @@ def issuedAtGate (state : ApprovalState) (e : EffectEnvelope) : Bool :=
 def effectGate (mediator : AdapterId) (e : EffectEnvelope) : Bool :=
   e.effect.all fun c =>
     mediator.type == mcpAdapterType
-      && (deriveEffect e.line == some (c.resource, c.action, c.args))
+      && (deriveEffect e.line == some c)
 
 /-- **The V2.3 judgment step** — the spec the host binds to at repin. -/
 def effectStep (authority : ByteArray) (reg : PrincipalRegistry)
@@ -1113,7 +1181,7 @@ theorem mcp_effect_equality {authority : ByteArray} {reg : PrincipalRegistry}
     {state : ApprovalState} {c : EffectClaim}
     (hm : mediator.type = mcpAdapterType) (hc : e.effect = some c)
     (h : effectStep authority reg mediator e sigHex state ≠ .Block) :
-    deriveEffect e.line = some (c.resource, c.action, c.args) := by
+    deriveEffect e.line = some c := by
   obtain ⟨_, _, _, hg, _, _, _⟩ := effect_step_gates h
   unfold effectGate at hg
   rw [hc] at hg
@@ -1127,8 +1195,7 @@ theorem mcp_effect_mismatch_blocks {authority : ByteArray}
     {reg : PrincipalRegistry} {mediator : AdapterId} {e : EffectEnvelope}
     {sigHex : String} {state : ApprovalState} {c : EffectClaim}
     (hm : mediator.type = mcpAdapterType) (hc : e.effect = some c)
-    (hmis : deriveEffect e.line
-      ≠ some (c.resource, c.action, c.args)) :
+    (hmis : deriveEffect e.line ≠ some c) :
     effectStep authority reg mediator e sigHex state = .Block := by
   rcases effect_step_block_or_not authority reg mediator e sigHex state
     with hb | hnb
@@ -1174,7 +1241,7 @@ def bytesToHex (b : ByteArray) : String :=
 #eval bytesToHex effectTag.toUTF8
 
 /--
-info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000000000004d2000000000000162e00000000000000077b226d223a317d00000000000000036d6370000000000000000a323032352d30362d31380000000000000006736573732d310000000000000005706f6c2d3101000000000000000a64622e65786563757465000000000000000463616c6c00000000000000077b2271223a317d"
+info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000000000004d2000000000000162e00000000000000077b226d223a317d00000000000000036d6370000000000000000a323032352d30362d31380000000000000006736573732d310000000000000005706f6c2d3101000000000000000a64622e65786563757465000000000000000463616c6c00000000000000077b2271223a317d00"
 -/
 #guard_msgs in
 #eval bytesToHex (effectMessage
@@ -1189,7 +1256,7 @@ info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b
     session := "sess-1"
     policyVersion := "pol-1"
     effect := some { resource := "db.execute", action := "call",
-                     args := "{\"q\":1}" } })
+                     args := "{\"q\":1}", metadata := .absent } })
 
 /--
 info: "7365616c2e6566666563742f763200a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000005616c696365000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f00000000000004d2000000000000162e00000000000000077b226d223a317d00000000000000036d6370000000000000000a323032352d30362d31380000000000000006736573732d310000000000000005706f6c2d3100"
@@ -1240,6 +1307,10 @@ axioms; `ed25519Verify` is `opaque` (TCB seam), not an axiom. -/
 /-- info: 'SealV2.Effect.optEffect_inj' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms optEffect_inj
+
+/-- info: 'SealV2.Effect.optMeta_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms optMeta_inj
 
 /-- info: 'SealV2.Effect.wireSizedB_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
