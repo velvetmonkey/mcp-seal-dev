@@ -10,6 +10,7 @@ defaultTargets = [
   "nonce_ledger_show",
   "field_warrant_tests",
   "field_warrant_mutation",
+  "channel_tests",
 ]
 
 # M5: link the vendored Ed25519 (TweetNaCl) + FFI shim into every exe. SealV2 now
