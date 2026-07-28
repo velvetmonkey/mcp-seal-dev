@@ -50,7 +50,7 @@ Mandatory non-claims (canonical copy: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
 - Seal does NOT prevent compromise of hosts, browsers, build systems, keys, operators, or downstream tools.
 - Seal's audit chain is tamper-EVIDENT, not tamper-IMPOSSIBLE.
 - Seal does NOT make the AI smarter or prevent hallucinations; it stops an unapproved effect.
-- Axiom footprint {propext, Classical.choice, Quot.sound} is the minimal classical fragment; no extra axioms.
+- For kernel logical soundness of regular declarations, the module gate assigns 24 kernel modules to `{propext, Classical.choice, Quot.sound}`. Separately, the unsafe compiled-code root `Ffi` is assigned to `{propext, Classical.choice, Quot.sound, lcProof}`; this characterization says nothing about runtime, memory-safety, or observational purity of its six unsafe wrappers.
 <!-- claims:end -->
 
 ## Verify in five minutes
@@ -60,15 +60,19 @@ bash c/build.sh
 lake build
 lake exe automaton_tests    # v1 automaton behaviour
 lake exe axiom_check        # v1 safety theorems: axiom footprint
+lake exe module_axiom_check # 24 kernel modules + the separate Ffi compiled-code footprint
 lake exe v2_parse_tests && lake exe v2_validate_tests && lake exe v2_serialize_tests && lake exe v2_lifecycle_tests
 lake exe v2_m4_axiom_check  # v2 core: non_bypass, default_deny, decide_emit_unique, canonical_roundtrip, signed_parse_canonical
 lake exe v2_m6_axiom_check  # v2 approval lifecycle: replay_denied, consume/TTL theorems
 ```
 
-PASS looks like: every `axiom_check` prints only the three-axiom footprint
-`{propext, Classical.choice, Quot.sound}` for each theorem. Anything else — an extra
-axiom, a `sorry` — is a finding; the checks are `#guard_msgs`-pinned, so drift also
-breaks the build.
+PASS looks like: the theorem-specific `axiom_check` executables print only
+`{propext, Classical.choice, Quot.sound}` for each regular theorem, while
+`module_axiom_check` separately reports that same three-name kernel baseline
+for its 24 explicitly assigned kernel modules and the four-name unsafe
+compiled-code-root baseline `{propext, Classical.choice, Quot.sound, lcProof}`
+for `Ffi` alone. There is no uniform three-name module baseline. Anything else
+— an extra axiom, a `sorry`, or module-inventory drift — is a finding.
 
 For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.lean`: `stableHashParts` is SHA-256 over `encodeParts`, and the old UInt64 audit path is explicitly named `auditHashParts`.
 

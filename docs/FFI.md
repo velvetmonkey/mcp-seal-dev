@@ -9,6 +9,17 @@ NOT thread-safe). Source of truth: the module docstring and exports in
 [`Ffi.lean`](../Ffi.lean); host-side bindings in `rust/src/lean.rs` and
 `rust/src/main.rs`.
 
+## Axiom footprint and scope
+
+`Ffi` is the only module assigned to the unsafe compiled-code-root baseline
+`[propext, Classical.choice, Quot.sound, lcProof]`. The 24 explicitly assigned
+regular kernel modules retain their separate baseline
+`[propext, Classical.choice, Quot.sound]`; Seal does not claim one uniform
+three-name baseline over both groups. The six exported wrappers carry exactly
+`[lcProof]` outside the kernel baseline. This characterizes kernel logical
+soundness of regular declarations only and says nothing about runtime,
+memory-safety, or observational purity of those wrappers.
+
 ## Exports
 
 All functions take and return Lean strings (JSON envelopes). Errors are

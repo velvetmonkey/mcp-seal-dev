@@ -4,9 +4,16 @@ Seal keeps the proof boundary small, but deployment still has a TCB.
 
 ## Trusted for the proof story
 
-- The Lean kernel and the stated axiom footprint.
+- The Lean kernel and the two stated module baselines: regular kernel modules
+  use `{propext, Classical.choice, Quot.sound}`; the separately assigned unsafe
+  compiled-code root `Ffi` uses
+  `{propext, Classical.choice, Quot.sound, lcProof}`.
 - The theorem statements and axiom gates in the Lean repositories.
 - The target-commitment hash assumption A-CR — an idealised perfect-injectivity premise, strictly stronger than SHA-256 collision resistance and not satisfied by real SHA-256; deployment trusts that no SHA-256 collision is findable for the relevant inputs (see [ASSUMPTIONS.md](ASSUMPTIONS.md)).
+
+The module-baseline characterization is limited to kernel logical soundness of
+regular declarations. It gives no runtime, memory-safety, or observational
+purity guarantee for the six unsafe `Ffi` wrappers.
 
 ## Trusted for deployment
 

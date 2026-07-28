@@ -87,8 +87,9 @@ root = "Test.Axioms"
 name = "module_axiom_check"
 root = "Test.ModuleAxiomScan"
 # `Seal.Main` cannot be imported statically because it defines root `main`.
-# Building `seal` supplies its `.olean` for the checker's isolated import.
-extraDepTargets = ["seal"]
+# Building `seal` and `ffi_shared` supplies their `.olean` files for the
+# checker's two isolated imports.
+needs = ["seal", "ffi_shared"]
 
 [[lean_exe]]
 name = "v2_parse_tests"
