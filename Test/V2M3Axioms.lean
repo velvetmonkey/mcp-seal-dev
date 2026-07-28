@@ -1,6 +1,7 @@
 /- SPDX-License-Identifier: Apache-2.0 -/
 
 import SealV2
+import Test.AxiomAllowlist
 
 /-!
 # Axiom-footprint pins (M3 serialization chain + canonical escapes)
@@ -97,4 +98,33 @@ pre-existing chain.
 /-- info: 'SealV2.reject_lone_high_surrogate' depends on axioms: [propext] -/
 #guard_msgs in #print axioms SealV2.reject_lone_high_surrogate
 
-def main : IO UInt32 := pure 0
+def main : IO UInt32 :=
+  Test.AxiomAllowlist.check `Test.V2M3Axioms #[
+    `SealV2.parseStringChars_preserves_canonical,
+    `SealV2.parseNumber_returns_canonical,
+    `SealV2.parseArrayFuel_returns_canonical,
+    `SealV2.parseObjectFuel_returns_canonical,
+    `SealV2.parse_returns_canonical,
+    `SealV2.serialize_roundtrip_null,
+    `SealV2.serialize_roundtrip_bool,
+    `SealV2.serialize_roundtrip_number,
+    `SealV2.serialize_roundtrip_string,
+    `SealV2.serialize_roundtrip_array,
+    `SealV2.serialize_roundtrip_object,
+    `SealV2.canonical_roundtrip,
+    `SealV2.serializeAst_deterministic,
+    `SealV2.serialize_validCapability_roundtrip,
+    `SealV2.escapeList_injective,
+    `SealV2.escapeString_injective,
+    `SealV2.serializeString_injective,
+    `SealV2.cafeWitness_isCanonical,
+    `SealV2.cafeWitness_roundtrips,
+    `SealV2.escapeChar_astral_witness,
+    `SealV2.escapeChar_bmp_witness_eacute,
+    `SealV2.escapeChar_bmp_witness_coffee,
+    `SealV2.escapeList_distinguishes_eacute_e,
+    `SealV2.reject_uppercase_hex,
+    `SealV2.reject_longform_control,
+    `SealV2.reject_literal_nonascii,
+    `SealV2.reject_lone_high_surrogate
+  ]
