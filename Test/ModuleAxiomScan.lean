@@ -4,15 +4,17 @@ import Lean.Environment
 import Lean.Util.CollectAxioms
 import Lean.Util.Path
 import Seal
-import Seal.Main
 import SealCore
 import SealV2.Crypto
 import SealV2.SerializationContainerLemmas
 import SealV2.SerializationLemmas
 
 /-!
-Feasibility prototype for scanning every kernel declaration originating in one
-module.  This is intentionally not a CI target or an allowlist gate.
+Module-wide axiom gate for the 24 modules measured clean at commit `186f8ee`.
+
+`Ffi` is deliberately excluded pending Ben's ruling on its six exported
+wrappers that carry `lcProof`.  See the complete characterization in
+`/home/monkey/.mega-monkey/lane-reports/lcproof-report.md`.
 -/
 
 namespace Test.ModuleAxiomScan
@@ -26,7 +28,7 @@ private def collectAxiomsIn (env : Environment) (decl : Name) : Array Name :=
   let (_, state) := ((CollectAxioms.collect decl).run env).run {}
   state.axioms.qsort Name.lt
 
-private def compatibleModuleNames : Array Name := #[
+private def measuredModuleNames : Array Name := #[
   `Seal.Block,
   `Seal.Channel,
   `Seal.Classify,
@@ -51,6 +53,27 @@ private def compatibleModuleNames : Array Name := #[
   `Seal,
   `SealV2
 ]
+
+private def expectedProductionModuleCount : Nat := 50
+
+private def productionModuleCount : IO Nat := do
+  let mut count := 0
+  for root in #["Seal", "SealCore", "SealV2"] do
+    let paths ← (System.FilePath.mk root).walkDir
+    count := count + (paths.filter fun path => path.extension == some "lean").size
+  for root in #["Seal.lean", "SealCore.lean", "SealV2.lean", "Ffi.lean"] do
+    if ← (System.FilePath.mk root).pathExists then
+      count := count + 1
+  pure count
+
+private def checkModuleDrift : IO Unit := do
+  let actual ← productionModuleCount
+  IO.println s!"PRODUCTION_MODULES_ON_DISK\t{actual}"
+  IO.println s!"PRODUCTION_MODULES_EXPECTED\t{expectedProductionModuleCount}"
+  unless actual == expectedProductionModuleCount do
+    throw <| IO.userError
+      s!"module scan: production module count drifted from {expectedProductionModuleCount} to {actual}; review the measured scan scope"
+  IO.println "MODULE_DRIFT_GUARD\tPASS"
 
 private def constantKind : ConstantInfo → String
   | .axiomInfo _  => "axiom"
@@ -121,26 +144,33 @@ def scanModule (env : Environment) (moduleName : Name) : IO Nat := do
   pure declarations.size
 
 def scanAll : IO Unit := do
+  checkModuleDrift
   initSearchPath (← findSysroot)
-  -- `Seal.Main` and `Ffi` both define the root name `main`. Also,
-  -- `SerializationLemmas` and `SerializationContainerLemmas` both define
-  -- `SealV2.skipWs_cons_of_not_ws`, which makes provenance ambiguous in a
-  -- shared environment. Scan those conflict cases in isolated environments.
+  -- The two serialization-lemma modules both define
+  -- `SealV2.skipWs_cons_of_not_ws`, so scan `SerializationLemmas` in an
+  -- isolated environment to keep module provenance unambiguous.
   let imports : Array Import :=
-    compatibleModuleNames.map fun moduleName => { module := moduleName }
+    measuredModuleNames.map fun moduleName => { module := moduleName }
   let env ← importModules imports {} (level := .private)
   let mut declarationTotal := 0
-  for moduleName in compatibleModuleNames do
+  for moduleName in measuredModuleNames do
     declarationTotal := declarationTotal + (← scanModule env moduleName)
   let serializationLemmasEnv ←
     importModules #[{ module := `SealV2.SerializationLemmas }] {} (level := .private)
   declarationTotal := declarationTotal
     + (← scanModule serializationLemmasEnv `SealV2.SerializationLemmas)
-  let ffiEnv ← importModules #[{ module := `Ffi }] {} (level := .private)
-  declarationTotal := declarationTotal + (← scanModule ffiEnv `Ffi)
-  IO.println s!"MODULES_COMPLETE\t{compatibleModuleNames.size + 2}"
+  -- `Ffi` stays out pending Ben's ruling on `lcProof`; do not add an exception.
+  -- Evidence: /home/monkey/.mega-monkey/lane-reports/lcproof-report.md
+  IO.println "FFI_EXCLUDED\tpending Ben's ruling on lcProof; see /home/monkey/.mega-monkey/lane-reports/lcproof-report.md"
+  IO.println s!"MODULES_COMPLETE\t{measuredModuleNames.size + 1}"
   IO.println s!"DECLARATIONS_COMPLETE\t{declarationTotal}"
 
-#eval scanAll
-
 end Test.ModuleAxiomScan
+
+def main : IO UInt32 := do
+  try
+    Test.ModuleAxiomScan.scanAll
+    pure 0
+  catch error =>
+    IO.eprintln s!"module axiom check: FAIL: {error}"
+    pure 1
