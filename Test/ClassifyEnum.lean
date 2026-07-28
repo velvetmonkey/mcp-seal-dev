@@ -21,12 +21,15 @@ sweep, and enforces, RED on failure (exit 1):
    passthrough). An empty cell means the characterisation is vacuous and
    the run STOPS RED — that outcome is the deliverable, not something to
    dress up.
-3. **Pinned canonical witnesses** — the three named escape-and-executable
-   shapes (BOM-prefixed call, `"TOOLS/CALL"` spelling, JSON-RPC batch)
-   land in escape∩lenient; the golden mediated line lands in S; the
-   monster-exponent line lands in R. Tampering with the strict matcher
-   (e.g. making it case-insensitive) or with the guard moves a witness
-   out of its cell → RED.
+3. **Pinned canonical witnesses** — BOM-prefixed and case-variant calls
+   remain in escape∩lenient; every top-level array shape (including `[]`)
+   lands in R; the golden mediated line lands in S; and the monster-exponent
+   line lands in R. Tampering with the strict matcher or the array refusal
+   moves a witness out of its cell → RED.
+4. **Positive twins** — ordinary object-shaped protocol traffic
+   (`initialize`, `tools/list`, notifications, responses) remains
+   passthrough in the same check that pins array refusal. Nested arrays are
+   not confused with a top-level array.
 -/
 
 open SealV2.ClassifyTransport
@@ -40,6 +43,7 @@ structure Entry where
     (`SealV2.ClassifyTransport.mediatedWitness` etc.) — one definition, no
     drift between the `#guard` pins there and this runtime control. -/
 def bom : String := "\uFEFF"
+def emptyTopLevelArray : String := "[]"
 
 def methods : List String :=
   ["tools/call", "TOOLS/CALL", "Tools/Call", "tools/list", "initialize",
@@ -73,6 +77,13 @@ def extraCorpus : List Entry :=
    ⟨"bom-call", bomWitness⟩,
    ⟨"case-call", caseWitness⟩,
    ⟨"batch-call", batchWitness⟩,
+   ⟨"empty-array", emptyTopLevelArray⟩,
+   ⟨"multi-batch",
+     "[{\"method\":\"tools/call\",\"params\":{\"name\":\"t\"}},{\"method\":\"tools/list\"}]"⟩,
+   ⟨"singleton-noncall-array", "[{\"method\":\"tools/list\"}]"⟩,
+   ⟨"nested-arguments-array",
+     "{\"method\":\"tools/call\",\"params\":{\"name\":\"t\",\"arguments\":[]}}"⟩,
+   ⟨"nested-params-array", "{\"method\":\"tools/list\",\"params\":[]}"⟩,
    ⟨"tools-list", listWitness⟩,
    ⟨"malformed", malformedWitness⟩,
    ⟨"monster", monsterWitness⟩,
@@ -162,8 +173,23 @@ def main : IO UInt32 := do
        .refused),
      ("bom-call-escapes-lenient", bomWitness, .escapeLenient),
      ("case-call-escapes-lenient", caseWitness, .escapeLenient),
-     ("batch-call-escapes-lenient", batchWitness, .escapeLenient),
+     ("singleton-batch-refused", batchWitness, .refused),
+     ("empty-array-refused", emptyTopLevelArray, .refused),
+     ("multi-batch-refused",
+       "[{\"method\":\"tools/call\",\"params\":{\"name\":\"t\"}},{\"method\":\"tools/list\"}]",
+       .refused),
+     ("singleton-noncall-array-refused", "[{\"method\":\"tools/list\"}]", .refused),
+     ("nested-arguments-array-mediated",
+       "{\"method\":\"tools/call\",\"params\":{\"name\":\"t\",\"arguments\":[]}}",
+       .mediated),
+     ("nested-params-array-passthrough",
+       "{\"method\":\"tools/list\",\"params\":[]}", .escapePlain),
+     ("initialize-positive-twin", "{\"method\":\"initialize\",\"params\":{}}", .escapePlain),
      ("tools-list-escape-plain", listWitness, .escapePlain),
+     ("notification-positive-twin",
+       "{\"method\":\"notifications/initialized\",\"params\":{}}", .escapePlain),
+     ("response-positive-twin",
+       "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}", .escapePlain),
      ("malformed-escape-plain", malformedWitness, .escapePlain)]
   for (l, s, w) in checks do
     if ← expect l s w then red := true
