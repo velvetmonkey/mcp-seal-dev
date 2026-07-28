@@ -73,6 +73,8 @@ jobs:
         run: lake exe field_warrant_mutation
       - name: Channel symlink-refusal control
         run: lake exe channel_tests
+      - name: M.1 metadata identity controls
+        run: lake exe meta_identity_controls
       - run: python3 test/integration/test_seal.py
       - run: python3 test/v2/m1_adversarial_mcp_fixture.py
       - run: python3 test/v2/m2_adversarial_mcp_fixture.py

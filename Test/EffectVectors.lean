@@ -4,7 +4,7 @@ import Seal.EffectCommitment
 import Seal.JsonUtil
 
 /-!
-# Effect-commitment test-vector emitter (Stage A)
+# Effect-commitment test-vector emitter (M.1 stage 1)
 
 Emits the shared vector file consumed by the Lean side, the Stage-C Rust
 byte twin, and the Stage-D assurance kit. Run:
@@ -31,6 +31,9 @@ private structure VectorInput where
   tool : String
   /-- RAW wire text of the arguments — duplicates and escapes intact. -/
   argumentsJson : String
+  /-- RAW `_meta` object text. `none` is structural absence; `some "{}"` is
+      present-empty and must not collide with it. -/
+  metaJson : Option String := none
 
 private def deepNested (depth : Nat) : String :=
   String.join ((List.range depth).map fun _ => "{\"l\":") ++ "1" ++
@@ -71,6 +74,18 @@ private def inputs : List VectorInput := [
     argumentsJson := "{\"n\":999999999999999999}" },
   { name := "explicit-null-vs-absent", server := "srv-a", tool := "db.execute",
     argumentsJson := "{\"a\":null}" },
+  { name := "meta-present-empty", server := "srv-a", tool := "db.execute",
+    argumentsJson := "{}", metaJson := some "{}" },
+  { name := "meta-traceparent-a", server := "srv-a", tool := "db.execute",
+    argumentsJson := "{}", metaJson := some
+      "{\"traceparent\":\"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\"}" },
+  { name := "meta-traceparent-b", server := "srv-a", tool := "db.execute",
+    argumentsJson := "{}", metaJson := some
+      "{\"traceparent\":\"00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203331-01\"}" },
+  { name := "meta-unknown-a", server := "srv-a", tool := "db.execute",
+    argumentsJson := "{}", metaJson := some "{\"example.com/invocation\":\"a\"}" },
+  { name := "meta-unknown-b", server := "srv-a", tool := "db.execute",
+    argumentsJson := "{}", metaJson := some "{\"example.com/invocation\":\"b\"}" },
   -- hostile: rejected by the host gates
   { name := "duplicate-key", server := "srv-a", tool := "db.execute",
     argumentsJson := "{\"a\":1,\"a\":2}" },
@@ -89,7 +104,8 @@ private def emitOne (v : VectorInput) : Except String Json := do
     [("name", Json.str v.name),
      ("server", Json.str v.server),
      ("tool", Json.str v.tool),
-     ("arguments_json", Json.str v.argumentsJson)]
+     ("arguments_json", Json.str v.argumentsJson),
+     ("meta_json", v.metaJson.map Json.str |>.getD Json.null)]
   if !wireKeysSafe v.argumentsJson then
     return Json.mkObj <| base ++
       [("expect", Json.str "rejected"),
@@ -102,13 +118,25 @@ private def emitOne (v : VectorInput) : Except String Json := do
     return Json.mkObj <| base ++
       [("expect", Json.str "rejected"),
        ("reason", Json.str "number exceeds significant-digit bound (18)")]
+  let metadata ← match v.metaJson with
+    | none => pure ValidatedMeta.absent
+    | some raw =>
+        if !wireKeysSafe raw then
+          throw s!"vector '{v.name}': metadata contains a duplicate or escaped object key"
+        if !wireNumbersSafe raw || !wireDigitsSafe raw then
+          throw s!"vector '{v.name}': metadata contains an unsafe numeric literal"
+        match Json.parse raw with
+        | .ok (.obj object) => pure (.present object)
+        | .ok _ => throw s!"vector '{v.name}': metadata is not an object"
+        | .error e => throw s!"vector '{v.name}': metadata is not JSON: {e}"
   match Json.parse v.argumentsJson with
   | .error e => throw s!"vector '{v.name}': arguments are not JSON: {e}"
   | .ok args =>
-      let effect : Effect := ⟨v.server, v.tool, args⟩
+      let effect : Effect := ⟨v.server, v.tool, args, metadata⟩
       return Json.mkObj <| base ++
         [("expect", Json.str "commitment"),
          ("canonical_arguments", Json.str args.compress),
+         ("canonical_meta", metadata.toJson?.getD Json.null),
          ("effect_commitment", Json.str effect.commitment)]
 
 private def commitmentOf (doc : List Json) (name : String) : IO String := do
@@ -140,14 +168,26 @@ def main : IO Unit := do
   let explicitNull ← commitmentOf vectors "explicit-null-vs-absent"
   if empty == explicitNull then
     throw <| IO.userError "{} and {\"a\":null} must differ"
-  for c in [toolA, toolB, serverB, orderBA, empty, explicitNull] do
+  let metaEmpty ← commitmentOf vectors "meta-present-empty"
+  if empty == metaEmpty then
+    throw <| IO.userError "absent _meta and present-empty _meta must differ"
+  let traceA ← commitmentOf vectors "meta-traceparent-a"
+  let traceB ← commitmentOf vectors "meta-traceparent-b"
+  if traceA == traceB then
+    throw <| IO.userError "changing only traceparent must change the commitment"
+  let unknownA ← commitmentOf vectors "meta-unknown-a"
+  let unknownB ← commitmentOf vectors "meta-unknown-b"
+  if unknownA == unknownB then
+    throw <| IO.userError "changing only an unknown _meta key must change the commitment"
+  for c in [toolA, toolB, serverB, orderBA, empty, explicitNull, metaEmpty,
+      traceA, traceB, unknownA, unknownB] do
     unless c.length == 64 &&
         c.toList.all (fun ch => ch.isDigit || ('a' ≤ ch && ch ≤ 'f')) do
       throw <| IO.userError s!"commitment not 64-char lowercase hex: {c}"
   let doc := Json.mkObj [
     ("version", Json.str Seal.effectDomainTag),
     ("preimage",
-     Json.str "SHA256(encodeParts [\"seal.effect/v3\", server, tool, compress(arguments)]) -> lowercase hex (64 chars)"),
+     Json.str "PROPOSED: SHA256(encodeParts ([\"seal.effect/v4-proposed-meta-all\", server, tool, compress(arguments)] ++ [meta-presence, compress(meta-object)-or-empty])) -> lowercase hex (64 chars)"),
     ("encoding",
      Json.str "encodeParts: netstring framing — each part becomes '<charCount>:<part>', frames concatenated; hash input is the UTF-8 bytes of that string"),
     ("kernel_identity", Json.str "NOT part of the effect preimage (approval preimage only)"),
@@ -159,5 +199,7 @@ def main : IO Unit := do
      Json.str "a duplicate object key (raw text) or an escape sequence inside an object key anywhere in a tools/call line is a hard rejection before parsing"),
     ("absent_vs_null",
      Json.str "a tools/call with no arguments member hashes arguments = null (the 'null-arguments' vector); {} and {\"a\":null} are distinct effects"),
+    ("meta_presence",
+     Json.str "_meta absence is framed as [\"meta.absent\", \"\"]; a present object is framed as [\"meta.present\", compress(object)], so absent and present-empty are distinct"),
     ("vectors", Json.arr vectors.toArray)]
   IO.println doc.pretty

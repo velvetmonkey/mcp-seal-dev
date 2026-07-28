@@ -11,6 +11,7 @@ defaultTargets = [
   "field_warrant_tests",
   "field_warrant_mutation",
   "channel_tests",
+  "meta_identity_controls",
 ]
 
 # M5: link the vendored Ed25519 (TweetNaCl) + FFI shim into every exe. SealV2 now
@@ -79,6 +80,10 @@ root = "Test.Channel"
 [[lean_exe]]
 name = "effect_vectors"
 root = "Test.EffectVectors"
+
+[[lean_exe]]
+name = "meta_identity_controls"
+root = "Test.MetaIdentityControls"
 
 [[lean_exe]]
 name = "scan_oracle"

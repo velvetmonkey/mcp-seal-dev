@@ -67,11 +67,12 @@ def scaffold (identity : String) (ttlMs : Nat) (approvalFile : System.FilePath)
     serverIdentity := identity
     tools := manifest.map scaffoldRule }
 
-/-- The one target every scaffolded guard binds: server identity + tool name
-    + full canonical argument bytes. Kept symbolic — proofs never evaluate
-    the digest. -/
+/-- The one target every legacy-era scaffolded guard binds: proposed target
+    domain, server identity + tool name + full canonical argument bytes +
+    explicit `_meta` absence. Kept symbolic — proofs never evaluate the
+    digest. -/
 def scaffoldTarget (policy : Policy) (toolName : String) (args : Json) : TargetHash :=
-  stableHashParts (targetPrefix policy toolName ++ [args.compress])
+  guardTarget policy toolName [args.compress] .absent
 
 theorem scaffoldMode_ne_deny (tool : ManifestTool) : scaffoldMode tool ≠ .deny := by
   unfold scaffoldMode
@@ -108,12 +109,12 @@ theorem evaluateRule_scaffoldRule (policy : Policy) (toolName : String) (args : 
     unfold evaluateRule
     cases hmode : scaffoldMode tool <;>
       simp [scaffoldRule, matchRule, matchSpec, evalTargetParts_fullArguments,
-        scaffoldTarget, hmode]
+        scaffoldTarget, hmode, evaluateRuleWithMeta]
   · rw [if_neg hname]
     unfold evaluateRule
     have hne : ((scaffoldRule tool).name != toolName) = true := by
       simp [scaffoldRule, hname]
-    simp [hne]
+    simp [hne, evaluateRuleWithMeta]
 
 /-- Every decision a scaffolded policy produces for `toolName` is an allow or
     a guard bound to THE scaffold target — never a deny/invalid, never a
@@ -200,7 +201,7 @@ theorem scaffold_safety (identity : String) (ttlMs : Nat)
           tool.name args))
         (scaffoldTarget (scaffold identity ttlMs approvalFile manifest)
           tool.name args).toHex := by
-  unfold classifyToolCall
+  rw [classifyToolCall_eq_resolve]
   have htools : (scaffold identity ttlMs approvalFile manifest).tools
       = manifest.map scaffoldRule := rfl
   rw [htools, List.filterMap_map]
@@ -227,7 +228,7 @@ theorem scaffold_unknown_tool_default_deny (identity : String) (ttlMs : Nat)
     (toolName : String) (habs : ∀ tool ∈ manifest, tool.name ≠ toolName) (args : Json) :
     classifyToolCall (scaffold identity ttlMs approvalFile manifest) toolName args =
       .event .defaultDeny "no matching policy rule" := by
-  unfold classifyToolCall
+  rw [classifyToolCall_eq_resolve]
   have htools : (scaffold identity ttlMs approvalFile manifest).tools
       = manifest.map scaffoldRule := rfl
   rw [htools, List.filterMap_map]
@@ -248,7 +249,7 @@ theorem scaffold_readonly_flows (identity : String) (ttlMs : Nat)
     (hsome : ∃ tool ∈ manifest, tool.name = toolName) :
     classifyToolCall (scaffold identity ttlMs approvalFile manifest) toolName args =
       .event .benign "explicit policy allow" := by
-  unfold classifyToolCall
+  rw [classifyToolCall_eq_resolve]
   have htools : (scaffold identity ttlMs approvalFile manifest).tools
       = manifest.map scaffoldRule := rfl
   rw [htools, List.filterMap_map]

@@ -158,7 +158,7 @@ theorem evaluateRule_target_congr (policy : Policy) (toolName : String) (a b : J
     (hmatch : matchRule rule a = matchRule rule b)
     (htarget : evalTargetParts rule.target a = evalTargetParts rule.target b) :
     evaluateRule policy toolName a rule = evaluateRule policy toolName b rule := by
-  unfold evaluateRule
+  unfold evaluateRule evaluateRuleWithMeta
   rw [hmatch, htarget]
 
 /-- The exact P0-2 policy target `[db, arg database, write, arg sql]`: its

@@ -2,7 +2,7 @@
 
 import Lean.Data.Json
 import SealCore.Event
-import Seal.Hash
+import Seal.EffectCommitment
 import Seal.Policy
 
 namespace Seal
@@ -58,6 +58,24 @@ def targetPrefix (policy : Policy) (toolName : String) : List String :=
   if policy.serverIdentity.isEmpty then [toolName]
   else [policy.serverIdentity, toolName]
 
+/-- **PROPOSED** guard-target domain tag for the metadata-bearing target
+    shape. The legacy target had no explicit domain tag. Changing this proposal
+    later invalidates every target, approval, capability, and replay key that
+    depends on it. -/
+def guardTargetDomainTag : String := "seal.guard-target/v2-proposed-meta-all"
+
+/-- The exact proposed guarded-target preimage. Policy matching and target-part
+    selection still inspect arguments only; the complete validated metadata
+    object is appended only after those decisions. -/
+def guardTargetParts (policy : Policy) (toolName : String)
+    (resolvedParts : List String) (metadata : ValidatedMeta) : List String :=
+  [guardTargetDomainTag] ++ targetPrefix policy toolName ++ resolvedParts ++
+    metadata.preimageParts
+
+def guardTarget (policy : Policy) (toolName : String)
+    (resolvedParts : List String) (metadata : ValidatedMeta) : TargetHash :=
+  stableHashParts (guardTargetParts policy toolName resolvedParts metadata)
+
 inductive RuleDecision where
   | allow
   | guard (target : TargetHash) (targetText : String)
@@ -65,7 +83,8 @@ inductive RuleDecision where
   | invalid (reason : String)
   deriving Repr, BEq
 
-def evaluateRule (policy : Policy) (toolName : String) (args : Json)
+def evaluateRuleWithMeta (policy : Policy) (toolName : String) (args : Json)
+    (metadata : ValidatedMeta)
     (rule : ToolRule) : Option RuleDecision :=
   if rule.name != toolName || !matchRule rule args then none
   else match rule.mode with
@@ -74,9 +93,15 @@ def evaluateRule (policy : Policy) (toolName : String) (args : Json)
     | .guarded =>
         match evalTargetParts rule.target args with
         | some parts =>
-            let target := stableHashParts (targetPrefix policy toolName ++ parts)
+            let target := guardTarget policy toolName parts metadata
             some (.guard target target.toHex)
         | none => some (.invalid s!"missing target field: {toolName}")
+
+/-- Legacy-era convenience surface: absence is represented explicitly and is
+    therefore distinct from a call carrying `_meta: {}`. -/
+def evaluateRule (policy : Policy) (toolName : String) (args : Json)
+    (rule : ToolRule) : Option RuleDecision :=
+  evaluateRuleWithMeta policy toolName args .absent rule
 
 def firstBlocking? : List RuleDecision → Option String
   | [] => none
@@ -107,8 +132,22 @@ def resolveRuleDecisions (decisions : List RuleDecision) : HostEvent :=
           if hasExplicitAllow decisions then .event .benign "explicit policy allow"
           else .event .defaultDeny "no matching policy rule"
 
+def classifyToolCallWithMeta (policy : Policy) (toolName : String) (args : Json)
+    (metadata : ValidatedMeta) : HostEvent :=
+  resolveRuleDecisions
+    (policy.tools.filterMap (evaluateRuleWithMeta policy toolName args metadata))
+
+/-- Legacy-era convenience surface with explicit metadata absence. -/
 def classifyToolCall (policy : Policy) (toolName : String) (args : Json) : HostEvent :=
-  resolveRuleDecisions (policy.tools.filterMap (evaluateRule policy toolName args))
+  classifyToolCallWithMeta policy toolName args .absent
+
+/-- Compatibility equation for legacy-era proofs: the explicit-absence
+    wrapper is definitionally the original rule-resolution shape. -/
+theorem classifyToolCall_eq_resolve (policy : Policy) (toolName : String)
+    (args : Json) :
+    classifyToolCall policy toolName args =
+      resolveRuleDecisions (policy.tools.filterMap (evaluateRule policy toolName args)) :=
+  rfl
 
 def toolsCall? (json : Json) : Option (String × Json) := do
   let methodJson ← (json.getObjVal? "method").toOption
@@ -121,6 +160,30 @@ def toolsCall? (json : Json) : Option (String × Json) := do
     let name ← nameJson.getStr?.toOption
     let args := (params.getObjVal? "arguments").toOption.getD Json.null
     some (name, args)
+
+/-- Extract a complete structurally validated `_meta` object from tool-call
+    params. Absence remains a first-class value. Present null, array, scalar,
+    or boolean metadata is rejected rather than collapsed into absence. Known
+    field type/format and revision validation is a later protocol-boundary
+    obligation; no key, including an unknown key, is projected away here. -/
+def validatedMetaFromParams (params : Json) : Except String ValidatedMeta := do
+  let object ← params.getObj?
+  match object.get? "_meta" with
+  | none => pure .absent
+  | some (.obj metaObject) => pure (.present metaObject)
+  | some _ => throw "`params._meta` must be an object"
+
+/-- Metadata-aware tool-call extraction for the live V1 classifier. `none`
+    still means a non-`tools/call`; `.error` is a malformed tool call that must
+    fail closed before authority classification. -/
+def toolsCallWithMeta? (json : Json) :
+    Except String (Option (String × Json × ValidatedMeta)) := do
+  match toolsCall? json with
+  | none => pure none
+  | some (name, args) =>
+      let params ← json.getObjVal? "params"
+      let metadata ← validatedMetaFromParams params
+      pure (some (name, args, metadata))
 
 /-- Whether a successfully parsed wire message is a top-level JSON array.
     MCP revisions 2025-06-18 and 2026-07-28 do not admit JSON-RPC batching,
