@@ -109,11 +109,14 @@ private def processHostLine
       childIn.putStr hostLine
       childIn.flush
   | .ok json =>
-      match toolsCall? json with
-      | none =>
+      match toolsCallWithMeta? json with
+      | .error reason =>
+          writeLocked stdoutLock hostOut
+            (blockResponseLine (jsonId json) s!"invalid tools/call metadata: {reason}")
+      | .ok none =>
           childIn.putStr hostLine
           childIn.flush
-      | some (toolName, toolArgs) =>
+      | .ok (some (toolName, toolArgs, metadata)) =>
           -- `wireKeysSafe` and `wireDigitsSafe` USED TO RUN HERE. They now run
           -- pre-parse, at the top of this function; see the reasoning there.
           -- Deliberately not re-run: reaching this point already proves the raw
@@ -131,7 +134,7 @@ private def processHostLine
           approvalSeenRef.set newSeen
           let st0 ← stateRef.get
           let st1 := approvals.foldl (fun st e => (step now st e).2) st0
-          let hostEvent := classifyToolCall policy toolName toolArgs
+          let hostEvent := classifyToolCallWithMeta policy toolName toolArgs metadata
           let (decision, st2) := step now st1 hostEvent.toEvent
           stateRef.set { approved := prune now st2.approved }
           match decision with
