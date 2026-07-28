@@ -48,20 +48,24 @@ here transfers to the deployed binary.
 ## The strict/lenient split (K4)
 
 Routing is STRICT: a line is mediated iff a strict JSON parse of the trimmed
-line yields the byte-exact `tools/call` shape. The named assumption
+line yields the byte-exact `tools/call` shape. Successfully parsed top-level
+arrays are refused because MCP revisions 2025-06-18 and 2026-07-28 do not
+admit JSON-RPC batching. The named assumption
 A-strict-child (seal-host `RUST_BRIDGE.md:18-24`, `TCB.md` T10) is that the
 child parses its protocol equally strictly. A LENIENT child — one that
 tolerates a UTF-8 BOM (RFC 8259 §8.1 allows implementations to ignore one),
 matches the method case-insensitively, or executes JSON-RPC 2.0 §6 batch
-arrays — can interpret as a call a line the router classified as non-call
-traffic and forwarded undecided. `lenientCalls` below is a REFERENCE lenient
-reading made of exactly those three documented leniencies. It is a lower
-bound on what some lenient child may execute, not a model of every possible
-child (the child is arbitrary; no such model exists). The class
+arrays — can interpret some non-array line the router classified as non-call
+traffic as a call. `lenientCalls` below deliberately retains all three
+historical leniencies, including old/generic JSON-RPC batch execution, so the
+closed batch gap remains explicit rather than being deleted from the model.
+It is a lower bound on what some lenient child may execute, not a model of
+every possible child (the child is arbitrary; no such model exists). The class
 `undecidedCallClass = escapesClass ∧ lenientClass` is therefore the proved
 LOWER BOUND on the strict-monitor/lenient-child gap — the byte class that
 provably escapes undecided AND is executed as a call by the reference
-lenient reading. Prior art calls this failure family a parser differential
+lenient reading. Batch lines remain in `lenientClass` but are excluded from
+`undecidedCallClass` by refusal. Prior art calls this failure family a parser differential
 (LangSec, Sassaman–Patterson–Bratus); the escape hazard here is the
 mediation-side instance of it.
 
@@ -108,12 +112,23 @@ router forwards". -/
     `Host/Canonical.lean:44` (`line.trimAscii.toString`). -/
 def trimmed (line : String) : String := line.trimAscii.toString
 
+/-- Successfully parsed top-level JSON arrays. This is deliberately a
+    whole-shape predicate: empty arrays, singleton batches, multi-element
+    batches, and arrays of non-object values are all outside MCP's wire
+    message grammar. Arrays nested inside an object do not inhabit it. -/
+def parsedTopLevelArrayClass (line : String) : Bool :=
+  match Json.parse (trimmed line) with
+  | .ok json => Seal.isTopLevelArray json
+  | .error _ => false
+
 /-- **R** — the refused class: either independent pre-parse number guard
-    rejects the line (pathological exponent cost or binary64 disagreement).
-    Refused lines are neither mediated nor forwarded. -/
+    rejects the line (pathological exponent cost or binary64 disagreement),
+    or the safe strict parse yields a top-level array. Refused lines are
+    neither mediated nor forwarded. -/
 def refusedClass (line : String) : Bool :=
   !Seal.JsonUtil.wireNumbersSafe (trimmed line)
     || !Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line)
+    || parsedTopLevelArrayClass line
 
 /-- The strict `tools/call` shape, stated structurally on the parsed JSON
     value: a `method` member that is the string `"tools/call"` byte-exactly,
@@ -138,11 +153,11 @@ def mediatedClass (line : String) : Bool :=
 /-- **The escape class** — the exact byte class that is forwarded to the
     child with no decision: not refused, not mediated. Includes malformed
     JSON, BOM-prefixed JSON, non-byte-exact method spellings
-    (`"TOOLS/CALL"`), JSON-RPC batch arrays — and ALL legitimate non-call
+    (`"TOOLS/CALL"`) — and ALL legitimate non-call
     traffic (`initialize`, `tools/list`, notifications), whose passthrough
-    is the protocol working as designed. The hazard is not this class; it is
-    its intersection with what a lenient child executes
-    (`undecidedCallClass`). -/
+    is the protocol working as designed. Top-level arrays used to be listed
+    here; they are now in R. The remaining hazard is this class's intersection
+    with what a lenient child executes (`undecidedCallClass`). -/
 def escapesClass (line : String) : Bool :=
   !refusedClass line && !mediatedClass line
 
@@ -171,9 +186,12 @@ def classifyWire (line : String) : WireClass :=
     match Json.parse (trimmed line) with
     | .error _ => .passthrough
     | .ok json =>
-        match Seal.toolsCall? json with
-        | none => .passthrough
-        | some (toolName, toolArgs) => .act toolName toolArgs
+        if Seal.isTopLevelArray json then
+          .refuse
+        else
+          match Seal.toolsCall? json with
+          | none => .passthrough
+          | some (toolName, toolArgs) => .act toolName toolArgs
 
 /-! ## The reference lenient reading (K4's other half) -/
 
@@ -206,12 +224,13 @@ def lenientCallOf? (j : Json) : Option (String × Json) := do
     let args := (params.getObjVal? "arguments").toOption.getD Json.null
     some (name, args)
 
-/-- The calls the reference lenient child executes from one parsed value:
-    a JSON-RPC 2.0 §6 batch array executes each element's call (MCP revision
-    2025-03-26 inherited batching from JSON-RPC; revision 2025-06-18 removed
-    it — a child on the older revision, or any generic JSON-RPC server,
-    executes batches); a single object executes its own call, if any. The
-    strict matcher sees no call in ANY array (`toolsCall?_arr_none`). -/
+/-- The calls the reference lenient child executes from one parsed value.
+    This historical child model is intentionally unchanged when the router
+    closes the batch gap: MCP revision 2025-03-26 inherited JSON-RPC batching,
+    while 2025-06-18 removed it, and an older or generic JSON-RPC child may
+    still execute each array element. A single object executes its own call,
+    if any. The strict matcher sees no call in ANY array
+    (`toolsCall?_arr_none`), while the router now refuses the whole array. -/
 def lenientCalls : Json → List (String × Json)
   | .arr elems => elems.toList.filterMap lenientCallOf?
   | j => (lenientCallOf? j).toList
@@ -235,40 +254,12 @@ def lenientClass (line : String) : Bool :=
   | .ok j => !(lenientCalls j).isEmpty
 
 /-- **The K4 class: forwarded undecided AND executable as a call by the
-    reference lenient child.** The proved lower bound on the
-    strict-monitor/lenient-child gap. -/
+    reference lenient child.** The proved lower bound on the remaining
+    strict-monitor/lenient-child gap. Because `escapesClass` excludes refused
+    arrays, historical batch execution in `lenientClass` no longer puts a
+    batch in this intersection. -/
 def undecidedCallClass (line : String) : Bool :=
   escapesClass line && lenientClass line
-
-/-! ## The classes partition the wire alphabet -/
-
-/-- **Trichotomy.** Every wire line is in exactly one of R, S, escape. -/
-theorem classes_partition (line : String) :
-    (refusedClass line = true ∧ mediatedClass line = false ∧ escapesClass line = false)
-    ∨ (refusedClass line = false ∧ mediatedClass line = true ∧ escapesClass line = false)
-    ∨ (refusedClass line = false ∧ mediatedClass line = false ∧ escapesClass line = true) := by
-  rcases Bool.eq_false_or_eq_true (Seal.JsonUtil.wireNumbersSafe (trimmed line))
-    with hw | hw
-  · cases ha : Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line) with
-    | false =>
-        have hr : refusedClass line = true := by simp [refusedClass, hw, ha]
-        have hm : mediatedClass line = false := by simp [mediatedClass, hw, ha]
-        have he : escapesClass line = false := by simp [escapesClass, hr]
-        exact .inl ⟨hr, hm, he⟩
-    | true =>
-        have hr : refusedClass line = false := by simp [refusedClass, hw, ha]
-        rcases Bool.eq_false_or_eq_true (mediatedClass line) with hm | hm
-        · have he : escapesClass line = false := by
-            simp [escapesClass, hr, hm]
-          exact .inr (.inl ⟨hr, hm, he⟩)
-        · have he : escapesClass line = true := by
-            simp [escapesClass, hr, hm]
-          exact .inr (.inr ⟨hr, hm, he⟩)
-  · have hr : refusedClass line = true := by simp [refusedClass, hw]
-    have hm : mediatedClass line = false := by simp [mediatedClass, hw]
-    have he : escapesClass line = false := by
-      simp [escapesClass, hr]
-    exact .inl ⟨hr, hm, he⟩
 
 /-! ## The shape predicate equals the deployed matcher -/
 
@@ -300,6 +291,15 @@ theorem strictCallShape_eq_toolsCall? (j : Json) :
               simpa using hcall
             simp [hm, hs, hne, hcall]
 
+/-- The strict matcher sees no call in any top-level array. Kept before the
+    routing equivalences so the `.act` proof can discharge the new refusal
+    branch structurally. -/
+theorem toolsCall?_arr_none (elems : Array Json) :
+    Seal.toolsCall? (Json.arr elems) = none := rfl
+
+theorem strictCallShape_arr (elems : Array Json) :
+    strictCallShape (Json.arr elems) = false := rfl
+
 /-! ## Router ↔ classes: the deployed routing is exactly the trichotomy -/
 
 theorem classifyWire_refuse_iff (line : String) :
@@ -307,14 +307,21 @@ theorem classifyWire_refuse_iff (line : String) :
   cases hw : Seal.JsonUtil.wireNumbersSafe (trimmed line) with
   | false => simp [classifyWire, refusedClass, hw]
   | true =>
-      cases hp : Json.parse (trimmed line) with
-      | error e => simp [classifyWire, refusedClass, hw, hp]
-      | ok j =>
-          cases ht : Seal.toolsCall? j with
-          | none => simp [classifyWire, refusedClass, hw, hp, ht]
-          | some c =>
-              obtain ⟨n, a⟩ := c
-              simp [classifyWire, refusedClass, hw, hp, ht]
+      cases ha : Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line) with
+      | false => simp [classifyWire, refusedClass, hw, ha]
+      | true =>
+          cases hp : Json.parse (trimmed line) with
+          | error e =>
+              simp [classifyWire, refusedClass, parsedTopLevelArrayClass, hw, ha, hp]
+          | ok j =>
+              cases hj : Seal.isTopLevelArray j with
+              | false =>
+                  cases ht : Seal.toolsCall? j <;>
+                    simp [classifyWire, refusedClass, parsedTopLevelArrayClass,
+                      hw, ha, hp, hj, ht]
+              | true =>
+                  simp [classifyWire, refusedClass, parsedTopLevelArrayClass,
+                    hw, ha, hp, hj]
 
 theorem classifyWire_act_iff (line : String) :
     (∃ n a, classifyWire line = .act n a) ↔ mediatedClass line = true := by
@@ -327,13 +334,26 @@ theorem classifyWire_act_iff (line : String) :
           cases hp : Json.parse (trimmed line) with
           | error e => simp [classifyWire, mediatedClass, hw, ha, hp]
           | ok j =>
-              cases ht : Seal.toolsCall? j with
-              | none =>
-                  simp [classifyWire, mediatedClass, hw, ha, hp, ht,
-                    strictCallShape_eq_toolsCall?]
-              | some c =>
-                  obtain ⟨n, a⟩ := c
-                  simp [classifyWire, mediatedClass, hw, ha, hp, ht,
+              cases hj : Seal.isTopLevelArray j with
+              | false =>
+                  cases ht : Seal.toolsCall? j with
+                  | none =>
+                      simp [classifyWire, mediatedClass, hw, ha, hp, hj, ht,
+                        strictCallShape_eq_toolsCall?]
+                  | some c =>
+                      obtain ⟨n, a⟩ := c
+                      simp [classifyWire, mediatedClass, hw, ha, hp, hj, ht,
+                        strictCallShape_eq_toolsCall?]
+              | true =>
+                  have ht : Seal.toolsCall? j = none := by
+                    cases j with
+                    | arr elems => exact toolsCall?_arr_none elems
+                    | null => simp [Seal.isTopLevelArray] at hj
+                    | bool b => simp [Seal.isTopLevelArray] at hj
+                    | num n => simp [Seal.isTopLevelArray] at hj
+                    | str s => simp [Seal.isTopLevelArray] at hj
+                    | obj o => simp [Seal.isTopLevelArray] at hj
+                  simp [classifyWire, mediatedClass, hw, ha, hp, hj, ht,
                     strictCallShape_eq_toolsCall?]
 
 theorem classifyWire_passthrough_iff (line : String) :
@@ -347,31 +367,108 @@ theorem classifyWire_passthrough_iff (line : String) :
       | true =>
           cases hp : Json.parse (trimmed line) with
           | error e =>
-              simp [classifyWire, escapesClass, refusedClass, mediatedClass, hw, ha, hp]
+              simp [classifyWire, escapesClass, refusedClass, mediatedClass,
+                parsedTopLevelArrayClass, hw, ha, hp]
           | ok j =>
-              cases ht : Seal.toolsCall? j with
-              | none =>
+              cases hj : Seal.isTopLevelArray j with
+              | false =>
+                  cases ht : Seal.toolsCall? j <;>
+                    simp [classifyWire, escapesClass, refusedClass, mediatedClass,
+                      parsedTopLevelArrayClass, hw, ha, hp, hj, ht,
+                      strictCallShape_eq_toolsCall?]
+              | true =>
                   simp [classifyWire, escapesClass, refusedClass, mediatedClass,
-                    hw, ha, hp, ht, strictCallShape_eq_toolsCall?]
-              | some c =>
-                  obtain ⟨n, a⟩ := c
-                  simp [classifyWire, escapesClass, refusedClass, mediatedClass,
-                    hw, ha, hp, ht, strictCallShape_eq_toolsCall?]
+                    parsedTopLevelArrayClass, hw, ha, hp, hj]
+
+/-- Every line whose strict parse is a top-level array is refused. Earlier
+    number-guard refusal only reaches the same verdict, so no safety
+    hypotheses are needed. This covers empty, singleton, and multi-element
+    arrays uniformly. -/
+theorem classifyWire_refuses_parsed_array (line : String) (elems : Array Json)
+    (hp : Json.parse (trimmed line) = .ok (.arr elems)) :
+    classifyWire line = .refuse := by
+  cases hw : Seal.JsonUtil.wireNumbersSafe (trimmed line) with
+  | false => simp [classifyWire, hw]
+  | true =>
+      cases ha : Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line) with
+      | false => simp [classifyWire, hw, ha]
+      | true => simp [classifyWire, hw, ha, hp, Seal.isTopLevelArray]
+
+theorem parsed_array_refused (line : String) (elems : Array Json)
+    (hp : Json.parse (trimmed line) = .ok (.arr elems)) :
+    refusedClass line = true :=
+  (classifyWire_refuse_iff line).mp (classifyWire_refuses_parsed_array line elems hp)
+
+/-- Closing the batch gap without deleting its child model: a parsed array may
+    still satisfy `lenientClass`, but it cannot be forwarded undecided. -/
+theorem parsed_array_not_undecided (line : String) (elems : Array Json)
+    (hp : Json.parse (trimmed line) = .ok (.arr elems)) :
+    undecidedCallClass line = false := by
+  have hr := parsed_array_refused line elems hp
+  simp [undecidedCallClass, escapesClass, hr]
+
+/-- Transparent mediation's negative control, quantified over every safe
+    non-array value: if the existing strict matcher does not recognize a
+    `tools/call`, the value still passes through. In particular this covers
+    every legitimate object, including objects with nested arrays, because
+    only the outer constructor is inspected by the refusal branch. -/
+theorem classifyWire_safe_nonarray_noncall_passthrough
+    (line : String) (json : Json)
+    (hw : Seal.JsonUtil.wireNumbersSafe (trimmed line) = true)
+    (ha : Seal.JsonUtil.wireNumbersAgreementSafe (trimmed line) = true)
+    (hp : Json.parse (trimmed line) = .ok json)
+    (hj : Seal.isTopLevelArray json = false)
+    (ht : Seal.toolsCall? json = none) :
+    classifyWire line = .passthrough := by
+  simp [classifyWire, hw, ha, hp, hj, ht]
+
+/-! ## The classes partition the wire alphabet -/
+
+/-- **Trichotomy.** Every wire line is in exactly one of R, S, escape. -/
+theorem classes_partition (line : String) :
+    (refusedClass line = true ∧ mediatedClass line = false ∧ escapesClass line = false)
+    ∨ (refusedClass line = false ∧ mediatedClass line = true ∧ escapesClass line = false)
+    ∨ (refusedClass line = false ∧ mediatedClass line = false ∧ escapesClass line = true) := by
+  cases hc : classifyWire line with
+  | refuse =>
+      have hr := (classifyWire_refuse_iff line).mp hc
+      have hm : mediatedClass line = false := by
+        cases hmv : mediatedClass line with
+        | false => rfl
+        | true =>
+            obtain ⟨n, a, ha⟩ := (classifyWire_act_iff line).mpr hmv
+            rw [hc] at ha
+            cases ha
+      have he : escapesClass line = false := by simp [escapesClass, hr]
+      exact .inl ⟨hr, hm, he⟩
+  | act n a =>
+      have hm := (classifyWire_act_iff line).mp ⟨n, a, hc⟩
+      have hr : refusedClass line = false := by
+        cases hrv : refusedClass line with
+        | false => rfl
+        | true =>
+            have href := (classifyWire_refuse_iff line).mpr hrv
+            rw [hc] at href
+            cases href
+      have he : escapesClass line = false := by simp [escapesClass, hr, hm]
+      exact .inr (.inl ⟨hr, hm, he⟩)
+  | passthrough =>
+      have he := (classifyWire_passthrough_iff line).mp hc
+      have hr : refusedClass line = false := by
+        have h := he
+        simp [escapesClass] at h
+        exact h.1
+      have hm : mediatedClass line = false := by
+        have h := he
+        simp [escapesClass] at h
+        exact h.2
+      exact .inr (.inr ⟨hr, hm, he⟩)
 
 /-! ## The strict/lenient split, value level (kernel-checked)
 
 `Json.parse` is partial, so per-line class membership is `#guard`-pinned
 below; but the SPLIT itself — strict blind to batches and case variants,
 lenient not — is kernel-checkable on parsed values. -/
-
-/-- The strict matcher sees no call in ANY top-level array: a JSON-RPC 2.0
-    batch — of one call or a thousand — is outside S structurally, not
-    incidentally. -/
-theorem toolsCall?_arr_none (elems : Array Json) :
-    Seal.toolsCall? (Json.arr elems) = none := rfl
-
-theorem strictCallShape_arr (elems : Array Json) :
-    strictCallShape (Json.arr elems) = false := rfl
 
 /-- Lenient reads each batch element. -/
 theorem lenientCalls_arr (elems : Array Json) :
@@ -414,8 +511,8 @@ theorem lenient_extends_strict {j : Json} {c : String × Json}
 
 /-- **Strict ⊆ lenient, per line:** every mediated line is also executable by
     the reference lenient child — the lenient reading is a widening of the
-    protocol the monitor mediates, so `undecidedCallClass` is exactly the
-    PROPER part of the extension that escapes. -/
+    protocol the monitor mediates, so `undecidedCallClass` is the part of the
+    extension that still escapes after top-level arrays move to refusal. -/
 theorem mediated_lenient (line : String)
     (h : mediatedClass line = true) : lenientClass line = true := by
   unfold mediatedClass at h
@@ -452,9 +549,15 @@ def bomWitness : String := "\uFEFF" ++ mediatedWitness
 def caseWitness : String :=
   "{\"method\":\"TOOLS/CALL\",\"params\":{\"name\":\"delete_all\",\"arguments\":{}}}"
 
-/-- Escape ∩ lenient: a spec-compliant JSON-RPC 2.0 batch of one call. -/
+/-- Historical batch-gap witness: a one-element top-level array. It remains
+    executable in `lenientClass`, but now belongs to R and therefore cannot
+    inhabit `escapesClass` or `undecidedCallClass`. -/
 def batchWitness : String :=
   "[{\"method\":\"tools/call\",\"params\":{\"name\":\"delete_all\",\"arguments\":{}}}]"
+
+/-- Empty top-level arrays are refused too; no element is needed to trigger
+    the whole-shape boundary. -/
+def emptyArrayWitness : String := "[]"
 
 /-- Escape ∖ lenient: legitimate non-call traffic — passthrough by design. -/
 def listWitness : String := "{\"method\":\"tools/list\"}"
@@ -472,7 +575,9 @@ def agreementUnsafeWitness : String :=
 #guard mediatedClass mediatedWitness = true
 #guard undecidedCallClass bomWitness = true
 #guard undecidedCallClass caseWitness = true
-#guard undecidedCallClass batchWitness = true
+#guard refusedClass batchWitness = true && lenientClass batchWitness = true
+#guard undecidedCallClass batchWitness = false
+#guard refusedClass emptyArrayWitness = true
 #guard escapesClass listWitness = true && lenientClass listWitness = false
 #guard escapesClass malformedWitness = true && lenientClass malformedWitness = false
 #guard refusedClass monsterWitness = true
@@ -1136,6 +1241,24 @@ theorem escape_insertion_allows_invariant (s : HostState)
 /-- info: 'SealV2.ClassifyTransport.classifyWire_passthrough_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms classifyWire_passthrough_iff
+
+/-- info: 'SealV2.ClassifyTransport.classifyWire_refuses_parsed_array' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms classifyWire_refuses_parsed_array
+
+/-- info: 'SealV2.ClassifyTransport.parsed_array_refused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms parsed_array_refused
+
+/-- info: 'SealV2.ClassifyTransport.parsed_array_not_undecided' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms parsed_array_not_undecided
+
+/-- info: 'SealV2.ClassifyTransport.classifyWire_safe_nonarray_noncall_passthrough' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms classifyWire_safe_nonarray_noncall_passthrough
 
 /-- info: 'SealV2.ClassifyTransport.toolsCall?_arr_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

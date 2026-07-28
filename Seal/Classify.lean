@@ -122,4 +122,12 @@ def toolsCall? (json : Json) : Option (String × Json) := do
     let args := (params.getObjVal? "arguments").toOption.getD Json.null
     some (name, args)
 
+/-- Whether a successfully parsed wire message is a top-level JSON array.
+    MCP revisions 2025-06-18 and 2026-07-28 do not admit JSON-RPC batching,
+    so host classifiers use this shape predicate as a fail-closed refusal
+    boundary. Arrays nested inside an object are deliberately unaffected. -/
+def isTopLevelArray : Json → Bool
+  | .arr _ => true
+  | _ => false
+
 end Seal

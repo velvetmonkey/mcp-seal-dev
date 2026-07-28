@@ -10,7 +10,7 @@ Runtime witness for `SealV2.ClassifyTransport.escape_events_no_influence`
 (and its insertion corollary), run over the REAL kernel composition — real
 Ed25519 signature verification (linked C object), real parse/validate/
 serialize — not a stub. The trace interleaves THREE escape-class events
-(BOM-prefixed call, JSON-RPC batch call, plain `tools/list`) among TWO
+(BOM-prefixed call, case-variant call, plain `tools/list`) among TWO
 mediated requests that both reach Allow with DISTINGUISHABLE canonical
 outputs (`table:"users"` vs `table:"orders"`), so the check is sensitive to
 content AND order of the Allow stream, not merely to its length.
@@ -41,7 +41,7 @@ def ordersReq : HostEvent := .request validOrdersRaw now0
 /-- The full trace: three escape-class events interleaved among the two
     mediated requests — head, middle, and tail positions. -/
 def tFull : List HostEvent :=
-  [.request bomWitness now0, usersReq, .request batchWitness now0,
+  [.request bomWitness now0, usersReq, .request caseWitness now0,
    ordersReq, .request listWitness now0]
 
 /-- The escape-purged twin, written out by hand so the runtime check
@@ -122,7 +122,7 @@ def main (args : List String) : IO UInt32 := do
       (aFull == aPurged)) && ok
     -- Insertion form: one escape event at EVERY position of the purged twin.
     for esc in [HostEvent.request bomWitness now0,
-                .request batchWitness now0, .request listWitness now0] do
+                .request caseWitness now0, .request listWitness now0] do
       for i in [0, 1, 2] do
         let t := tPurged.take i ++ esc :: tPurged.drop i
         ok := (← check s!"insertion at position {i} leaves Allows unchanged"
