@@ -72,6 +72,10 @@ name = "scaffold_tests"
 root = "Test.Scaffold"
 
 [[lean_exe]]
+name = "channel_tests"
+root = "Test.Channel"
+
+[[lean_exe]]
 name = "effect_vectors"
 root = "Test.EffectVectors"
 
