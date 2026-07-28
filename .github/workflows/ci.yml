@@ -19,14 +19,20 @@ jobs:
       - run: lake build
       - run: lake exe automaton_tests
       - run: lake exe policy_bundle_tests
-      - run: lake exe axiom_check 2>&1 | tee /tmp/axioms.txt
-      - run: "! grep -E 'sorryAx|Lean\\.ofReduceBool' /tmp/axioms.txt"
+      - name: Axiom allowlist
+        run: |
+          set -o pipefail
+          lake exe axiom_check 2>&1 | tee /tmp/axioms.txt
       - run: lake exe v2_parse_tests
-      - run: lake exe v2_m1_axiom_check 2>&1 | tee /tmp/v2-m1-axioms.txt
-      - run: "! grep -E 'sorryAx|Lean\\.ofReduceBool' /tmp/v2-m1-axioms.txt"
+      - name: M1 axiom allowlist
+        run: |
+          set -o pipefail
+          lake exe v2_m1_axiom_check 2>&1 | tee /tmp/v2-m1-axioms.txt
       - run: lake exe v2_validate_tests
-      - run: lake exe v2_m2_axiom_check 2>&1 | tee /tmp/v2-m2-axioms.txt
-      - run: "! grep -E 'sorryAx|Lean\\.ofReduceBool' /tmp/v2-m2-axioms.txt"
+      - name: M2 axiom allowlist
+        run: |
+          set -o pipefail
+          lake exe v2_m2_axiom_check 2>&1 | tee /tmp/v2-m2-axioms.txt
       - run: lake exe v2_serialize_tests
       - name: M3 parser axiom allowlist
         run: |

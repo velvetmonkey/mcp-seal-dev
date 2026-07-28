@@ -13,6 +13,7 @@ import Seal.EncodingInjective
 import Seal.GuardTheorems
 import SealV2.TamperTheorems
 import SealV2.ClassifyTransport
+import Test.AxiomAllowlist
 
 #print axioms SealCore.default_deny_never_allowed
 #print axioms SealCore.no_allow_guarded_without_matching_approval_in_state
@@ -102,4 +103,79 @@ import SealV2.ClassifyTransport
 #print axioms SealV2.ClassifyTransport.allows_eq_of_purgeEscapes_eq
 #print axioms SealV2.ClassifyTransport.escape_insertion_allows_invariant
 
-def main : IO UInt32 := pure 0
+def main : IO UInt32 :=
+  Test.AxiomAllowlist.check `Test.Axioms #[
+    `SealCore.default_deny_never_allowed,
+    `SealCore.no_allow_guarded_without_matching_approval_in_state,
+    `SealCore.approval_binds_to_target,
+    `Seal.adding_deny_cannot_allow,
+    `Seal.adding_guard_cannot_explicitly_allow,
+    `Seal.ambiguous_guard_targets_block,
+    `Seal.full_arguments_preimage_changes,
+    `Seal.evalTargetParts_congr,
+    `Seal.evalTargetParts_indep_of_unnamed_paths,
+    `Seal.evaluateRule_target_congr,
+    `Seal.p0_2_policy_target_ignores_unnamed,
+    `Seal.JsonUtil.numberScanStep_worst_le_of_no_digit,
+    `Seal.effectiveConsensus_isSome_iff,
+    `Seal.effectiveLinear_isSome_iff,
+    `Seal.effectiveTemporal_nil_of_disabled,
+    `Seal.effectiveConvergence_ne_nil_iff,
+    `Seal.effectiveBudget_ne_nil_iff,
+    `Seal.effectivePrincipals_isSome_iff,
+    `Seal.scan_pass_sound,
+    `Seal.scan_pass_no_orphan_allow,
+    `SealCore.consumed_approval_not_live,
+    `SealCore.expired_not_live,
+    `SealCore.fresh_approval_live,
+    `Seal.scaffold_safety,
+    `Seal.scaffold_safety_not_benign,
+    `Seal.dangerous_annotation_guarded,
+    `Seal.scaffoldMode_ne_deny,
+    `Seal.scaffold_unknown_tool_default_deny,
+    `Seal.scaffold_readonly_flows,
+    `Seal.shell_exec_requires_live_approval,
+    `Seal.shell_rm_rf_requires_live_approval,
+    `Seal.shell_rm_rf_blocks_on_fresh_state,
+    `Seal.shell_rm_rf_allows_with_fresh_approval,
+    `Seal.shell_read_flows,
+    `Seal.effect_commitment_injective,
+    `Seal.commitment_check_iff,
+    `Seal.commitment_rederivation_stable,
+    `Seal.preimage_shape,
+    `Seal.preimage_separates_tools,
+    `Seal.preimage_separates_servers,
+    `Seal.Encoding.encodeParts_injective,
+    `Seal.Encoding.encodeParts_toUTF8_injective,
+    `Seal.Encoding.assumptionEncInjective_holds,
+    `Seal.Encoding.effect_commitment_injective_of_cr_compress,
+    `Seal.Encoding.cross_scheme_collision,
+    `Seal.Encoding.witness_no_collision_within_scheme,
+    `Seal.guard_requires_full_arguments,
+    `Seal.bundle_guard_requires_full_arguments,
+    `Seal.toolRule_guard_full_arguments,
+    `Seal.guardCheck_ok_guarded,
+    `Seal.isFullArgumentsTarget_eq_true,
+    `Seal.guard_partial_target_rejected,
+    `Seal.guard_empty_target_rejected,
+    `Seal.guard_starts_with_target_rejected,
+    `Seal.guard_full_arguments_policy_accepted,
+    `Seal.allow_partial_target_still_accepted,
+    `Seal.tampered_policy_fail_closed,
+    `Seal.tampered_policy_blocks,
+    `SealV2.tampered_approvals_validate_none,
+    `SealV2.tampered_approvals_deny,
+    `SealV2.allow_implies_witness_signature_verified,
+    `SealV2.ClassifyTransport.classes_partition,
+    `SealV2.ClassifyTransport.strictCallShape_eq_toolsCall?,
+    `SealV2.ClassifyTransport.forwarded_iff_escapes,
+    `SealV2.ClassifyTransport.decided_iff_mediated,
+    `SealV2.ClassifyTransport.forwarded_never_decided,
+    `SealV2.ClassifyTransport.lenient_extends_strict,
+    `SealV2.ClassifyTransport.mediated_lenient,
+    `SealV2.ClassifyTransport.widened_fail_closed,
+    `SealV2.ClassifyTransport.widened_relay_verbatim,
+    `SealV2.ClassifyTransport.escape_events_no_influence,
+    `SealV2.ClassifyTransport.allows_eq_of_purgeEscapes_eq,
+    `SealV2.ClassifyTransport.escape_insertion_allows_invariant
+  ]
