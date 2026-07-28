@@ -73,6 +73,14 @@ All discharged theorems depend only on:
 [propext, Classical.choice, Quot.sound]
 ```
 
+The module-wide gate makes a separate compiled-code claim: its 24 explicitly
+assigned regular kernel modules retain that three-name baseline, while `Ffi`
+alone is assigned the explicit unsafe compiled-code-root baseline
+`[propext, Classical.choice, Quot.sound, lcProof]`. This is not a uniform
+three-name baseline over both groups. The distinction characterizes kernel
+logical soundness of regular declarations only; it says nothing about runtime,
+memory-safety, or observational purity of the six unsafe wrappers.
+
 No `sorryAx`. No `Lean.ofReduceBool` (kernel `decide`, not `native_decide`). CI
 gates this on every commit:
 
@@ -82,6 +90,7 @@ lake exe v2_m1_axiom_check
 lake exe v2_m2_axiom_check
 lake exe v2_m3_axiom_check
 lake exe v2_m4_axiom_check
+lake exe module_axiom_check
 ```
 with grep guards that fail the build if `sorryAx` or `Lean.ofReduceBool` appear.
 

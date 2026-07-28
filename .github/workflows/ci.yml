@@ -23,9 +23,9 @@ jobs:
         run: |
           set -o pipefail
           lake exe axiom_check 2>&1 | tee /tmp/axioms.txt
-      # Ffi is excluded pending Ben's ruling on lcProof; it is not allowlisted.
-      # Evidence: /home/monkey/.mega-monkey/lane-reports/lcproof-report.md
-      - name: Module-wide axiom baseline (24 measured modules)
+      # Module-aware: 24 regular kernel modules use the three-name baseline;
+      # Ffi alone uses the four-name unsafe compiled-code-root baseline.
+      - name: Module-aware axiom baselines (24 kernel modules + Ffi)
         run: |
           set -o pipefail
           lake exe module_axiom_check 2>&1 | tee /tmp/module-wide-axioms.txt
