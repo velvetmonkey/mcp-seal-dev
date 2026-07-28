@@ -3,7 +3,12 @@
 import Lean.Environment
 import Lean.Util.CollectAxioms
 import Lean.Util.Path
-import SealV2.Validation
+import Seal
+import Seal.Main
+import SealCore
+import SealV2.Crypto
+import SealV2.SerializationContainerLemmas
+import SealV2.SerializationLemmas
 
 /-!
 Feasibility prototype for scanning every kernel declaration originating in one
@@ -21,6 +26,32 @@ private def collectAxiomsIn (env : Environment) (decl : Name) : Array Name :=
   let (_, state) := ((CollectAxioms.collect decl).run env).run {}
   state.axioms.qsort Name.lt
 
+private def compatibleModuleNames : Array Name := #[
+  `Seal.Block,
+  `Seal.Channel,
+  `Seal.Classify,
+  `Seal.Hash,
+  `Seal.JsonUtil,
+  `Seal.Main,
+  `Seal.Policy,
+  `Seal.PolicyLegacy,
+  `Seal.PolicyWire,
+  `SealCore.Automaton,
+  `SealCore.Event,
+  `SealCore.Sha256,
+  `SealV2.Canonical,
+  `SealV2.Crypto,
+  `SealV2.Decide,
+  `SealV2.EnvelopeCompleteness,
+  `SealV2.Escape,
+  `SealV2.Parser,
+  `SealV2.Serialization,
+  `SealV2.SerializationContainerLemmas,
+  `SealCore,
+  `Seal,
+  `SealV2
+]
+
 private def constantKind : ConstantInfo → String
   | .axiomInfo _  => "axiom"
   | .defnInfo _   => "definition"
@@ -31,11 +62,18 @@ private def constantKind : ConstantInfo → String
   | .ctorInfo _   => "constructor"
   | .recInfo _    => "recursor"
 
-def scanModule (moduleName : Name) : IO Unit := do
-  initSearchPath (← findSysroot)
-  -- `.private` is the default deliberately: it loads the module's private
-  -- `.olean` data, not just its exported surface.
-  let env ← importModules #[{ module := moduleName }] {} (level := .private)
+private def bumpDistribution
+    (distribution : List (List Name × Nat)) (footprint : List Name) :
+    List (List Name × Nat) :=
+  match distribution with
+  | [] => [(footprint, 1)]
+  | (seen, count) :: rest =>
+      if seen == footprint then
+        (seen, count + 1) :: rest
+      else
+        (seen, count) :: bumpDistribution rest footprint
+
+def scanModule (env : Environment) (moduleName : Name) : IO Nat := do
   let some moduleIdx := env.getModuleIdx? moduleName
     | throw <| IO.userError s!"module scan: module index not found for {moduleName}"
   let some moduleData := env.header.moduleData[moduleIdx]?
@@ -64,19 +102,45 @@ def scanModule (moduleName : Name) : IO Unit := do
   unless irNamesWithConstantInfo.isEmpty do
     IO.println s!"IR_NAMES_WITH_CONSTANT_INFO_LIST\t{irNamesWithConstantInfo.toList}"
 
-  let mut outsideCount := 0
+  let mut distribution : List (List Name × Nat) := []
   for decl in declarations do
     let some info := env.find? decl
       | throw <| IO.userError s!"module scan: ConstantInfo not found for {decl}"
     let axioms := collectAxiomsIn env decl
-    IO.println s!"DECL\t{decl}\t{constantKind info}\t{axioms.toList}"
+    distribution := bumpDistribution distribution axioms.toList
     let outside := axioms.filter fun axiomName => !baseline.contains axiomName
     unless outside.isEmpty do
-      outsideCount := outsideCount + 1
-      IO.println s!"OUTSIDE_BASELINE\t{decl}\t{outside.toList}\tFULL={axioms.toList}"
+      IO.println
+        s!"OUTSIDE_BASELINE\t{moduleName}\t{decl}\t{constantKind info}\tOUTSIDE={outside.toList}\tFULL={axioms.toList}"
+      throw <| IO.userError s!"module scan: outside-baseline footprint in {moduleName}.{decl}"
 
-  IO.println s!"OUTSIDE_BASELINE_COUNT\t{outsideCount}"
+  for (footprint, count) in distribution do
+    IO.println s!"FOOTPRINT\t{moduleName}\t{count}\t{footprint}"
+  IO.println "OUTSIDE_BASELINE_COUNT\t0"
+  IO.println s!"MODULE_COMPLETE\t{moduleName}\t{declarations.size}"
+  pure declarations.size
 
-#eval scanModule `SealV2.Validation
+def scanAll : IO Unit := do
+  initSearchPath (← findSysroot)
+  -- `Seal.Main` and `Ffi` both define the root name `main`. Also,
+  -- `SerializationLemmas` and `SerializationContainerLemmas` both define
+  -- `SealV2.skipWs_cons_of_not_ws`, which makes provenance ambiguous in a
+  -- shared environment. Scan those conflict cases in isolated environments.
+  let imports : Array Import :=
+    compatibleModuleNames.map fun moduleName => { module := moduleName }
+  let env ← importModules imports {} (level := .private)
+  let mut declarationTotal := 0
+  for moduleName in compatibleModuleNames do
+    declarationTotal := declarationTotal + (← scanModule env moduleName)
+  let serializationLemmasEnv ←
+    importModules #[{ module := `SealV2.SerializationLemmas }] {} (level := .private)
+  declarationTotal := declarationTotal
+    + (← scanModule serializationLemmasEnv `SealV2.SerializationLemmas)
+  let ffiEnv ← importModules #[{ module := `Ffi }] {} (level := .private)
+  declarationTotal := declarationTotal + (← scanModule ffiEnv `Ffi)
+  IO.println s!"MODULES_COMPLETE\t{compatibleModuleNames.size + 2}"
+  IO.println s!"DECLARATIONS_COMPLETE\t{declarationTotal}"
+
+#eval scanAll
 
 end Test.ModuleAxiomScan
