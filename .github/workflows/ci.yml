@@ -37,6 +37,20 @@ jobs:
       - run: lake exe v2_m6_axiom_check 2>&1 | tee /tmp/v2-m6-axioms.txt
       - run: "! grep -E 'sorryAx|Lean\\.ofReduceBool' /tmp/v2-m6-axioms.txt"
       - run: lake exe v2_lifecycle_tests
+      - name: K5 framing control
+        run: lake exe k5_framing_show
+      - name: Classifier partition control
+        run: lake exe classify_enum
+      - name: Numeric agreement control
+        run: lake exe numeric_agreement_show
+      - name: Escape-event non-influence control
+        run: lake exe escape_events_show
+      - name: Nonce-ledger control
+        run: lake exe nonce_ledger_show
+      - name: Field-warrant controls
+        run: lake exe field_warrant_tests
+      - name: Field-warrant negative-witness control
+        run: lake exe field_warrant_mutation
       - run: python3 test/integration/test_seal.py
       - run: python3 test/v2/m1_adversarial_mcp_fixture.py
       - run: python3 test/v2/m2_adversarial_mcp_fixture.py

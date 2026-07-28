@@ -1,6 +1,16 @@
 name = "mcp-seal"
 version = "0.1.0"
-defaultTargets = ["seal", "v2_m4_axiom_check"]
+defaultTargets = [
+  "seal",
+  "v2_m4_axiom_check",
+  "k5_framing_show",
+  "classify_enum",
+  "numeric_agreement_show",
+  "escape_events_show",
+  "nonce_ledger_show",
+  "field_warrant_tests",
+  "field_warrant_mutation",
+]
 
 # M5: link the vendored Ed25519 (TweetNaCl) + FFI shim into every exe. SealV2 now
 # references the @[extern] `lean_seal_ed25519_verify`, so all exes importing SealV2
