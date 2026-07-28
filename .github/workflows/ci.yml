@@ -71,6 +71,8 @@ jobs:
         run: lake exe field_warrant_tests
       - name: Field-warrant negative-witness control
         run: lake exe field_warrant_mutation
+      - name: Channel symlink-refusal control
+        run: lake exe channel_tests
       - run: python3 test/integration/test_seal.py
       - run: python3 test/v2/m1_adversarial_mcp_fixture.py
       - run: python3 test/v2/m2_adversarial_mcp_fixture.py

@@ -56,6 +56,47 @@ def expectStoreReject (name raw : String) (state : ApprovalState)
       | none => pure ()
       | some _ => throw <| IO.userError s!"{name}: expected store-path rejection"
 
+inductive ReplayStoreErrorSeam where
+  | pruneExpired
+  | contains
+  | insertConsumed
+  deriving BEq
+
+/-- A replay store mutant that can inject one targeted backend error. With
+    `injectError = false`, the same store delegates every operation to the
+    normal list store and is the positive control for the deny assertion. -/
+def replayStoreErrorMutant (seam : ReplayStoreErrorSeam) (injectError : Bool) :
+    ReplayStoreOps (List ConsumedNonce) where
+  contains? entries ns nonce :=
+    if injectError && seam == .contains then
+      .error (.backend "injected contains? failure")
+    else
+      listReplayStore.contains? entries ns nonce
+  insertConsumed entries entry :=
+    if injectError && seam == .insertConsumed then
+      .error (.backend "injected insertConsumed failure")
+    else
+      listReplayStore.insertConsumed entries entry
+  pruneExpired entries now :=
+    if injectError && seam == .pruneExpired then
+      .error (.backend "injected pruneExpired failure")
+    else
+      listReplayStore.pruneExpired entries now
+
+def expectStoreErrorDenyWithPositiveTwin (name : String) (seam : ReplayStoreErrorSeam)
+    (raw : String) (state : ApprovalState) (store : List ConsumedNonce) : IO Unit := do
+  match parse raw with
+  | none => throw <| IO.userError s!"{name}: expected parse success"
+  | some ast =>
+      match validateAndConsumeWithStore (replayStoreErrorMutant seam true) store ast state with
+      | some _ =>
+          throw <| IO.userError s!"{name}: injected store error was not denied"
+      | none => pure ()
+      match validateAndConsumeWithStore (replayStoreErrorMutant seam false) store ast state with
+      | none =>
+          throw <| IO.userError s!"{name}: positive twin was not accepted"
+      | some _ => pure ()
+
 def expectSignedPathRejects (name raw : String) : IO Unit := do
   match signedParse raw with
   | none =>
@@ -94,4 +135,11 @@ def main : IO UInt32 := do
   let _ ← expectStoreAccept "store expired consumed nonce pruned" validRaw baseState
     [{ ns := baseNamespace, nonce := nonceA, expiresAt := 5 }]
   IO.println "A3 replay/TTL corpus passed: 3 accepted, 3 rejected"
+  expectStoreErrorDenyWithPositiveTwin "pruneExpired error denies / ok accepts"
+    .pruneExpired validRaw baseState []
+  expectStoreErrorDenyWithPositiveTwin "contains? error denies / ok accepts"
+    .contains validRaw baseState []
+  expectStoreErrorDenyWithPositiveTwin "insertConsumed error denies / ok accepts"
+    .insertConsumed validRaw baseState []
+  IO.println "Replay-store error arms passed: 3 denied, 3 positive twins accepted"
   pure 0
