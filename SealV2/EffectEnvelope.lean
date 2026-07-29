@@ -100,7 +100,8 @@ is DECLARED in the signed object, never implied by a sentinel value:
   `policy_version_spoof_blocks`). Mandatory equality against
   `state.policyVersion`.
 * BIND-declared-optional F3
-  `effect : Option {resource, action, args, metadata}` —
+  `effect : Option {resource, action, args, metadata, requestState,
+  inputResponses}` —
   ADVISORY but INTERPRETED: a present claim is equality-enforced against the
   parser-derived effect (`mcp_effect_equality`), never the decision value
   (`effect_step_presence_not_value`). The F3 claim is under a SEPARATE,
@@ -109,7 +110,8 @@ is DECLARED in the signed object, never implied by a sentinel value:
 * Encoding: every variable-width field `u64be(len) ‖ bytes`; fixed-width
   fields raw (authority 32, nonce 32, u64be at 8); the F3 option block is
   `0x00`, or
-  `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args) ‖ optMeta(metadata)`.
+  `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args) ‖ optMeta(metadata)
+  ‖ optMrtr(requestState,inputResponses)`.
 
 **Specification-only members of the byte-formula defect family:** a
 repository-wide fixed-string search at `6c74b61` found no kernel occurrence
@@ -323,6 +325,10 @@ structure EffectClaim where
   args : String
   /-- Complete validated request `_meta`, including explicit absence. -/
   metadata : MetaValue
+  /-- Complete opaque MCP request state, including structural absence. -/
+  requestState : RequestState := .absent
+  /-- Complete MCP input responses, including structural absence. -/
+  inputResponses : InputResponses := .absent
   deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 
 /-- The Stage B2 effect envelope — every field both authenticated AND
@@ -366,8 +372,26 @@ def optMeta : MetaValue → ByteArray
   | .absent => ByteArray.mk #[0]
   | .present canonicalObject => ByteArray.mk #[1] ++ frame canonicalObject
 
+/-- Compatibility-preserving MRTR block. The legacy all-absent shape remains
+    empty until the coordinated Phase-M repin. Every other structural shape
+    has a distinct mode byte, followed by length-framed complete canonical
+    JSON values:
+
+    * `0x01 ‖ frame(requestState)` — state present, responses absent;
+    * `0x02 ‖ frame(inputResponses)` — state absent, responses present;
+    * `0x03 ‖ frame(requestState) ‖ frame(inputResponses)` — both present.
+
+    No JSON value is reserved as an absence sentinel. -/
+def optMrtr : RequestState → InputResponses → ByteArray
+  | .absent, .absent => ByteArray.empty
+  | .present state, .absent => ByteArray.mk #[1] ++ frame state
+  | .absent, .present responses => ByteArray.mk #[2] ++ frame responses
+  | .present state, .present responses =>
+      ByteArray.mk #[3] ++ frame state ++ frame responses
+
 /-- Wire form of the option-encoded F3 claim: `0x00` = declared absent;
-    `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args) ‖ optMeta(metadata)`
+    `0x01 ‖ frame(resource) ‖ frame(action) ‖ frame(args) ‖ optMeta(metadata)
+      ‖ optMrtr(requestState,inputResponses)`
     = present. The
     presence byte is INSIDE the signed message: absence is a distinct signed
     value, not an inference from empty strings, and flipping presence is a
@@ -376,6 +400,7 @@ def optEffect : Option EffectClaim → ByteArray
   | none => ByteArray.mk #[0]
   | some c => ByteArray.mk #[1] ++ frame c.resource ++ frame c.action
       ++ frame c.args ++ optMeta c.metadata
+      ++ optMrtr c.requestState c.inputResponses
 
 /-- **The canonical signed message** — the cross-language contract:
 
@@ -433,6 +458,12 @@ structure WireSized (e : EffectEnvelope) : Prop where
       ∧ (match c.metadata with
          | .absent => True
          | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64)
+      ∧ (match c.requestState with
+         | .absent => True
+         | .present canonicalValue => canonicalValue.utf8ByteSize < 2 ^ 64)
+      ∧ (match c.inputResponses with
+         | .absent => True
+         | .present canonicalValue => canonicalValue.utf8ByteSize < 2 ^ 64)
 
 /-- Decidable form of `WireSized`, checked by `verifyEffect` at runtime. -/
 def wireSizedB (e : EffectEnvelope) : Bool :=
@@ -454,7 +485,15 @@ def wireSizedB (e : EffectEnvelope) : Bool :=
               && (match c.metadata with
                   | .absent => true
                   | .present canonicalObject =>
-                      Decidable.decide (canonicalObject.utf8ByteSize < 2 ^ 64)))
+                      Decidable.decide (canonicalObject.utf8ByteSize < 2 ^ 64))
+              && (match c.requestState with
+                  | .absent => true
+                  | .present canonicalValue =>
+                      Decidable.decide (canonicalValue.utf8ByteSize < 2 ^ 64))
+              && (match c.inputResponses with
+                  | .absent => true
+                  | .present canonicalValue =>
+                      Decidable.decide (canonicalValue.utf8ByteSize < 2 ^ 64)))
 
 theorem wireSizedB_spec {e : EffectEnvelope} (h : wireSizedB e = true) :
     WireSized e := by
@@ -465,8 +504,11 @@ theorem wireSizedB_spec {e : EffectEnvelope} (h : wireSizedB e = true) :
   intro c hc
   rw [hc] at heff
   simp only [Bool.and_eq_true, decide_eq_true_eq] at heff
-  refine ⟨heff.1.1.1, heff.1.1.2, heff.1.2, ?_⟩
-  cases hm : c.metadata <;> simp_all
+  refine ⟨heff.1.1.1.1.1, heff.1.1.1.1.2, heff.1.1.1.2,
+    ?_, ?_, ?_⟩
+  · cases hm : c.metadata <;> simp_all
+  · cases hs : c.requestState <;> simp_all
+  · cases hi : c.inputResponses <;> simp_all
 
 /-! ## 1 + 2: full-tuple injectivity, by sequential peel -/
 
@@ -521,6 +563,153 @@ theorem optMeta_inj {m₁ m₂ : MetaValue}
       cases hvalue
       rfl
 
+private theorem empty_ne_tagged (tag : UInt8) (tail : ByteArray) :
+    ByteArray.empty ≠ ByteArray.mk #[tag] ++ tail := by
+  intro h
+  have hs := congrArg ByteArray.size h
+  have hempty : ByteArray.empty.size = 0 := rfl
+  have htag : (ByteArray.mk #[tag]).size = 1 := rfl
+  rw [hempty, ByteArray.size_append, htag] at hs
+  omega
+
+private theorem tagged_cancel {tag₁ tag₂ : UInt8} {tail₁ tail₂ : ByteArray}
+    (h : ByteArray.mk #[tag₁] ++ tail₁ =
+      ByteArray.mk #[tag₂] ++ tail₂) :
+    tag₁ = tag₂ ∧ tail₁ = tail₂ := by
+  obtain ⟨htag, htail⟩ := sized_cancel (k := 1) rfl rfl h
+  have htag' := congrArg (fun b : ByteArray => b[0]!) htag
+  simpa using ⟨htag', htail⟩
+
+/-- The MRTR block is jointly injective. Its mode byte distinguishes all four
+    presence combinations; present payloads are complete length-framed
+    canonical JSON values. -/
+theorem optMrtr_inj {s₁ s₂ : RequestState} {i₁ i₂ : InputResponses}
+    (hs₁ : match s₁ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (hs₂ : match s₂ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (hi₁ : match i₁ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (hi₂ : match i₂ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (h : optMrtr s₁ i₁ = optMrtr s₂ i₂) :
+    s₁ = s₂ ∧ i₁ = i₂ := by
+  match s₁, i₁, s₂, i₂ with
+  | .absent, .absent, .absent, .absent => exact ⟨rfl, rfl⟩
+  | .present left, .absent, .present right, .absent =>
+      have h' : frame left = frame right :=
+        by simpa [optMrtr] using h
+      have hv := frame_inj hs₁ hs₂ h'
+      exact ⟨by cases hv; rfl, rfl⟩
+  | .absent, .present left, .absent, .present right =>
+      have h' : frame left = frame right :=
+        by simpa [optMrtr] using h
+      have hv := frame_inj hi₁ hi₂ h'
+      exact ⟨rfl, by cases hv; rfl⟩
+  | .present state₁, .present responses₁,
+      .present state₂, .present responses₂ =>
+      have h' : frame state₁ ++ frame responses₁ =
+          frame state₂ ++ frame responses₂ :=
+        by simpa [optMrtr, ByteArray.append_assoc] using h
+      obtain ⟨hstate, hresponsesFrame⟩ :=
+        frame_cancel hs₁ hs₂ h'
+      have hresponses := frame_inj hi₁ hi₂ hresponsesFrame
+      exact ⟨by cases hstate; rfl, by cases hresponses; rfl⟩
+  | .absent, .absent, .present value, .absent =>
+      exact absurd h (empty_ne_tagged 1 (frame value))
+  | .absent, .absent, .absent, .present value =>
+      exact absurd h (empty_ne_tagged 2 (frame value))
+  | .absent, .absent, .present state, .present responses =>
+      exact absurd h (empty_ne_tagged 3 (frame state ++ frame responses))
+  | .present value, .absent, .absent, .absent =>
+      exact absurd h.symm (empty_ne_tagged 1 (frame value))
+  | .absent, .present value, .absent, .absent =>
+      exact absurd h.symm (empty_ne_tagged 2 (frame value))
+  | .present state, .present responses, .absent, .absent =>
+      exact absurd h.symm (empty_ne_tagged 3 (frame state ++ frame responses))
+  | .present _, .absent, .absent, .present _
+  | .present _, .absent, .present _, .present _
+  | .absent, .present _, .present _, .absent
+  | .absent, .present _, .present _, .present _
+  | .present _, .present _, .present _, .absent
+  | .present _, .present _, .absent, .present _ =>
+      have htag := (tagged_cancel (by
+        simpa [optMrtr, ByteArray.append_assoc] using h)).1
+      contradiction
+
+theorem optMrtr_requestState_absent_ne_present
+    (inputResponses : InputResponses) (canonicalValue : CanonicalBytes) :
+    optMrtr .absent inputResponses ≠
+      optMrtr (.present canonicalValue) inputResponses := by
+  cases inputResponses with
+  | absent =>
+      exact empty_ne_tagged 1 (frame canonicalValue)
+  | present responses =>
+      intro h
+      have htag := (tagged_cancel (by
+        simpa [optMrtr, ByteArray.append_assoc] using h)).1
+      contradiction
+
+theorem optMrtr_inputResponses_absent_ne_present
+    (requestState : RequestState) (canonicalValue : CanonicalBytes) :
+    optMrtr requestState .absent ≠
+      optMrtr requestState (.present canonicalValue) := by
+  cases requestState with
+  | absent =>
+      exact empty_ne_tagged 2 (frame canonicalValue)
+  | present state =>
+      intro h
+      have htag := (tagged_cancel (by
+        simpa [optMrtr, ByteArray.append_assoc] using h)).1
+      contradiction
+
+/-- Metadata followed by MRTR is jointly injective, including every structural
+    absence/presence boundary. -/
+theorem optMetaMrtr_inj {m₁ m₂ : MetaValue}
+    {s₁ s₂ : RequestState} {i₁ i₂ : InputResponses}
+    (hm₁ : match m₁ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (hm₂ : match m₂ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (hs₁ : match s₁ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (hs₂ : match s₂ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (hi₁ : match i₁ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (hi₂ : match i₂ with
+      | .absent => True
+      | .present value => value.utf8ByteSize < 2 ^ 64)
+    (h : optMeta m₁ ++ optMrtr s₁ i₁ =
+      optMeta m₂ ++ optMrtr s₂ i₂) :
+    m₁ = m₂ ∧ s₁ = s₂ ∧ i₁ = i₂ := by
+  match m₁, m₂ with
+  | .absent, .absent =>
+      have hmrtr : optMrtr s₁ i₁ = optMrtr s₂ i₂ :=
+        by simpa [optMeta, ByteArray.append_assoc] using h
+      obtain ⟨hs, hi⟩ := optMrtr_inj hs₁ hs₂ hi₁ hi₂ hmrtr
+      exact ⟨rfl, hs, hi⟩
+  | .present left, .present right =>
+      have h' : frame left ++ optMrtr s₁ i₁ =
+          frame right ++ optMrtr s₂ i₂ :=
+        by simpa [optMeta, ByteArray.append_assoc] using h
+      obtain ⟨hm, hmrtr⟩ := frame_cancel hm₁ hm₂ h'
+      obtain ⟨hs, hi⟩ := optMrtr_inj hs₁ hs₂ hi₁ hi₂ hmrtr
+      exact ⟨by cases hm; rfl, hs, hi⟩
+  | .absent, .present _ | .present _, .absent =>
+      have htag := (tagged_cancel (by
+        simpa [optMeta, ByteArray.append_assoc] using h)).1
+      contradiction
+
 /-- The option block is injective: the signed presence byte separates
     `none` from `some` (0x00 vs 0x01 at offset 0), and present claims peel
     field-by-field like the rest of the message. Flipping presence, or any
@@ -530,12 +719,24 @@ theorem optEffect_inj {o₁ o₂ : Option EffectClaim}
       ∧ c.action.utf8ByteSize < 2 ^ 64 ∧ c.args.utf8ByteSize < 2 ^ 64
       ∧ (match c.metadata with
          | .absent => True
-         | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64))
+         | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64)
+      ∧ (match c.requestState with
+         | .absent => True
+         | .present canonicalValue => canonicalValue.utf8ByteSize < 2 ^ 64)
+      ∧ (match c.inputResponses with
+         | .absent => True
+         | .present canonicalValue => canonicalValue.utf8ByteSize < 2 ^ 64))
     (h₂ : ∀ c, o₂ = some c → c.resource.utf8ByteSize < 2 ^ 64
       ∧ c.action.utf8ByteSize < 2 ^ 64 ∧ c.args.utf8ByteSize < 2 ^ 64
       ∧ (match c.metadata with
          | .absent => True
-         | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64))
+         | .present canonicalObject => canonicalObject.utf8ByteSize < 2 ^ 64)
+      ∧ (match c.requestState with
+         | .absent => True
+         | .present canonicalValue => canonicalValue.utf8ByteSize < 2 ^ 64)
+      ∧ (match c.inputResponses with
+         | .absent => True
+         | .present canonicalValue => canonicalValue.utf8ByteSize < 2 ^ 64))
     (h : optEffect o₁ = optEffect o₂) : o₁ = o₂ := by
   match o₁, o₂ with
   | none, none => rfl
@@ -554,23 +755,65 @@ theorem optEffect_inj {o₁ o₂ : Option EffectClaim}
         (p₁ := ByteArray.mk #[0]) (p₂ := ByteArray.mk #[1])
         (by decide) (by decide) (by decide) _ _ h'
   | some c₁, some c₂ =>
-      obtain ⟨hr₁, ha₁, hg₁, hm₁⟩ := h₁ c₁ rfl
-      obtain ⟨hr₂, ha₂, hg₂, hm₂⟩ := h₂ c₂ rfl
+      obtain ⟨hr₁, ha₁, hg₁, hm₁, hs₁, hi₁⟩ := h₁ c₁ rfl
+      obtain ⟨hr₂, ha₂, hg₂, hm₂, hs₂, hi₂⟩ := h₂ c₂ rfl
       have h' := congrArg (· ++ ByteArray.empty) h
       simp only [optEffect, ByteArray.append_assoc] at h'
       rw [ByteArray.append_right_inj] at h'
       obtain ⟨hres, h'⟩ := frame_cancel hr₁ hr₂ h'
       obtain ⟨hact, h'⟩ := frame_cancel ha₁ ha₂ h'
-      obtain ⟨hargs, hmeta⟩ := frame_cancel hg₁ hg₂ h'
-      have hmeta' : optMeta c₁.metadata = optMeta c₂.metadata := by
-        simpa using hmeta
-      have hmetadata : c₁.metadata = c₂.metadata :=
-        optMeta_inj hm₁ hm₂ hmeta'
+      obtain ⟨hargs, htail⟩ := frame_cancel hg₁ hg₂ h'
+      have hmetaAndMrtr :
+          optMeta c₁.metadata ++ optMrtr c₁.requestState c₁.inputResponses =
+          optMeta c₂.metadata ++ optMrtr c₂.requestState c₂.inputResponses := by
+        simpa using htail
+      obtain ⟨hmetadata, hstate, hresponses⟩ :=
+        optMetaMrtr_inj hm₁ hm₂ hs₁ hs₂ hi₁ hi₂ hmetaAndMrtr
       have hc : c₁ = c₂ := by
         cases c₁; cases c₂
         simp only [EffectClaim.mk.injEq]
-        exact ⟨hres, hact, hargs, hmetadata⟩
+        exact ⟨hres, hact, hargs, hmetadata, hstate, hresponses⟩
       rw [hc]
+
+theorem optEffect_requestState_absent_ne_present
+    (base : EffectClaim) (canonicalValue : CanonicalBytes) :
+    optEffect (some { base with requestState := .absent }) ≠
+      optEffect (some { base with requestState := .present canonicalValue }) := by
+  intro h
+  apply optMrtr_requestState_absent_ne_present base.inputResponses canonicalValue
+  simpa [optEffect, ByteArray.append_assoc] using h
+
+theorem optEffect_inputResponses_absent_ne_present
+    (base : EffectClaim) (canonicalValue : CanonicalBytes) :
+    optEffect (some { base with inputResponses := .absent }) ≠
+      optEffect (some { base with inputResponses := .present canonicalValue }) := by
+  intro h
+  apply optMrtr_inputResponses_absent_ne_present base.requestState canonicalValue
+  simpa [optEffect, ByteArray.append_assoc] using h
+
+theorem effectMessage_requestState_absent_ne_present
+    (authority : ByteArray) (base : EffectEnvelope) (claim : EffectClaim)
+    (canonicalValue : CanonicalBytes) :
+    effectMessage authority
+        { base with effect := some { claim with requestState := .absent } } ≠
+      effectMessage authority
+        { base with effect := some {
+          claim with requestState := .present canonicalValue } } := by
+  intro h
+  apply optEffect_requestState_absent_ne_present claim canonicalValue
+  simpa [effectMessage, ByteArray.append_assoc] using h
+
+theorem effectMessage_inputResponses_absent_ne_present
+    (authority : ByteArray) (base : EffectEnvelope) (claim : EffectClaim)
+    (canonicalValue : CanonicalBytes) :
+    effectMessage authority
+        { base with effect := some { claim with inputResponses := .absent } } ≠
+      effectMessage authority
+        { base with effect := some {
+          claim with inputResponses := .present canonicalValue } } := by
+  intro h
+  apply optEffect_inputResponses_absent_ne_present claim canonicalValue
+  simpa [effectMessage, ByteArray.append_assoc] using h
 
 /-- **The Stage B2 bind, at the encoding.** Equal messages force equal
     authority AND an equal FULL field tuple — the `seal.effect/v1` theorem
@@ -817,7 +1060,9 @@ def deriveEffect (line : RawBytes) : Option EffectClaim :=
           resource := req.tool,
           action := req.action,
           args := serializeAstValue req.arguments,
-          metadata := req.metadata
+          metadata := req.metadata,
+          requestState := req.requestState,
+          inputResponses := req.inputResponses
         }
 
 /-- F1 gate: the signed adapter claim must equal the adapter that actually

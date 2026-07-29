@@ -14,6 +14,7 @@ defaultTargets = [
   "meta_identity_controls",
   "mrtr_identity_controls",
   "v2_meta_identity_controls",
+  "v2_mrtr_identity_controls",
 ]
 
 # M5: link the vendored Ed25519 (TweetNaCl) + FFI shim into every exe. SealV2 now
@@ -94,6 +95,10 @@ root = "Test.MrtrIdentityControls"
 [[lean_exe]]
 name = "v2_meta_identity_controls"
 root = "Test.V2MetaIdentityControls"
+
+[[lean_exe]]
+name = "v2_mrtr_identity_controls"
+root = "Test.V2MrtrIdentityControls"
 
 [[lean_exe]]
 name = "scan_oracle"
