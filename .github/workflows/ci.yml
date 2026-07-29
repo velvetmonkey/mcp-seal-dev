@@ -21,13 +21,16 @@ jobs:
       - run: lake build
       - run: lake exe automaton_tests
       - run: lake exe policy_bundle_tests
+      - run: lake exe policy_v2_tests
+      - run: lake exe policy_diff_tests
+      - run: lake exe scaffold_tests
       - name: Axiom allowlist
         run: |
           set -o pipefail
           lake exe axiom_check 2>&1 | tee /tmp/axioms.txt
-      # Module-aware: 24 regular kernel modules use the three-name baseline;
+      # Module-aware: 25 regular kernel modules use the three-name baseline;
       # Ffi alone uses the four-name unsafe compiled-code-root baseline.
-      - name: Module-aware axiom baselines (24 kernel modules + Ffi)
+      - name: Module-aware axiom baselines (25 kernel modules + Ffi)
         run: |
           set -o pipefail
           lake exe module_axiom_check 2>&1 | tee /tmp/module-wide-axioms.txt
@@ -59,6 +62,10 @@ jobs:
           set -o pipefail
           lake exe v2_m6_axiom_check 2>&1 | tee /tmp/v2-m6-axioms.txt
       - run: lake exe v2_lifecycle_tests
+      - name: M.2 adapter revision-set control
+        run: lake exe m2_adapter_revision_set
+      - name: M.7 per-request version-gate control
+        run: lake exe m7_version_gate
       - name: K5 framing control
         run: lake exe k5_framing_show
       - name: Classifier partition control
