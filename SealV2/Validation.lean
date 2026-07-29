@@ -3,6 +3,7 @@
 import SealV2.Serialization
 import SealV2.Crypto
 import Seal.EffectCommitment
+import Seal.EncodingInjective
 
 namespace SealV2
 
@@ -38,6 +39,10 @@ namespace MetaValue
 def preimageParts : MetaValue → List String
   | .absent => ["meta.absent", ""]
   | .present canonicalObject => ["meta.present", canonicalObject]
+
+@[simp] theorem preimageParts_length (metadata : MetaValue) :
+    metadata.preimageParts.length = 2 := by
+  cases metadata <;> rfl
 
 /-- Convert the stage-1 validated value without projection or reinterpretation. -/
 def ofStage1 : Seal.ValidatedMeta → MetaValue
@@ -86,11 +91,136 @@ def fromSignedAst? : AST → Option MetaValue
 
 end MetaValue
 
+/-! ## Multi-round-trip request identity
+
+The V2 layer stores the same complete JSON values as Stage A, normalized
+through `Lean.Json.compress` so object member order cannot make the two
+layers disagree.  `requestState` remains one opaque value: no decoder,
+projection, or member lookup exists below. -/
+
+inductive RequestState where
+  | absent
+  | present (canonicalValue : CanonicalBytes)
+  deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
+
+namespace RequestState
+
+def preimageParts : RequestState → List String
+  | .absent => ["requestState.absent", ""]
+  | .present canonicalValue => ["requestState.present", canonicalValue]
+
+@[simp] theorem preimageParts_length (state : RequestState) :
+    state.preimageParts.length = 2 := by
+  cases state <;> rfl
+
+def ofStage1 : Seal.RequestState → RequestState
+  | .absent => .absent
+  | .present value => .present value.compress
+
+theorem ofStage1_preimageParts (state : Seal.RequestState) :
+    (ofStage1 state).preimageParts = state.preimageParts := by
+  cases state <;> rfl
+
+/-- Cross-layer correspondence: Stage A and V2 give the same answer to
+    whether opaque request state changed identity. -/
+theorem ofStage1_preimageParts_ne_iff
+    (left right : Seal.RequestState) :
+    left.preimageParts ≠ right.preimageParts ↔
+      (ofStage1 left).preimageParts ≠ (ofStage1 right).preimageParts := by
+  rw [ofStage1_preimageParts, ofStage1_preimageParts]
+
+def fromAst? : Option AST → Option RequestState
+  | none => some .absent
+  | some value =>
+      match Lean.Json.parse (serializeAstValue value) with
+      | .ok parsed => some (.present parsed.compress)
+      | .error _ => none
+
+def signedAst : CanonicalBytes → AST :=
+  fun canonicalValue =>
+    .object [("canonicalValue", .string canonicalValue)]
+
+def fromSignedAst? : AST → Option RequestState
+  | .object [("canonicalValue", .string canonicalValue)] =>
+      match Lean.Json.parse canonicalValue with
+      | .ok parsed =>
+          let normalized := parsed.compress
+          if normalized == canonicalValue then some (.present normalized) else none
+      | .error _ => none
+  | _ => none
+
+theorem preimageParts_injective : Function.Injective preimageParts := by
+  intro left right h
+  cases left <;> cases right <;> simp [preimageParts] at h ⊢
+  assumption
+
+end RequestState
+
+inductive InputResponses where
+  | absent
+  | present (canonicalValue : CanonicalBytes)
+  deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
+
+namespace InputResponses
+
+def preimageParts : InputResponses → List String
+  | .absent => ["inputResponses.absent", ""]
+  | .present canonicalValue => ["inputResponses.present", canonicalValue]
+
+@[simp] theorem preimageParts_length (responses : InputResponses) :
+    responses.preimageParts.length = 2 := by
+  cases responses <;> rfl
+
+def ofStage1 : Seal.InputResponses → InputResponses
+  | .absent => .absent
+  | .present value => .present value.compress
+
+theorem ofStage1_preimageParts (responses : Seal.InputResponses) :
+    (ofStage1 responses).preimageParts = responses.preimageParts := by
+  cases responses <;> rfl
+
+/-- Cross-layer correspondence: Stage A and V2 give the same answer to
+    whether complete input responses changed identity. -/
+theorem ofStage1_preimageParts_ne_iff
+    (left right : Seal.InputResponses) :
+    left.preimageParts ≠ right.preimageParts ↔
+      (ofStage1 left).preimageParts ≠ (ofStage1 right).preimageParts := by
+  rw [ofStage1_preimageParts, ofStage1_preimageParts]
+
+def fromAst? : Option AST → Option InputResponses
+  | none => some .absent
+  | some value =>
+      match Lean.Json.parse (serializeAstValue value) with
+      | .ok parsed => some (.present parsed.compress)
+      | .error _ => none
+
+def signedAst : CanonicalBytes → AST :=
+  fun canonicalValue =>
+    .object [("canonicalValue", .string canonicalValue)]
+
+def fromSignedAst? : AST → Option InputResponses
+  | .object [("canonicalValue", .string canonicalValue)] =>
+      match Lean.Json.parse canonicalValue with
+      | .ok parsed =>
+          let normalized := parsed.compress
+          if normalized == canonicalValue then some (.present normalized) else none
+      | .error _ => none
+  | _ => none
+
+theorem preimageParts_injective : Function.Injective preimageParts := by
+  intro left right h
+  cases left <;> cases right <;> simp [preimageParts] at h ⊢
+  assumption
+
+end InputResponses
+
 structure CapabilityRequest where
   tool : ToolName
   action : Action
   arguments : AST
   metadata : MetaValue
+  requestState : RequestState := .absent
+  inputResponses : InputResponses := .absent
   deriving Repr, BEq
 
 structure ToolSpec where
@@ -106,6 +236,8 @@ structure Target where
   manifestDigest : ManifestDigest
   arguments : AST
   metadata : MetaValue
+  requestState : RequestState := .absent
+  inputResponses : InputResponses := .absent
   deriving Repr, BEq
 
 /-- A nonce is a fixed-width 32-byte value rendered as exactly 64 lowercase hex characters. -/
@@ -201,25 +333,96 @@ def signedMessage (approval : Approval) : SignedMessage :=
   { target := approval.target, session := approval.session,
     issuedAt := approval.issuedAt, expiry := approval.expiresAt, nonce := approval.nonce }
 
+private def signedRequestStateField : RequestState → List (String × AST)
+  | .absent => []
+  | .present canonicalValue =>
+      [("requestState", RequestState.signedAst canonicalValue)]
+
+private def signedInputResponsesField : InputResponses → List (String × AST)
+  | .absent => []
+  | .present canonicalValue =>
+      [("inputResponses", InputResponses.signedAst canonicalValue)]
+
+def signedTargetFields (target : Target) : List (String × AST) :=
+  [
+    ("tool", .string target.tool),
+    ("action", .string target.action),
+    ("toolVersion", .string target.toolVersion),
+    ("manifestDigest", .string target.manifestDigest),
+    ("arguments", target.arguments),
+    ("metadata", target.metadata.signedAst)
+  ] ++ signedRequestStateField target.requestState ++
+    signedInputResponsesField target.inputResponses
+
 def signedMessageAst (message : SignedMessage) : AST :=
   .object [
-    ("target", .object [
-      ("tool", .string message.target.tool),
-      ("action", .string message.target.action),
-      ("toolVersion", .string message.target.toolVersion),
-      ("manifestDigest", .string message.target.manifestDigest),
-      ("arguments", message.target.arguments),
-      ("metadata", message.target.metadata.signedAst)
-    ]),
+    ("target", .object (signedTargetFields message.target)),
     ("session", .string message.session),
     ("issuedAt", .number { negative := false, intDigits := toString message.issuedAt, fracDigits := none }),
     ("expiry", .number { negative := false, intDigits := toString message.expiry, fracDigits := none }),
     ("nonce", .string message.nonce.value)
   ]
 
+theorem signedTargetFields_separates_requestState (base : Target)
+    (left right : RequestState) (hne : left ≠ right) :
+    signedTargetFields { base with requestState := left } ≠
+      signedTargetFields { base with requestState := right } := by
+  intro h
+  apply hne
+  cases left <;> cases right <;>
+    simp [signedTargetFields, signedRequestStateField,
+      signedInputResponsesField, RequestState.signedAst] at h ⊢
+  assumption
+
+theorem signedTargetFields_separates_inputResponses (base : Target)
+    (left right : InputResponses) (hne : left ≠ right) :
+    signedTargetFields { base with inputResponses := left } ≠
+      signedTargetFields { base with inputResponses := right } := by
+  intro h
+  apply hne
+  cases left <;> cases right <;>
+    simp [signedTargetFields, signedRequestStateField,
+      signedInputResponsesField, InputResponses.signedAst] at h ⊢
+  assumption
+
+private def signedTargetFieldsFromMessageAst : AST → List (String × AST)
+  | .object (("target", .object fields) :: _) => fields
+  | _ => []
+
+theorem signedMessageAst_separates_requestState (base : SignedMessage)
+    (left right : RequestState) (hne : left ≠ right) :
+    signedMessageAst { base with target.requestState := left } ≠
+      signedMessageAst { base with target.requestState := right } := by
+  intro h
+  apply signedTargetFields_separates_requestState base.target left right hne
+  exact congrArg signedTargetFieldsFromMessageAst h
+
+theorem signedMessageAst_separates_inputResponses (base : SignedMessage)
+    (left right : InputResponses) (hne : left ≠ right) :
+    signedMessageAst { base with target.inputResponses := left } ≠
+      signedMessageAst { base with target.inputResponses := right } := by
+  intro h
+  apply signedTargetFields_separates_inputResponses base.target left right hne
+  exact congrArg signedTargetFieldsFromMessageAst h
+
 /-- Recover a non-negative integer from a canonical decimal AST node. -/
 def astNat? : AST → Option Nat
   | .number d => if d.negative then none else (if d.fracDigits.isSome then none else d.intDigits.toNat?)
+  | _ => none
+
+private def mrtrFromSignedFields? :
+    List (String × AST) → Option (RequestState × InputResponses)
+  | [] => some (.absent, .absent)
+  | [("requestState", stateAst)] => do
+      let state ← RequestState.fromSignedAst? stateAst
+      some (state, .absent)
+  | [("inputResponses", responsesAst)] => do
+      let responses ← InputResponses.fromSignedAst? responsesAst
+      some (.absent, responses)
+  | [("requestState", stateAst), ("inputResponses", responsesAst)] => do
+      let state ← RequestState.fromSignedAst? stateAst
+      let responses ← InputResponses.fromSignedAst? responsesAst
+      some (state, responses)
   | _ => none
 
 /-- Structural inverse of `signedMessageAst`. Requires the trailing nonce field to be
@@ -228,22 +431,26 @@ def astNat? : AST → Option Nat
 def signedMessageFromAst? (ast : AST) : Option SignedMessage :=
   match ast with
   | .object [
-      ("target", .object [
-        ("tool", .string tool),
-        ("action", .string action),
-        ("toolVersion", .string toolVersion),
-        ("manifestDigest", .string manifestDigest),
-        ("arguments", arguments),
-        ("metadata", metadataAst)]),
+      ("target", .object (
+        ("tool", .string tool) ::
+        ("action", .string action) ::
+        ("toolVersion", .string toolVersion) ::
+        ("manifestDigest", .string manifestDigest) ::
+        ("arguments", arguments) ::
+        ("metadata", metadataAst) :: mrtrFields)),
       ("session", .string session),
       ("issuedAt", issuedAtAst),
       ("expiry", expiryAst),
       ("nonce", .string nonceStr)] =>
-    match astNat? issuedAtAst, astNat? expiryAst, MetaValue.fromSignedAst? metadataAst with
-    | some issuedAt, some expiry, some metadata =>
+    match astNat? issuedAtAst, astNat? expiryAst, MetaValue.fromSignedAst? metadataAst,
+        mrtrFromSignedFields? mrtrFields with
+    | some issuedAt, some expiry, some metadata, some (requestState, inputResponses) =>
         if h : isCanonicalNonceString nonceStr = true then
           some {
-            target := { tool, action, toolVersion, manifestDigest, arguments, metadata },
+            target := {
+              tool, action, toolVersion, manifestDigest, arguments, metadata,
+              requestState, inputResponses
+            },
             session := session,
             issuedAt := issuedAt,
             expiry := expiry,
@@ -251,7 +458,7 @@ def signedMessageFromAst? (ast : AST) : Option SignedMessage :=
           }
         else
           none
-    | _, _, _ => none
+    | _, _, _, _ => none
   | _ => none
 
 def signedMessageCanonical? (message : SignedMessage) : Option {ast // IsCanonical ast} :=
@@ -322,7 +529,12 @@ def requestFromAst (ast : AST) : Option CapabilityRequest :=
             let action ← lookupObj "action" params >>= astString?
             let arguments ← lookupObj "arguments" params
             let metadata ← MetaValue.fromAst? (lookupObj "_meta" params)
-            some { tool, action, arguments, metadata }
+            let requestState ← RequestState.fromAst? (lookupObj "requestState" params)
+            let inputResponses ←
+              InputResponses.fromAst? (lookupObj "inputResponses" params)
+            some {
+              tool, action, arguments, metadata, requestState, inputResponses
+            }
         | _ => none
   | _ => none
 
@@ -336,7 +548,9 @@ def targetFor (state : ApprovalState) (request : CapabilityRequest) (spec : Tool
     toolVersion := spec.version,
     manifestDigest := state.manifestDigest,
     arguments := request.arguments,
-    metadata := request.metadata
+    metadata := request.metadata,
+    requestState := request.requestState,
+    inputResponses := request.inputResponses
   }
 
 /-- The default ceiling on an approval's lifetime, in seconds. -/
@@ -347,14 +561,74 @@ def defaultMaxApprovalTtl : Nat := 300
 def pruneConsumedNonces (now : Nat) (entries : List ConsumedNonce) : List ConsumedNonce :=
   entries.filter (fun e => now <= e.expiresAt)
 
-/-- A total, deterministic canonical string key for a target. Metadata uses
-    the same explicit absent/present suffix as the stage-1 guard target, so
-    absence and `{}` do not share a replay namespace. -/
+/-- The exact typed-target key parts. The three optional values use the same
+    explicit absent/present suffixes as Stage A. -/
+def Target.keyParts (target : Target) : List String :=
+  [target.tool, target.action, target.toolVersion, target.manifestDigest,
+    serializeAstValue target.arguments] ++ target.metadata.preimageParts ++
+    target.requestState.preimageParts ++ target.inputResponses.preimageParts
+
+/-- A total, injectively framed canonical string key for a target. -/
 def serializeTargetKey (target : Target) : String :=
-  String.intercalate " "
-    [target.tool, target.action, target.toolVersion, target.manifestDigest,
-     serializeAstValue target.arguments] ++
-    " " ++ String.intercalate " " target.metadata.preimageParts
+  Seal.encodeParts target.keyParts
+
+theorem target_separates_requestState (base : Target)
+    (left right : RequestState) (hne : left ≠ right) :
+    { base with requestState := left } ≠ { base with requestState := right } := by
+  intro h
+  exact hne (congrArg Target.requestState h)
+
+theorem target_separates_inputResponses (base : Target)
+    (left right : InputResponses) (hne : left ≠ right) :
+    { base with inputResponses := left } ≠ { base with inputResponses := right } := by
+  intro h
+  exact hne (congrArg Target.inputResponses h)
+
+theorem targetKey_separates_requestState (base : Target)
+    (left right : RequestState) (hne : left ≠ right) :
+    serializeTargetKey { base with requestState := left } ≠
+      serializeTargetKey { base with requestState := right } := by
+  intro h
+  have hparts := Seal.Encoding.encodeParts_injective h
+  have hrs := congrArg (fun parts => (parts.drop 7).take 2) hparts
+  have : left.preimageParts = right.preimageParts := by
+    simpa [Target.keyParts] using hrs
+  exact hne (RequestState.preimageParts_injective this)
+
+theorem targetKey_separates_inputResponses (base : Target)
+    (left right : InputResponses) (hne : left ≠ right) :
+    serializeTargetKey { base with inputResponses := left } ≠
+      serializeTargetKey { base with inputResponses := right } := by
+  intro h
+  have hparts := Seal.Encoding.encodeParts_injective h
+  have hir := congrArg (fun parts => (parts.drop 7).drop 2) hparts
+  have : left.preimageParts = right.preimageParts := by
+    simpa [Target.keyParts] using hir
+  exact hne (InputResponses.preimageParts_injective this)
+
+theorem target_requestState_absent_ne_present (base : Target)
+    (canonicalValue : CanonicalBytes) :
+    { base with requestState := .absent } ≠
+      { base with requestState := .present canonicalValue } :=
+  target_separates_requestState base _ _ (by simp)
+
+theorem target_inputResponses_absent_ne_present (base : Target)
+    (canonicalValue : CanonicalBytes) :
+    { base with inputResponses := .absent } ≠
+      { base with inputResponses := .present canonicalValue } :=
+  target_separates_inputResponses base _ _ (by simp)
+
+theorem targetKey_requestState_absent_ne_present (base : Target)
+    (canonicalValue : CanonicalBytes) :
+    serializeTargetKey { base with requestState := .absent } ≠
+      serializeTargetKey { base with requestState := .present canonicalValue } :=
+  targetKey_separates_requestState base _ _ (by simp)
+
+theorem targetKey_inputResponses_absent_ne_present (base : Target)
+    (canonicalValue : CanonicalBytes) :
+    serializeTargetKey { base with inputResponses := .absent } ≠
+      serializeTargetKey { base with inputResponses := .present canonicalValue } :=
+  targetKey_separates_inputResponses base _ _ (by simp)
 
 def replayNamespace (state : ApprovalState) (target : Target) : ReplayNamespace :=
   { publicKey := state.publicKey,

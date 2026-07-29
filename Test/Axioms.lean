@@ -13,6 +13,8 @@ import Seal.EncodingInjective
 import Seal.GuardTheorems
 import SealV2.TamperTheorems
 import SealV2.ClassifyTransport
+import SealV2.EffectEnvelope
+import SealV2.ValidationTheorems
 import Test.AxiomAllowlist
 
 #print axioms SealCore.default_deny_never_allowed
@@ -65,6 +67,27 @@ import Test.AxiomAllowlist
 #print axioms Seal.ValidatedMeta.preimageParts_injective
 #print axioms Seal.RequestState.preimageParts_injective
 #print axioms Seal.InputResponses.preimageParts_injective
+#print axioms SealV2.RequestState.ofStage1_preimageParts_ne_iff
+#print axioms SealV2.InputResponses.ofStage1_preimageParts_ne_iff
+#print axioms SealV2.target_separates_requestState
+#print axioms SealV2.target_separates_inputResponses
+#print axioms SealV2.targetKey_separates_requestState
+#print axioms SealV2.targetKey_separates_inputResponses
+#print axioms SealV2.target_requestState_absent_ne_present
+#print axioms SealV2.target_inputResponses_absent_ne_present
+#print axioms SealV2.targetKey_requestState_absent_ne_present
+#print axioms SealV2.targetKey_inputResponses_absent_ne_present
+#print axioms SealV2.signedMessageAst_separates_requestState
+#print axioms SealV2.signedMessageAst_separates_inputResponses
+#print axioms SealV2.approval_separates_requestState
+#print axioms SealV2.approval_separates_inputResponses
+#print axioms SealV2.replayNamespace_separates_requestState
+#print axioms SealV2.replayNamespace_separates_inputResponses
+#print axioms SealV2.valid_capability_requestState_bound
+#print axioms SealV2.valid_capability_inputResponses_bound
+#print axioms SealV2.Effect.optMrtr_inj
+#print axioms SealV2.Effect.effectMessage_requestState_absent_ne_present
+#print axioms SealV2.Effect.effectMessage_inputResponses_absent_ne_present
 #print axioms Seal.guard_target_separates_requestState
 #print axioms Seal.guard_target_separates_inputResponses
 #print axioms Seal.guard_target_requestState_absent_ne_present
@@ -159,6 +182,27 @@ def main : IO UInt32 :=
     `Seal.ValidatedMeta.preimageParts_injective,
     `Seal.RequestState.preimageParts_injective,
     `Seal.InputResponses.preimageParts_injective,
+    `SealV2.RequestState.ofStage1_preimageParts_ne_iff,
+    `SealV2.InputResponses.ofStage1_preimageParts_ne_iff,
+    `SealV2.target_separates_requestState,
+    `SealV2.target_separates_inputResponses,
+    `SealV2.targetKey_separates_requestState,
+    `SealV2.targetKey_separates_inputResponses,
+    `SealV2.target_requestState_absent_ne_present,
+    `SealV2.target_inputResponses_absent_ne_present,
+    `SealV2.targetKey_requestState_absent_ne_present,
+    `SealV2.targetKey_inputResponses_absent_ne_present,
+    `SealV2.signedMessageAst_separates_requestState,
+    `SealV2.signedMessageAst_separates_inputResponses,
+    `SealV2.approval_separates_requestState,
+    `SealV2.approval_separates_inputResponses,
+    `SealV2.replayNamespace_separates_requestState,
+    `SealV2.replayNamespace_separates_inputResponses,
+    `SealV2.valid_capability_requestState_bound,
+    `SealV2.valid_capability_inputResponses_bound,
+    `SealV2.Effect.optMrtr_inj,
+    `SealV2.Effect.effectMessage_requestState_absent_ne_present,
+    `SealV2.Effect.effectMessage_inputResponses_absent_ne_present,
     `Seal.guard_target_separates_requestState,
     `Seal.guard_target_separates_inputResponses,
     `Seal.guard_target_requestState_absent_ne_present,

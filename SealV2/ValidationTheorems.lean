@@ -39,6 +39,52 @@ theorem valid_capability_metadata_bound {ast : AST} {state : ApprovalState}
   rw [witness.target_matches]
   rfl
 
+/-- The V2 target carries the complete opaque request-state value parsed from
+    the request. -/
+theorem valid_capability_requestState_bound {ast : AST} {state : ApprovalState}
+    (witness : ValidApproval ast state) :
+    witness.target.requestState = witness.request.requestState := by
+  rw [witness.target_matches]
+  rfl
+
+/-- The V2 target carries the complete input-responses value parsed from the
+    request. -/
+theorem valid_capability_inputResponses_bound {ast : AST} {state : ApprovalState}
+    (witness : ValidApproval ast state) :
+    witness.target.inputResponses = witness.request.inputResponses := by
+  rw [witness.target_matches]
+  rfl
+
+theorem approval_separates_requestState (base : Approval)
+    (left right : RequestState) (hne : left ≠ right) :
+    { base with target.requestState := left } ≠
+      { base with target.requestState := right } := by
+  intro h
+  exact hne (congrArg (fun approval => approval.target.requestState) h)
+
+theorem approval_separates_inputResponses (base : Approval)
+    (left right : InputResponses) (hne : left ≠ right) :
+    { base with target.inputResponses := left } ≠
+      { base with target.inputResponses := right } := by
+  intro h
+  exact hne (congrArg (fun approval => approval.target.inputResponses) h)
+
+theorem replayNamespace_separates_requestState (state : ApprovalState)
+    (base : Target) (left right : RequestState) (hne : left ≠ right) :
+    replayNamespace state { base with requestState := left } ≠
+      replayNamespace state { base with requestState := right } := by
+  intro h
+  apply targetKey_separates_requestState base left right hne
+  simpa only [replayNamespace] using congrArg ReplayNamespace.targetKey h
+
+theorem replayNamespace_separates_inputResponses (state : ApprovalState)
+    (base : Target) (left right : InputResponses) (hne : left ≠ right) :
+    replayNamespace state { base with inputResponses := left } ≠
+      replayNamespace state { base with inputResponses := right } := by
+  intro h
+  apply targetKey_separates_inputResponses base left right hne
+  simpa only [replayNamespace] using congrArg ReplayNamespace.targetKey h
+
 theorem valid_capability_session_bound {ast : AST} {state : ApprovalState}
     (witness : ValidApproval ast state) :
     witness.approval.session = state.session :=

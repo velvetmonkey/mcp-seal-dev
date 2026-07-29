@@ -79,6 +79,8 @@ jobs:
         run: lake exe mrtr_identity_controls
       - name: M.1 V2 metadata identity and cross-layer controls
         run: lake exe v2_meta_identity_controls
+      - name: M.4 V2 MRTR identity, signed-shape, and cross-layer controls
+        run: lake exe v2_mrtr_identity_controls
       - run: python3 test/integration/test_seal.py
       - run: python3 test/integration/test_mrtr_fail_closed.py
       - run: python3 test/v2/m1_adversarial_mcp_fixture.py
