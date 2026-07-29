@@ -102,7 +102,9 @@ def envDiffLabels : List String :=
     { keyId := "probe", nonce := forgedNonce, issuedAt := 6, expiresAt := 101
       line := spacedRaw, adapterType := "probe", adapterVersion := "probe"
       session := "probe", policyVersion := "probe"
-      effect := some { resource := "probe", action := "probe", args := "probe" } }
+      effect := some {
+        resource := "probe", action := "probe", args := "probe",
+        metadata := .present "{\"probe\":true}" } }
     baseEnvelope
   ++ envDiff { baseEnvelope with effect := none } baseEnvelope
 
@@ -124,6 +126,10 @@ def encodingWitness (field : String) : Option Bool :=
       (m != effectMessage authority { baseEnvelope with effect := some { baseClaim with action := "writex" } })
   | "effect.args" => some
       (m != effectMessage authority { baseEnvelope with effect := some { baseClaim with args := "{}" } })
+  | "effect.metadata" => some
+      (m != effectMessage authority {
+        baseEnvelope with effect := some {
+          baseClaim with metadata := .present "{\"probe\":true}" } })
   | "session" => some
       (m != effectMessage authority { baseEnvelope with session := "session-1x" })
   | _ => none

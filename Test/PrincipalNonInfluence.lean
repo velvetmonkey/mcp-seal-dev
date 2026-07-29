@@ -35,15 +35,13 @@ open SealV2 SealV2.Effect Test.V2ValidationFixtures
 def aliceEffectful : Option EffectEnvelope :=
   match deriveEffect wAlice.line with
   | none => none
-  | some (r, a, g) =>
-      some { wAlice with
-        effect := some { resource := r, action := a, args := g } }
+  | some claim => some { wAlice with effect := some claim }
 
 /-- Real Ed25519 signature (seed-`alice` key) over
     `effectMessage wAuthorityA aliceEffectful` — regenerate with
     `test/v2/principal_noninfluence_sign_fixture.py`. -/
 def sigAliceFxHex : String :=
-  "57aae8430629cab61ea0649a6b5ac6ebaca5379e33ad8fbcbd68df55278eefaa6118b899b910b51a8318a1cd1953ca9408a80f5fa8db01dec1c793c85f8ae00a"
+  "45fed61e414100c885bb6ff90772e48354690e055b9c5f88b6d4d031782bcdf94a600f4e93a00092f31081464810efb78bb3d31e763e2774b871d0cab69e6300"
 
 /-- Tampered signature: `wSigAHex` with its last hex digit flipped (`01` →
     `08`) — must fail verification. The control below asserts the coupling

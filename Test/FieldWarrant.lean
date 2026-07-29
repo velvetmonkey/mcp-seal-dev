@@ -227,7 +227,8 @@ def main : IO UInt32 := do
   --  flagged it as not cleanly attributable to issuedAtGate. issuedAt=11
   --  covers the gate cleanly; the too-old direction is a kernel-theorem gap.)
   let emptyClaim : EffectEnvelope :=
-    { baseEnvelope with effect := some { resource := "", action := "", args := "" } }
+    { baseEnvelope with effect := some {
+        resource := "", action := "", args := "", metadata := .absent } }
   results := results ++ [← control "effect=some(\"\",\"\",\"\") (retired sentinel is now a checked claim)"
     emptyClaim sigEmptyStringClaim s false
     (some ("effectGate", effectGate mediator emptyClaim))
@@ -324,6 +325,9 @@ def main : IO UInt32 := do
     (msgOf { baseEnvelope with effect := some { baseClaim with action := "writex" } })]
   results := results ++ [← byteRow "effect.args" mBase
     (msgOf { baseEnvelope with effect := some { baseClaim with args := "{}" } })]
+  results := results ++ [← byteRow "effect.metadata" mBase
+    (msgOf { baseEnvelope with effect := some {
+      baseClaim with metadata := .present "{\"probe\":true}" } })]
   results := results ++ [← byteRow "effect presence" mBase (msgOf { baseEnvelope with effect := none })]
 
   let failures := results.filter (fun r => !r) |>.length
