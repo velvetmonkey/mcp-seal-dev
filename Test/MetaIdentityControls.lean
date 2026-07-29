@@ -44,7 +44,7 @@ private def identityFromRequest (raw : String) : Except String Identity := do
   let some (tool, arguments, metadata) ← toolsCallWithMeta? json
     | throw "fixture did not parse as tools/call"
   let effect : Effect :=
-    ⟨shellPolicy.serverIdentity, tool, arguments, metadata⟩
+    { server := shellPolicy.serverIdentity, tool, arguments, metadata }
   let event := classifyToolCallWithMeta shellPolicy tool arguments metadata
   pure { effect := effect.commitment, target := event.targetText }
 

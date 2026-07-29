@@ -132,7 +132,8 @@ private def emitOne (v : VectorInput) : Except String Json := do
   match Json.parse v.argumentsJson with
   | .error e => throw s!"vector '{v.name}': arguments are not JSON: {e}"
   | .ok args =>
-      let effect : Effect := ⟨v.server, v.tool, args, metadata⟩
+      let effect : Effect :=
+        { server := v.server, tool := v.tool, arguments := args, metadata }
       return Json.mkObj <| base ++
         [("expect", Json.str "commitment"),
          ("canonical_arguments", Json.str args.compress),

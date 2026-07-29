@@ -12,6 +12,7 @@ defaultTargets = [
   "field_warrant_mutation",
   "channel_tests",
   "meta_identity_controls",
+  "mrtr_identity_controls",
   "v2_meta_identity_controls",
 ]
 
@@ -85,6 +86,10 @@ root = "Test.EffectVectors"
 [[lean_exe]]
 name = "meta_identity_controls"
 root = "Test.MetaIdentityControls"
+
+[[lean_exe]]
+name = "mrtr_identity_controls"
+root = "Test.MrtrIdentityControls"
 
 [[lean_exe]]
 name = "v2_meta_identity_controls"

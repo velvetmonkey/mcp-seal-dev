@@ -61,20 +61,128 @@ def targetPrefix (policy : Policy) (toolName : String) : List String :=
 /-- **PROPOSED** guard-target domain tag for the metadata-bearing target
     shape. The legacy target had no explicit domain tag. Changing this proposal
     later invalidates every target, approval, capability, and replay key that
-    depends on it. -/
+    depends on it. MRTR extends this same still-unpinned Phase-M proposal rather
+    than creating a second pre-repin target domain. -/
 def guardTargetDomainTag : String := "seal.guard-target/v2-proposed-meta-all"
 
-/-- The exact proposed guarded-target preimage. Policy matching and target-part
-    selection still inspect arguments only; the complete validated metadata
-    object is appended only after those decisions. -/
+/-- The exact proposed Phase-M guarded-target preimage. Policy matching and
+    target-part selection inspect arguments only. Complete metadata, opaque
+    request state, and complete input responses are appended only after those
+    decisions. -/
+def guardTargetPartsWithContext (policy : Policy) (toolName : String)
+    (resolvedParts : List String) (metadata : ValidatedMeta)
+    (requestState : RequestState) (inputResponses : InputResponses) :
+    List String :=
+  [guardTargetDomainTag] ++ targetPrefix policy toolName ++ resolvedParts ++
+    metadata.preimageParts ++ requestState.preimageParts ++
+    inputResponses.preimageParts
+
+def guardTargetWithContext (policy : Policy) (toolName : String)
+    (resolvedParts : List String) (metadata : ValidatedMeta)
+    (requestState : RequestState) (inputResponses : InputResponses) :
+    TargetHash :=
+  stableHashParts
+    (guardTargetPartsWithContext policy toolName resolvedParts metadata
+      requestState inputResponses)
+
+/-- M.1 compatibility surface: metadata-bearing, MRTR-absent target. -/
 def guardTargetParts (policy : Policy) (toolName : String)
     (resolvedParts : List String) (metadata : ValidatedMeta) : List String :=
-  [guardTargetDomainTag] ++ targetPrefix policy toolName ++ resolvedParts ++
-    metadata.preimageParts
+  guardTargetPartsWithContext policy toolName resolvedParts metadata .absent .absent
 
+/-- M.1 compatibility surface: metadata-bearing, MRTR-absent target. -/
 def guardTarget (policy : Policy) (toolName : String)
     (resolvedParts : List String) (metadata : ValidatedMeta) : TargetHash :=
-  stableHashParts (guardTargetParts policy toolName resolvedParts metadata)
+  guardTargetWithContext policy toolName resolvedParts metadata .absent .absent
+
+/-- Equal arguments and all equal context except `requestState` cannot share a
+    proved guard target in the named collision-free model. -/
+theorem guard_target_separates_requestState
+    (hcr : AssumptionCR) (henc : AssumptionEncInjective)
+    (hcompress : AssumptionCompressInjective)
+    (policy : Policy) (toolName : String) (resolvedParts : List String)
+    (metadata : ValidatedMeta) (inputResponses : InputResponses)
+    (left right : RequestState) (hne : left ≠ right) :
+    guardTargetWithContext policy toolName resolvedParts metadata left inputResponses ≠
+      guardTargetWithContext policy toolName resolvedParts metadata right
+        inputResponses := by
+  intro htarget
+  have hhex := congrArg (fun target : TargetHash => target.toHex) htarget
+  have hstr :
+      encodeParts
+          (guardTargetPartsWithContext policy toolName resolvedParts metadata left
+            inputResponses) =
+        encodeParts
+          (guardTargetPartsWithContext policy toolName resolvedParts metadata right
+            inputResponses) := by
+    exact hcr _ _ (by simpa [guardTargetWithContext, stableHashParts] using hhex)
+  have hparts := henc _ _ hstr
+  simp only [guardTargetPartsWithContext] at hparts
+  have hwithoutResponses := List.append_cancel_right hparts
+  have hstateParts : left.preimageParts = right.preimageParts :=
+    List.append_cancel_left hwithoutResponses
+  exact hne (RequestState.preimageParts_injective hcompress hstateParts)
+
+/-- Equal arguments and all equal context except `inputResponses` cannot share
+    a proved guard target in the named collision-free model. -/
+theorem guard_target_separates_inputResponses
+    (hcr : AssumptionCR) (henc : AssumptionEncInjective)
+    (hcompress : AssumptionCompressInjective)
+    (policy : Policy) (toolName : String) (resolvedParts : List String)
+    (metadata : ValidatedMeta) (requestState : RequestState)
+    (left right : InputResponses) (hne : left ≠ right) :
+    guardTargetWithContext policy toolName resolvedParts metadata requestState left ≠
+      guardTargetWithContext policy toolName resolvedParts metadata requestState
+        right := by
+  intro htarget
+  have hhex := congrArg (fun target : TargetHash => target.toHex) htarget
+  have hstr :
+      encodeParts
+          (guardTargetPartsWithContext policy toolName resolvedParts metadata
+            requestState left) =
+        encodeParts
+          (guardTargetPartsWithContext policy toolName resolvedParts metadata
+            requestState right) := by
+    exact hcr _ _ (by simpa [guardTargetWithContext, stableHashParts] using hhex)
+  have hparts := henc _ _ hstr
+  simp only [guardTargetPartsWithContext] at hparts
+  have hresponsesParts : left.preimageParts = right.preimageParts :=
+    List.append_cancel_left hparts
+  exact hne
+    (InputResponses.preimageParts_injective hcompress hresponsesParts)
+
+/-- Structural absence is distinct from every present request-state value,
+    including `{}` and JSON `null`; no sentinel can collapse them. -/
+theorem guard_target_requestState_absent_ne_present
+    (hcr : AssumptionCR) (henc : AssumptionEncInjective)
+    (hcompress : AssumptionCompressInjective)
+    (policy : Policy) (toolName : String) (resolvedParts : List String)
+    (metadata : ValidatedMeta) (inputResponses : InputResponses)
+    (value : Json) :
+    guardTargetWithContext policy toolName resolvedParts metadata .absent
+        inputResponses ≠
+      guardTargetWithContext policy toolName resolvedParts metadata
+        (.present value) inputResponses :=
+  guard_target_separates_requestState hcr henc hcompress policy toolName
+    resolvedParts metadata inputResponses .absent (.present value) (by
+      intro h
+      cases h)
+
+/-- Structural absence is distinct from every present input-responses value,
+    including `{}` and JSON `null`; no sentinel can collapse them. -/
+theorem guard_target_inputResponses_absent_ne_present
+    (hcr : AssumptionCR) (henc : AssumptionEncInjective)
+    (hcompress : AssumptionCompressInjective)
+    (policy : Policy) (toolName : String) (resolvedParts : List String)
+    (metadata : ValidatedMeta) (requestState : RequestState) (value : Json) :
+    guardTargetWithContext policy toolName resolvedParts metadata requestState
+        .absent ≠
+      guardTargetWithContext policy toolName resolvedParts metadata requestState
+        (.present value) :=
+  guard_target_separates_inputResponses hcr henc hcompress policy toolName
+    resolvedParts metadata requestState .absent (.present value) (by
+      intro h
+      cases h)
 
 inductive RuleDecision where
   | allow
@@ -83,8 +191,9 @@ inductive RuleDecision where
   | invalid (reason : String)
   deriving Repr, BEq
 
-def evaluateRuleWithMeta (policy : Policy) (toolName : String) (args : Json)
-    (metadata : ValidatedMeta)
+def evaluateRuleWithContext (policy : Policy) (toolName : String) (args : Json)
+    (metadata : ValidatedMeta) (requestState : RequestState)
+    (inputResponses : InputResponses)
     (rule : ToolRule) : Option RuleDecision :=
   if rule.name != toolName || !matchRule rule args then none
   else match rule.mode with
@@ -93,9 +202,18 @@ def evaluateRuleWithMeta (policy : Policy) (toolName : String) (args : Json)
     | .guarded =>
         match evalTargetParts rule.target args with
         | some parts =>
-            let target := guardTarget policy toolName parts metadata
+            let target :=
+              guardTargetWithContext policy toolName parts metadata requestState
+                inputResponses
             some (.guard target target.toHex)
         | none => some (.invalid s!"missing target field: {toolName}")
+
+/-- M.1 compatibility surface: explicit metadata with both MRTR fields
+    structurally absent. -/
+def evaluateRuleWithMeta (policy : Policy) (toolName : String) (args : Json)
+    (metadata : ValidatedMeta)
+    (rule : ToolRule) : Option RuleDecision :=
+  evaluateRuleWithContext policy toolName args metadata .absent .absent rule
 
 /-- Legacy-era convenience surface: absence is represented explicitly and is
     therefore distinct from a call carrying `_meta: {}`. -/
@@ -132,10 +250,19 @@ def resolveRuleDecisions (decisions : List RuleDecision) : HostEvent :=
           if hasExplicitAllow decisions then .event .benign "explicit policy allow"
           else .event .defaultDeny "no matching policy rule"
 
+def classifyToolCallWithContext (policy : Policy) (toolName : String) (args : Json)
+    (metadata : ValidatedMeta) (requestState : RequestState)
+    (inputResponses : InputResponses) : HostEvent :=
+  resolveRuleDecisions
+    (policy.tools.filterMap
+      (evaluateRuleWithContext policy toolName args metadata requestState
+        inputResponses))
+
+/-- M.1 compatibility surface: explicit metadata with both MRTR fields
+    structurally absent. -/
 def classifyToolCallWithMeta (policy : Policy) (toolName : String) (args : Json)
     (metadata : ValidatedMeta) : HostEvent :=
-  resolveRuleDecisions
-    (policy.tools.filterMap (evaluateRuleWithMeta policy toolName args metadata))
+  classifyToolCallWithContext policy toolName args metadata .absent .absent
 
 /-- Legacy-era convenience surface with explicit metadata absence. -/
 def classifyToolCall (policy : Policy) (toolName : String) (args : Json) : HostEvent :=
@@ -173,17 +300,47 @@ def validatedMetaFromParams (params : Json) : Except String ValidatedMeta := do
   | some (.obj metaObject) => pure (.present metaObject)
   | some _ => throw "`params._meta` must be an object"
 
-/-- Metadata-aware tool-call extraction for the live V1 classifier. `none`
-    still means a non-`tools/call`; `.error` is a malformed tool call that must
-    fail closed before authority classification. -/
-def toolsCallWithMeta? (json : Json) :
-    Except String (Option (String × Json × ValidatedMeta)) := do
+/-- Extract `requestState` without interpreting it. Structural absence is a
+    constructor; every present JSON value, including `null` and `{}`, remains
+    present and is committed exactly as a value. -/
+def requestStateFromParams (params : Json) : Except String RequestState := do
+  let object ← params.getObj?
+  match object.get? "requestState" with
+  | none => pure .absent
+  | some value => pure (.present value)
+
+/-- Extract the complete `inputResponses` JSON value. Shape validation belongs
+    to the protocol-validation stage; this identity stage projects nothing. -/
+def inputResponsesFromParams (params : Json) : Except String InputResponses := do
+  let object ← params.getObj?
+  match object.get? "inputResponses" with
+  | none => pure .absent
+  | some value => pure (.present value)
+
+/-- Complete identity-bearing tool-call extraction for the live V1 classifier.
+    `none` means a non-`tools/call`; `.error` is a malformed tool call that
+    must fail closed before authority classification. -/
+def toolsCallWithContext? (json : Json) :
+    Except String
+      (Option
+        (String × Json × ValidatedMeta × RequestState × InputResponses)) := do
   match toolsCall? json with
   | none => pure none
   | some (name, args) =>
       let params ← json.getObjVal? "params"
       let metadata ← validatedMetaFromParams params
-      pure (some (name, args, metadata))
+      let requestState ← requestStateFromParams params
+      let inputResponses ← inputResponsesFromParams params
+      pure (some (name, args, metadata, requestState, inputResponses))
+
+/-- Metadata-aware tool-call extraction for the live V1 classifier. `none`
+    still means a non-`tools/call`. This M.1 compatibility projection is not
+    used by the live host now that MRTR fields enter identity. -/
+def toolsCallWithMeta? (json : Json) :
+    Except String (Option (String × Json × ValidatedMeta)) := do
+  match ← toolsCallWithContext? json with
+  | none => pure none
+  | some (name, args, metadata, _, _) => pure (some (name, args, metadata))
 
 /-- Whether a successfully parsed wire message is a top-level JSON array.
     MCP revisions 2025-06-18 and 2026-07-28 do not admit JSON-RPC batching,
