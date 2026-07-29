@@ -109,12 +109,13 @@ theorem evaluateRule_scaffoldRule (policy : Policy) (toolName : String) (args : 
     unfold evaluateRule
     cases hmode : scaffoldMode tool <;>
       simp [scaffoldRule, matchRule, matchSpec, evalTargetParts_fullArguments,
-        scaffoldTarget, hmode, evaluateRuleWithMeta]
+        scaffoldTarget, guardTarget, hmode, evaluateRuleWithMeta,
+        evaluateRuleWithContext]
   · rw [if_neg hname]
     unfold evaluateRule
     have hne : ((scaffoldRule tool).name != toolName) = true := by
       simp [scaffoldRule, hname]
-    simp [hne, evaluateRuleWithMeta]
+    simp [hne, evaluateRuleWithMeta, evaluateRuleWithContext]
 
 /-- Every decision a scaffolded policy produces for `toolName` is an allow or
     a guard bound to THE scaffold target — never a deny/invalid, never a

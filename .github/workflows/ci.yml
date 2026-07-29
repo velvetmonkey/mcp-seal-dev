@@ -75,9 +75,12 @@ jobs:
         run: lake exe channel_tests
       - name: M.1 metadata identity controls
         run: lake exe meta_identity_controls
+      - name: M.4 MRTR identity and mediation controls
+        run: lake exe mrtr_identity_controls
       - name: M.1 V2 metadata identity and cross-layer controls
         run: lake exe v2_meta_identity_controls
       - run: python3 test/integration/test_seal.py
+      - run: python3 test/integration/test_mrtr_fail_closed.py
       - run: python3 test/v2/m1_adversarial_mcp_fixture.py
       - run: python3 test/v2/m2_adversarial_mcp_fixture.py
       - run: python3 test/v2/m3_serialization_fixture.py

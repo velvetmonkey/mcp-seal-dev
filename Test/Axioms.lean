@@ -61,6 +61,14 @@ import Test.AxiomAllowlist
 #print axioms Seal.preimage_shape
 #print axioms Seal.preimage_shape_absent
 #print axioms Seal.preimage_shape_present
+#print axioms Seal.preimage_shape_mrtr_present
+#print axioms Seal.ValidatedMeta.preimageParts_injective
+#print axioms Seal.RequestState.preimageParts_injective
+#print axioms Seal.InputResponses.preimageParts_injective
+#print axioms Seal.guard_target_separates_requestState
+#print axioms Seal.guard_target_separates_inputResponses
+#print axioms Seal.guard_target_requestState_absent_ne_present
+#print axioms Seal.guard_target_inputResponses_absent_ne_present
 #print axioms Seal.preimage_separates_tools
 #print axioms Seal.preimage_separates_servers
 
@@ -147,6 +155,14 @@ def main : IO UInt32 :=
     `Seal.preimage_shape,
     `Seal.preimage_shape_absent,
     `Seal.preimage_shape_present,
+    `Seal.preimage_shape_mrtr_present,
+    `Seal.ValidatedMeta.preimageParts_injective,
+    `Seal.RequestState.preimageParts_injective,
+    `Seal.InputResponses.preimageParts_injective,
+    `Seal.guard_target_separates_requestState,
+    `Seal.guard_target_separates_inputResponses,
+    `Seal.guard_target_requestState_absent_ne_present,
+    `Seal.guard_target_inputResponses_absent_ne_present,
     `Seal.preimage_separates_tools,
     `Seal.preimage_separates_servers,
     `Seal.Encoding.encodeParts_injective,
