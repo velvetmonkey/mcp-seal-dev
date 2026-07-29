@@ -6,6 +6,7 @@ import Lean.Util.Path
 import Seal
 import SealCore
 import SealV2.Crypto
+import SealV2.McpVersionGate
 import SealV2.SerializationContainerLemmas
 import SealV2.SerializationLemmas
 
@@ -54,6 +55,7 @@ private def kernelBaselineModuleNames : Array Name := #[
   `SealV2.Decide,
   `SealV2.EnvelopeCompleteness,
   `SealV2.Escape,
+  `SealV2.McpVersionGate,
   `SealV2.Parser,
   `SealV2.Serialization,
   `SealV2.SerializationContainerLemmas,
@@ -85,23 +87,26 @@ private def checkModuleDrift : IO Unit := do
   let actual ← productionModuleCount
   IO.println s!"PRODUCTION_MODULES_ON_DISK\t{actual}"
   IO.println s!"PRODUCTION_MODULES_EXPECTED\t{expectedProductionModuleCount}"
+  let mut failures : Array String := #[]
   unless actual == expectedProductionModuleCount do
-    throw <| IO.userError
+    failures := failures.push
       s!"module scan: production module count drifted from {expectedProductionModuleCount} to {actual}; review the measured scan scope"
   unless kernelBaselineModuleNames.size == expectedKernelBaselineModuleCount do
-    throw <| IO.userError
+    failures := failures.push
       s!"module scan: kernel-baseline assignment count drifted from {expectedKernelBaselineModuleCount} to {kernelBaselineModuleNames.size}"
   unless unsafeCompiledCodeRootModuleNames.size ==
       expectedUnsafeCompiledCodeRootModuleCount do
-    throw <| IO.userError
+    failures := failures.push
       s!"module scan: unsafe compiled-code-root assignment count drifted from {expectedUnsafeCompiledCodeRootModuleCount} to {unsafeCompiledCodeRootModuleNames.size}"
   unless unsafeCompiledCodeRootModuleNames == #[`Ffi] do
-    throw <| IO.userError
+    failures := failures.push
       "module scan: Ffi must be the only unsafe compiled-code-root module"
   for moduleName in unsafeCompiledCodeRootModuleNames do
     if kernelBaselineModuleNames.contains moduleName then
-      throw <| IO.userError
+      failures := failures.push
         s!"module scan: {moduleName} is assigned to both axiom baselines"
+  unless failures.isEmpty do
+    throw <| IO.userError (String.intercalate "\n" failures.toList)
   IO.println s!"KERNEL_BASELINE\t{kernelBaseline.toList}"
   IO.println
     s!"UNSAFE_COMPILED_CODE_ROOT_BASELINE\t{unsafeCompiledCodeRootBaseline.toList}"
