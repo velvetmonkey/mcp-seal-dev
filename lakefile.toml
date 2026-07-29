@@ -235,5 +235,9 @@ name = "m2_adapter_revision_set"
 root = "Test.M2AdapterRevisionSet"
 
 [[lean_exe]]
+name = "m7_version_gate"
+root = "Test.M7VersionGate"
+
+[[lean_exe]]
 name = "field_warrant_dishonest_probe"
 root = "Test.FieldWarrantDishonest"
