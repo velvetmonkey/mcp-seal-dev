@@ -231,5 +231,9 @@ name = "field_warrant_mutation"
 root = "Test.FieldWarrantMutation"
 
 [[lean_exe]]
+name = "m2_adapter_revision_set"
+root = "Test.M2AdapterRevisionSet"
+
+[[lean_exe]]
 name = "field_warrant_dishonest_probe"
 root = "Test.FieldWarrantDishonest"

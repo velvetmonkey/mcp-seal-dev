@@ -1043,6 +1043,73 @@ structure AdapterId where
 /-- The adapter type whose effect derivation this kernel defines. -/
 def mcpAdapterType : String := "mcp"
 
+/-! ### M.2/M.2a: discovery set, scalar signed fact
+
+The complete supported capability is a duplicate-free set projected into
+`server/discover`. It is never an `EffectEnvelope` field. The envelope keeps
+one scalar `adapterVersion`, obtained from the received entry-call shape that
+selected the semantics for this child session.
+
+M.7 owns validation of `protocolVersion` and `clientCapabilities`; the method
+mapping below is the typed seam only. There is no default from an arbitrary
+or absent method to the legacy revision. -/
+
+inductive McpAdapterRevision where
+  | legacy2025_06_18
+  | current2026_07_28
+  deriving Repr, BEq, DecidableEq
+
+def McpAdapterRevision.version : McpAdapterRevision → String
+  | .legacy2025_06_18 => "2025-06-18"
+  | .current2026_07_28 => "2026-07-28"
+
+/-- Set representation used by cooperating `server/discover` producers. -/
+def mcpSupportedAdapterRevisions : List McpAdapterRevision :=
+  [.legacy2025_06_18, .current2026_07_28]
+
+def mcpDiscoverySupportedRevisionStrings : List String :=
+  mcpSupportedAdapterRevisions.map McpAdapterRevision.version
+
+theorem mcp_supported_adapter_revisions_nodup :
+    mcpSupportedAdapterRevisions.Nodup := by
+  decide
+
+inductive McpEntryCall where
+  | initialize
+  | serverDiscover
+  deriving Repr, BEq, DecidableEq
+
+/-- Derive only from the received entry method. Unknown/non-entry methods do
+    not silently acquire legacy semantics. -/
+def mcpEntryCallOfMethod : String → Option McpEntryCall
+  | "initialize" => some .initialize
+  | "server/discover" => some .serverDiscover
+  | _ => none
+
+def McpEntryCall.revision : McpEntryCall → McpAdapterRevision
+  | .initialize => .legacy2025_06_18
+  | .serverDiscover => .current2026_07_28
+
+def McpAdapterRevision.adapterId (revision : McpAdapterRevision) : AdapterId :=
+  { type := mcpAdapterType, version := revision.version }
+
+def mcpAdapterForEntryMethod (method : String) : Option AdapterId :=
+  (mcpEntryCallOfMethod method).map fun entry => entry.revision.adapterId
+
+/-- The only ruled mixed-version behavior. No translation-profile or paired
+    client/child revisions exist because no byte translation is claimed. -/
+inductive McpMixedVersionPolicy where
+  | transparentDualEra
+  deriving Repr, BEq, DecidableEq
+
+def mcpMixedVersionPolicy : McpMixedVersionPolicy :=
+  .transparentDualEra
+
+theorem mcp_entry_eras_distinct :
+    mcpAdapterForEntryMethod "initialize" ≠
+      mcpAdapterForEntryMethod "server/discover" := by
+  decide
+
 /-- The effect the VERIFIED parser derives from the judged line:
     (resource = tool, action, canonical args serialization, complete
     validated metadata) of the parsed
