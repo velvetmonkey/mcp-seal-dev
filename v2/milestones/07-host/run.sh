@@ -22,8 +22,11 @@ bash scripts/build_ffi_so.sh
 
 # 4. Build + run the Rust host end-to-end acceptance (through the C ABI):
 #    fresh Allow / replay Block / expired Block / tampered-sig Block / forged Block,
-#    plus the A4 concurrency probe (N concurrent decides -> exactly 1 Allow).
-( cd rust && cargo build --quiet )
-( cd rust && cargo run --quiet -- selftest ) | tee "$DIR/fixture-run.txt"
+#    plus the A4 concurrency probe (N concurrent decides -> exactly 1 Allow). The
+#    signed bytes come from the authoritative Lean producer, never a Rust copy.
+SIGNED_RAW="$(lake exe v2_signed_bytes)"
+SIG_A="3a288732067e139854af6462daa1dce0265bdff175dba2e7e9e0eea70a1de36b00760ce4fb9fb55a0f6228f12ca64ecee920bbe76db6392556225c5269ea3b0f"
+( cd rust && cargo +1.96.0 build --quiet )
+( cd rust && cargo +1.96.0 run --quiet -- selftest "$SIGNED_RAW" "$SIG_A" ) | tee "$DIR/fixture-run.txt"
 
 echo "M7 milestone runner: OK"

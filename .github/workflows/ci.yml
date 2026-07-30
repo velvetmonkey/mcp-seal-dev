@@ -17,6 +17,10 @@ jobs:
           build: false
           test: false
           lint: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        with:
+          toolchain: "1.96.0"
+          cache: false
       - run: bash c/build.sh
       - run: lake build
       - run: lake exe automaton_tests
@@ -128,14 +132,7 @@ jobs:
           SCAN_LEAN_ROOT="$GITHUB_WORKSPACE" node scripts/scan_bridge.mjs
       - run: lake build ffi_shared
       - run: bash scripts/build_ffi_so.sh
-      - run: |
-          cd rust
-          ROOT="$(cd .. && pwd)"
-          LEANPREFIX="$(cd .. && lean --print-prefix)"
-          SEAL_FFI_LIB_DIR="$ROOT/.lake/build/lib" \
-          LEAN_LIB_DIR="$LEANPREFIX/lib/lean" \
-          LD_LIBRARY_PATH="$ROOT/.lake/build/lib:$LEANPREFIX/lib/lean" \
-          cargo run --quiet
+      - run: bash v2/milestones/07-host/run.sh
       - name: snapshot-drift gate (committed evidence must match a fresh run)
         run: |
           for d in 01-parse 02-validate 03-serialize 04-decide 05-sign 06-lifecycle 07-host; do
