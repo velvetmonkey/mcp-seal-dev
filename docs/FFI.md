@@ -59,12 +59,13 @@ bash c/build.sh                  # vendored TweetNaCl + shim -> c/build/libsealc
 bash scripts/build_ffi_so.sh     # lake build ffi_shared, then hand-links
                                  #   .lake/build/lib/libsealv2ffi.so
                                  # and checks the exported symbols
-cd rust && cargo run             # host selftest: init -> challenge -> sign ->
-                                 #   add_approval -> decide (Allow once, Block replay)
+bash v2/milestones/07-host/run.sh # host selftest with authoritative signed bytes:
+                                  #   add_approval -> decide (Allow once, Block replay)
 ```
 
 `rust/build.rs` locates the artifacts via two environment variables:
 `SEAL_FFI_LIB_DIR` (directory containing `libsealv2ffi.so`; defaults to
 `../.lake/build/lib`) and `LEAN_LIB_DIR` (the toolchain's `lib/lean`; defaults
 via `lean --print-prefix`). A minimal "call decide from Rust" walkthrough is the
-selftest in `rust/src/main.rs`.
+selftest in `rust/src/main.rs`; the milestone runner supplies its signed-message
+argument from `lake exe v2_signed_bytes` so the Rust host cannot retain a stale copy.

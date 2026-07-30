@@ -6,17 +6,14 @@
 //! Mutex (A4). In-memory only (A6: durability is out of scope, restart re-Allows).
 //!
 //! Modes:
-//!   seal-v2-host selftest        -- run the end-to-end acceptance corpus (A4 probe too)
-//!   seal-v2-host serve <cfg.json>-- init from cfg, then stdin request lines -> decision lines
+//!   seal-v2-host selftest <signed-raw> <sig> -- run the acceptance corpus (A4 probe too)
+//!   seal-v2-host serve <cfg.json>             -- init, then request lines -> decisions
 mod lean;
 
 use std::sync::Arc;
 
 // --- M5 fixed test vector (the re-vectored validApproval / baseState) ---
 const PUBKEY: &str = "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8";
-const SIG_A: &str = "ffbe15d60ae3d19a0f97465889f5e4927cdb3f36beebe649f546f9639fc3282966ecab0a0f7564af9cc1daa51a2903029f83f6b2668b710a7cb17dd20deeaf03";
-// Canonical signed-message bytes for the base approval (M_A).
-const SIGNED_RAW: &str = r#"{"target":{"tool":"db.execute","action":"write","toolVersion":"v1","manifestDigest":"manifest-001","arguments":{"database":"prod","table":"users","amount":12.34}},"session":"session-1","issuedAt":0,"expiry":120,"nonce":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#;
 const VALID_REQ: &str = r#"{"method":"tools/call","params":{"name":"db.execute","action":"write","arguments":{"database":"prod","table":"users","amount":12.34}}}"#;
 
 fn config_json() -> String {
@@ -38,40 +35,40 @@ fn expect(label: &str, cond: bool, got: &str) {
 }
 
 /// Fresh session with the single legitimate approval loaded.
-fn fresh_with_approval(h: &lean::LeanHost) {
+fn fresh_with_approval(h: &lean::LeanHost, signed_raw: &str, signature: &str) {
     expect("init", is_ok(&h.init(&config_json())), "init");
-    expect("add_approval", is_ok(&h.add_approval(SIGNED_RAW, SIG_A)), "add_approval");
+    expect("add_approval", is_ok(&h.add_approval(signed_raw, signature)), "add_approval");
 }
 
-fn selftest() {
+fn selftest(signed_raw: &str, signature: &str) {
     let host = Arc::new(lean::LeanHost::new());
 
     // Case A — fresh token Allows, replay Blocks (single-use through the C ABI).
-    fresh_with_approval(&host);
+    fresh_with_approval(&host, signed_raw, signature);
     expect("fresh token -> Allow", is_allow(&host.decide(VALID_REQ, "10")), "A1");
     expect("replay -> Block", is_block(&host.decide(VALID_REQ, "10")), "A2");
 
     // Case B — valid signature but EXPIRED (now > expiry) Blocks (origin != authorization).
-    fresh_with_approval(&host);
+    fresh_with_approval(&host, signed_raw, signature);
     expect("expired (now>expiry) -> Block", is_block(&host.decide(VALID_REQ, "200")), "B");
 
     // Case C — tampered signature Blocks (real Ed25519 verify fails).
     {
         expect("init", is_ok(&host.init(&config_json())), "C.init");
-        let mut bad = SIG_A.to_string();
+        let mut bad = signature.to_string();
         bad.replace_range(0..2, "00"); // flip the first sig byte
-        expect("add tampered-sig approval", is_ok(&host.add_approval(SIGNED_RAW, &bad)), "C.add");
+        expect("add tampered-sig approval", is_ok(&host.add_approval(signed_raw, &bad)), "C.add");
         expect("tampered sig -> Block", is_block(&host.decide(VALID_REQ, "10")), "C");
     }
 
     // Case D — malformed / forged request Blocks (verified parser, fail-closed).
-    fresh_with_approval(&host);
+    fresh_with_approval(&host, signed_raw, signature);
     expect("malformed request -> Block", is_block(&host.decide(r#"{"method":"tools/call""#, "10")), "D1");
     expect("target mismatch -> Block",
         is_block(&host.decide(r#"{"method":"tools/call","params":{"name":"db.execute","action":"write","arguments":{"database":"prod","table":"payments","amount":12.34}}}"#, "10")), "D2");
 
     // A4 concurrency probe — N threads race one single-use token; EXACTLY ONE Allows.
-    fresh_with_approval(&host);
+    fresh_with_approval(&host, signed_raw, signature);
     let n = 16;
     let mut handles = Vec::new();
     for _ in 0..n {
@@ -157,6 +154,16 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("serve") => serve(args.get(2).map(String::as_str).unwrap_or("config.json")),
-        _ => selftest(),
+        Some("selftest") => match (args.get(2), args.get(3)) {
+            (Some(signed_raw), Some(signature)) => selftest(signed_raw, signature),
+            _ => {
+                eprintln!("usage: seal-v2-host selftest <signed-raw> <signature>");
+                std::process::exit(2);
+            }
+        },
+        _ => {
+            eprintln!("usage: seal-v2-host selftest <signed-raw> <signature> | serve <cfg.json>");
+            std::process::exit(2);
+        }
     }
 }
