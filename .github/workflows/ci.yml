@@ -17,6 +17,10 @@ jobs:
           build: false
           test: false
           lint: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        with:
+          toolchain: "1.96.0"
+          cache: false
       - run: bash c/build.sh
       - run: lake build
       - run: lake exe automaton_tests
