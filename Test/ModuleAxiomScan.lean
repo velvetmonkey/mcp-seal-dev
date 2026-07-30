@@ -69,8 +69,60 @@ private def unsafeCompiledCodeRootModuleNames : Array Name := #[
   `Ffi
 ]
 
-private def expectedProductionModuleCount : Nat := 50
-private def expectedKernelBaselineModuleCount : Nat := 24
+/-
+**Warrant — 2026-07-30 count bless: production 50 → 51, kernel baseline 24 → 25.**
+
+Moving an expected-value constant to turn a red green is normally the exact
+defect this gate exists to catch, so the reason is recorded at the change site
+rather than left in a commit message. Two adjacent constants move here; they are
+independent and are named separately below.
+
+* WHY: `SealV2/McpVersionGate.lean` is a real, on-disk production module — the
+  single authority for M.7 request admissibility and error rendering
+  (`mcpVersionGate`, `McpVersionGateDecision`). It landed at `564c21f`
+  (2026-07-29 12:44) after `2db4ed9` (2026-07-28 06:22) pinned
+  `expectedProductionModuleCount` at 50, so the disk has read 51 since that
+  commit. It was then added to `kernelBaselineModuleNames` and to this file's
+  imports by `914ca10` (2026-07-29 23:12), so the array has held 25 entries
+  since that commit — but neither commit moved its matching constant. Both
+  numbers below are therefore corrections to stale bookkeeping, not a relaxation
+  of what is checked: no module is being excused from a baseline, and the
+  scanned set is unchanged by this commit.
+* WHY KERNEL, NOT THE UNSAFE COMPILED-CODE ROOT BASELINE: the four-name baseline
+  `[propext, Classical.choice, Quot.sound, lcProof]` exists for `Ffi` alone,
+  because `lcProof` is what a compiled-code root drags in. `McpVersionGate`
+  declares no `unsafe`, `partial`, `opaque`, `@[extern]`, `implemented_by`,
+  `axiom`, or `sorry`; it is ordinary total Lean over `Lean.Data.Json`,
+  `Seal.JsonUtil`, and `SealV2.EffectEnvelope`. It belongs under the three-name
+  kernel baseline, and `checkModuleDrift` keeps the assignment exclusive — a
+  module named in both arrays is a failure. Assigning it to the unsafe baseline
+  instead would silently widen `lcProof` acceptance to a module that does not
+  need it, which is a strictly weaker claim about the same code.
+* HOW: `expectedProductionModuleCount` is what `productionModuleCount` below
+  measures — `.lean` files under `Seal/`, `SealCore/`, `SealV2/` plus the four
+  root files that exist: 20 + 4 + 23 + 4 = 51, measured on disk at `fa499b5`.
+  `expectedKernelBaselineModuleCount` is the length of
+  `kernelBaselineModuleNames` above: 22 dotted modules plus the three roots
+  `Seal`, `SealCore`, `SealV2` = 25.
+* SHOW: `lake exe module_axiom_check` — exit 0 and `MODULE_DRIFT_GUARD PASS`
+  only when both numbers match what is measured. Creating or deleting any
+  production `.lean` file moves the first; adding or removing an entry from
+  `kernelBaselineModuleNames` moves the second. `checkModuleDrift` collects all
+  drift failures before throwing rather than throwing at the first, so one run
+  names every constant that has drifted — do not regress that to `throw`, or a
+  second stale constant hides behind the first.
+* WHAT MOVES THESE AGAIN: `expectedProductionModuleCount` is deliberately a
+  human-facing tripwire on the whole tree, not a mirror of the scanned set. It
+  goes red on any new production module, and that red is the prompt to decide
+  whether the module also needs a baseline assignment above. The two constants
+  are independent, and the gap between them is real: 51 modules are on disk
+  while 25 are named for per-module axiom scanning. A future module that moves
+  only the first number is a legitimate end state ONLY if a warrant here records
+  why it is out of scan scope. Bumping either number without recording that
+  decision reproduces exactly the defect this block documents.
+-/
+private def expectedProductionModuleCount : Nat := 51
+private def expectedKernelBaselineModuleCount : Nat := 25
 private def expectedUnsafeCompiledCodeRootModuleCount : Nat := 1
 
 private def productionModuleCount : IO Nat := do
