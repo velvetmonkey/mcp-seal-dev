@@ -32,12 +32,6 @@ jobs:
         run: |
           set -o pipefail
           lake exe axiom_check 2>&1 | tee /tmp/axioms.txt
-      # Module-aware: 25 regular kernel modules use the three-name baseline;
-      # Ffi alone uses the four-name unsafe compiled-code-root baseline.
-      - name: Module-aware axiom baselines (25 kernel modules + Ffi)
-        run: |
-          set -o pipefail
-          lake exe module_axiom_check 2>&1 | tee /tmp/module-wide-axioms.txt
       - run: lake exe v2_parse_tests
       - name: M1 axiom allowlist
         run: |
@@ -145,6 +139,12 @@ jobs:
             exit 1
           fi
           echo "snapshot-drift gate: evidence is fresh"
+      # Module-aware: 25 regular kernel modules use the three-name baseline;
+      # Ffi alone uses the four-name unsafe compiled-code-root baseline.
+      - name: Module-aware axiom baselines (25 kernel modules + Ffi)
+        run: |
+          set -o pipefail
+          lake exe module_axiom_check 2>&1 | tee /tmp/module-wide-axioms.txt
 
   claims:
     runs-on: ubuntu-latest
