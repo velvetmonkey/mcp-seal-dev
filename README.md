@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/velvetmonkey/mcp-seal-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetmonkey/mcp-seal-dev/actions/workflows/ci.yml)
 
-Private Lean workspace for the Seal mediation kernel: target commitments, approvals, and the safety rules that the rest of the product family must match. **Role:** The rulebook, proven.
+Public Lean workspace for the Seal mediation kernel: target commitments, approvals, and the safety rules that the rest of the product family must match. **Role:** The rulebook, proven.
 
 **Seal is the approval gateway for agentic tool use: it lets agents read and reason, but forces every protected external effect through an exact, recorded, checkable approval boundary.**
 
@@ -15,7 +15,7 @@ Private Lean workspace for the Seal mediation kernel: target commitments, approv
 > **Claim:** policy-covered request-effects recognised by the compatible MCP boundary reach the downstream child MCP server only after every applicable Lean kernel returns Allow. Effects configured as guarded additionally require a matching live approval record. Seam failures block; every mediated decision emits replayable evidence.
 > **Non-claim:** the deployed host is not proved end to end, and canonical parser rejection is not currently the runtime gate. Host `ApprovalRecord` tokens are a separate signed channel from the v2 kernel-defined approval tuple. “Canonical” in Seal names the pinned kernel byte rule, not RFC 8785/JCS. Seal verifies the configured authorization evidence. Whether that evidence represents the intended human, device or service is an identity and key-custody assumption, not a proved property.
 <!-- truthbox:end -->
-> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in private repos; the links resolve only for authorised evaluators. Scope: the box describes the family runtime (the deployed `seal-host` boundary); this repo is the proof layer it cites — the kernel verdict and the v2 canonical approval tuple — not the deployment itself, and the demo sidecar here is demo-only.
+> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in public repos; the links resolve for everyone. Scope: the box describes the family runtime (the deployed `seal-host` boundary); this repo is the proof layer it cites — the kernel verdict and the v2 canonical approval tuple — not the deployment itself, and the demo sidecar here is demo-only.
 
 <!-- TODO(asset, shot #7, AI-generatable): diagram — one 'Lean kernel (proven)' box feeding
      identical decision logic into Rust / wasm / JS bodies, each labelled 'conformance-tested,
@@ -83,9 +83,9 @@ For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.
 
 ## The Seal family
 
-_All Seal-family repositories are currently private; these links resolve only for authorised evaluators._
+_The Seal fleet repositories are public; these links resolve for everyone. `witness-check` remains proprietary._
 
-- [seal](https://github.com/velvetmonkey/seal): the private umbrella story, product map, and evaluator path.
+- [seal](https://github.com/velvetmonkey/seal): the public umbrella story, product map, and evaluator path.
 - [mcp-seal-dev](https://github.com/velvetmonkey/mcp-seal-dev): The rulebook, proven.
 - [seal-host](https://github.com/velvetmonkey/seal-host): The guard at the door.
 - [seal-check](https://github.com/velvetmonkey/seal-check): Don't trust. Verify.
