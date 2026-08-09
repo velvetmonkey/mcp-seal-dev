@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/velvetmonkey/mcp-seal-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetmonkey/mcp-seal-dev/actions/workflows/ci.yml)
 
-Private Lean workspace for the Seal mediation kernel: target commitments, approvals, and the safety rules that the rest of the product family must match. **Role:** The rulebook, proven.
+Public Lean workspace for the Seal mediation kernel: target commitments, approvals, and the safety rules that the rest of the product family must match. **Role:** The rulebook, proven.
 
 **Seal is the approval gateway for agentic tool use: it lets agents read and reason, but forces every protected external effect through an exact, recorded, checkable approval boundary.**
 
@@ -83,9 +83,9 @@ For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.
 
 ## The Seal family
 
-_All Seal-family repositories are currently private; these links resolve only for authorised evaluators._
+_The Seal fleet repositories are public; these links resolve for everyone. `witness-check` remains proprietary._
 
-- [seal](https://github.com/velvetmonkey/seal): the private umbrella story, product map, and evaluator path.
+- [seal](https://github.com/velvetmonkey/seal): the public umbrella story, product map, and evaluator path.
 - [mcp-seal-dev](https://github.com/velvetmonkey/mcp-seal-dev): The rulebook, proven.
 - [seal-host](https://github.com/velvetmonkey/seal-host): The guard at the door.
 - [seal-check](https://github.com/velvetmonkey/seal-check): Don't trust. Verify.
