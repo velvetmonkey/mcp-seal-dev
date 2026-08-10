@@ -27,7 +27,9 @@ Theme: **the model is untrusted; the tool boundary is trusted only if proved.**
 - **v1 shipped**: native stdio sidecar, axiom-clean core (default-deny, approval requirement, target binding, one-shot). The honest demonstrator.
 - **v2 proof-carrying core**: `parse -> validate -> serialize -> decide`, M1-M4 proven and axiom-clean; signature seam closed (`signed_parse_canonical`); A3 nonce + replay set + TTL cap landed. See [ASSURANCE_CASE.md](ASSURANCE_CASE.md).
 - **CI on clean runners**: build + all axiom checks + integration test, green every commit.
-- **End-to-end demonstrator**: seal x Canary (a real LangGraph agent): destructive call blocked at the gate, reproducible offline, proven in container CI. Machine-independent.
+- **End-to-end demonstrator evidence withdrawn (2026-08-10)**: the seal x Canary
+  demonstrator was retired by Ben's ruling, so this evidence no longer supports
+  the claim. Machine-independent end-to-end evidence is not currently claimed.
 - **Claim discipline**: [THREAT_MODEL.md](THREAT_MODEL.md) names every residual.
 
 ## Grant-period plan (8-week sprints: ~6 build / 1 red-team / 1 review)
