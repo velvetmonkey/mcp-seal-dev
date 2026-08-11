@@ -2,9 +2,10 @@
 
 <!-- Canonical copy of the truth-box claim block for this repo: runtime profile,
      claim, non-claim. The README mirrors these three lines verbatim between the
-     same markers. The "Map" line is per-repo and is NOT part of this block. Byte-identical
-     to the other seal repos' docs/TRUTH-BOX.md (family-uniform). Edit here first;
-     scripts/claims-drift.mjs enforces equality. -->
+     same markers. The "Map" line is per-repo and is NOT part of this block. Keeping
+     this file byte-identical to the other seal repos' docs/TRUTH-BOX.md is an
+     unenforced, human-maintained convention. Edit here first; scripts/claims-drift.mjs
+     checks that claim blocks agree within this repository. -->
 
 <!-- truthbox:begin -->
 > **Runtime profile: `compatible`.** Strict `canonical-l0` is proved and modelled, not the deployed route yet.
