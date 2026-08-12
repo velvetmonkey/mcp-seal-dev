@@ -44,7 +44,7 @@ No new trust into the proof core; the CORE axiom footprint is unchanged.
   bug would. The pure-Lean stdio sidecar stays the cleaner assurance story; the FFI host trades TCB for
   deployability — exactly as seal-host's TCB.md records.
 
-Claim discipline: **complete mediation modulo A1–A4, A6 (durability) stated**. Never "eliminated";
+Claim discipline: **Allow/forward origin-soundness within the modeled route; A1–A4 and A6 (durability) stated**. Never "eliminated";
 A2 stays a per-server obligation, minimised by construction. Origin authenticated (Ed25519) ≠ intent.
 
 ## Acceptance (end-to-end through the C ABI)

@@ -4,7 +4,7 @@
 
 Public Lean workspace for the Seal mediation kernel: target commitments, approvals, and the safety rules that the rest of the product family must match. **Role:** The rulebook, proven.
 
-**Seal is the approval gateway for agentic tool use: it lets agents read and reason, but forces every protected external effect through an exact, recorded, checkable approval boundary.**
+**Seal is the approval gateway for classified MCP `tools/call` effects on its spawned stdio link: it routes each through an exact, recorded, checkable authorization boundary.**
 
 ![Lean](https://img.shields.io/badge/Lean-4.28.0-blue)
 ![Proofs](https://img.shields.io/badge/proofs-0%20sorry-brightgreen)
@@ -21,9 +21,9 @@ Public Lean workspace for the Seal mediation kernel: target commitments, approva
      identical decision logic into Rust / wasm / JS bodies, each labelled 'conformance-tested,
      not proven'. Pre-empts the proven-vs-deployed misread. -->
 
-When an AI agent tries to use a real tool over MCP (send money, delete a record, call an external service), Seal stands in the way and asks one question: did a human explicitly approve *this exact request*? No matching approval, no action. Every decision is written into a tamper-evident record you can check yourself. What makes Seal different from other guardrails: the core mediation rules aren't just tested, they're machine-checked theorems in Lean 4. The same decision logic then runs in the Rust host you deploy, in the browser, and in the checker — each checked byte-for-byte against that one proven rulebook over the conformance corpus.
+When an AI agent sends a classified MCP `tools/call` on Seal's spawned stdio link (send money, delete a record, call an external service), Seal applies the policy's authorization rule to that exact request: guarded calls require a matching approval, while explicit `mode:allow` calls carry policy authorization. Every mediated decision is written into a tamper-evident record you can check yourself. What makes Seal different from other guardrails: the core mediation rules aren't just tested, they're machine-checked theorems in Lean 4. The same decision logic then runs in the Rust host you deploy, in the browser, and in the checker — checked byte-for-byte against that one proven rulebook over the conformance corpus.
 
-That is the product line in one sentence: prove the rulebook, then check every body that runs it. Seal is built around MCP because MCP is where agent intent becomes an external effect. The proof says what the kernel must do; the conformance tests show that the Rust, wasm, and JavaScript artifacts used by the product family emit the same decisions and records over the shared corpus.
+That is the product line in one sentence: prove the rulebook, then check the Rust, wasm, and JavaScript bodies in the conformance corpus. Seal is built around MCP because MCP is where agent intent becomes an external effect. The proof says what the kernel must do; the conformance tests show that the Rust, wasm, and JavaScript artifacts used by the product family emit the same decisions and records over the shared corpus.
 
 ## What happens when an agent tries to delete production data
 

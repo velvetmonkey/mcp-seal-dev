@@ -141,7 +141,7 @@ decide_emit_unique :
 
 ### M4 end-to-end acceptance
 
-`test/v2/m4_adversarial_mcp_fixture.py` drives the public `decide` entrypoint (via the `v2_decide_line` exe) against the fixture approval state: the single legitimate mediated call returns `Allow`; 15 adversarial / malformed / non-canonical / near-miss lines each return `Block`. This is seal-internal complete mediation, demonstrating `default_deny` and `non_bypass` operationally — NOT the A2 parser-differential, which stays a per-server obligation, minimised by construction.
+`test/v2/m4_adversarial_mcp_fixture.py` drives the public `decide` entrypoint (via the `v2_decide_line` exe) against the fixture approval state: the single legitimate mediated call returns `Allow`; 15 adversarial / malformed / non-canonical / near-miss lines each return `Block`. This exercises modeled-route Allow/forward origin-soundness, `default_deny`, and `non_bypass` — NOT channel completeness or the A2 parser-differential, which stays a per-server obligation, minimised by construction.
 
 ## Signed-approval canonicality closure
 
@@ -280,7 +280,7 @@ runtime init + A4 Mutex; `src/main.rs` selftest + stdio `serve`).
   hidden. Persistence must restore through the consume path.
 - **A3 grows**: Rust transport + C ABI + JSON marshalling + key custody are trusted glue (documented).
 
-Claim discipline: **complete mediation modulo A1–A4, A6 stated**. Never "eliminated".
+Claim discipline: **Allow/forward origin-soundness within the modeled route; A1–A4 and A6 stated**. Never "eliminated".
 
 ### Acceptance (end-to-end through the C ABI)
 
@@ -306,9 +306,9 @@ build-breaking (M5's `signed_parse_canonical` is locked inside the m4 gate).
 
 ### The claim (canonical string — byte-identical across THREAT-MODEL / NOTES / STATUS)
 
-> complete mediation modulo A1-A4, with A2 minimised by construction; A6 (durability) stated, not hidden.
+> Allow/forward origin-soundness within the modeled route; A1-A4, A2 minimised by construction, and A6 (durability) stated, not hidden.
 
-Framing: **We do not prove the agent is safe; we prove the environment is safe from the agent.**
+Framing: **We do not prove the agent is safe; we prove only modeled-route authorization behavior.**
 A1–A6: A1 channel exclusivity (stated); A2 server-parse equivalence (minimised by construction, NEVER
 closed); A3 TCB (Lean + TweetNaCl Ed25519 leaf + key custody + host glue); A4 store atomicity (host
 Mutex; concurrency-tested); A5 host-store refinement (DISCHARGED by construction at M7); A6 durability

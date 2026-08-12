@@ -24,11 +24,11 @@ there is no separate `v2_m5_axiom_check`). See `axioms.txt`.
 
 ## The claim (canonical string — must be byte-identical everywhere)
 
-> complete mediation modulo A1-A4, with A2 minimised by construction; A6 (durability) stated, not hidden.
+> Allow/forward origin-soundness within the modeled route; A1-A4, A2 minimised by construction, and A6 (durability) stated, not hidden.
 
 Framing it earns:
 
-> We do not prove the agent is safe; we prove the environment is safe from the agent.
+> We do not prove the agent is safe; we prove only modeled-route authorization behavior.
 
 Discipline: never "eliminated"/"entirely closed". A2 is minimised by construction, NEVER closed.
 A5 was discharged by construction at M7 (the deployed store IS `listReplayStore`). A6 is a

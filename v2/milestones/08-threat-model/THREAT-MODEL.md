@@ -5,7 +5,7 @@
 > maintained threat model is [`THREAT_MODEL.md`](../../../THREAT_MODEL.md) at the
 > repository root.
 
-> **We do not prove the agent is safe; we prove the environment is safe from the agent.**
+> **We do not prove the agent is safe; we prove only modeled-route authorization behavior.**
 
 seal v2 is a **verified compiler for approved payloads, not a filter.** It does not forward the
 agent's bytes. It parses them to an AST, validates that AST to a *proof term*, re-serialises a fresh
@@ -213,8 +213,8 @@ formal boundary. We name this ourselves rather than leave it for a referee to fi
 
 The single sentence that may appear, verbatim, anywhere in the bid:
 
-> **complete mediation modulo A1-A4, with A2 minimised by construction; A6 (durability) stated, not hidden.**
+> **Allow/forward origin-soundness within the modeled route; A1-A4, A2 minimised by construction, and A6 (durability) stated, not hidden.**
 
 Nothing stronger is claimed anywhere. And the framing it earns:
 
-> **We do not prove the agent is safe; we prove the environment is safe from the agent.**
+> **We do not prove the agent is safe; we prove only modeled-route authorization behavior.**
