@@ -1,6 +1,6 @@
 # Architecture
 
-`mcp-seal-dev` is the private Lean source of the Seal rulebook.
+`mcp-seal-dev` is the public Lean source of the Seal rulebook.
 
 ## Components
 
