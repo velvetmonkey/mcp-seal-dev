@@ -13,5 +13,5 @@ verbatim; edit here first.
 - Seal does NOT prevent compromise of hosts, browsers, build systems, keys, operators, or downstream tools.
 - Seal's audit chain is tamper-EVIDENT, not tamper-IMPOSSIBLE.
 - Seal does NOT make the AI smarter or prevent hallucinations; it stops an unapproved effect.
-- For kernel logical soundness of regular declarations, the module gate assigns 24 kernel modules to `{propext, Classical.choice, Quot.sound}`. Separately, the unsafe compiled-code root `Ffi` is assigned to `{propext, Classical.choice, Quot.sound, lcProof}`; this characterization says nothing about runtime, memory-safety, or observational purity of its six unsafe wrappers.
+- For kernel logical soundness of regular declarations, the module gate assigns 25 kernel modules to `{propext, Classical.choice, Quot.sound}`. Separately, the unsafe compiled-code root `Ffi` is assigned to `{propext, Classical.choice, Quot.sound, lcProof}`; this characterization says nothing about runtime, memory-safety, or observational purity of its six unsafe wrappers.
 <!-- claims:end -->
