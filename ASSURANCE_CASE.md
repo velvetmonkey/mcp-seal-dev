@@ -73,7 +73,7 @@ All discharged theorems depend only on:
 [propext, Classical.choice, Quot.sound]
 ```
 
-The module-wide gate makes a separate compiled-code claim: its 24 explicitly
+The module-wide gate makes a separate compiled-code claim: its 25 explicitly
 assigned regular kernel modules retain that three-name baseline, while `Ffi`
 alone is assigned the explicit unsafe compiled-code-root baseline
 `[propext, Classical.choice, Quot.sound, lcProof]`. This is not a uniform
@@ -100,7 +100,8 @@ with grep guards that fail the build if `sorryAx` or `Lean.ofReduceBool` appear.
 - `python3 test/integration/test_seal.py`, `seal` as a live stdio MITM against a mock server.
 - Adversarial MCP fixtures (`test/v2/m1_*`, `m2_*`, `m3_*`).
 - All of the above run on clean GitHub `ubuntu-latest` runners every commit (machine-independent, not author's box).
-- End-to-end demonstrator (seal x Canary): a destructive `note/delete` blocked at the gate while a legitimate `note/create` is approved; reproducible offline, proven in container CI.
+- End-to-end demonstrator evidence withdrawn as of 2026-08-10 by Ben's ruling:
+  the retired seal x Canary demonstrator no longer supports this assurance case.
 
 ## Trusted base (explicit residuals)
 

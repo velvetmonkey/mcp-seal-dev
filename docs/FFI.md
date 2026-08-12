@@ -12,7 +12,7 @@ NOT thread-safe). Source of truth: the module docstring and exports in
 ## Axiom footprint and scope
 
 `Ffi` is the only module assigned to the unsafe compiled-code-root baseline
-`[propext, Classical.choice, Quot.sound, lcProof]`. The 24 explicitly assigned
+`[propext, Classical.choice, Quot.sound, lcProof]`. The 25 explicitly assigned
 regular kernel modules retain their separate baseline
 `[propext, Classical.choice, Quot.sound]`; Seal does not claim one uniform
 three-name baseline over both groups. The six exported wrappers carry exactly
