@@ -100,22 +100,12 @@ jobs:
       # THIS step proves live Lean scanPass ≡ that same pin ≡ the corpus's
       # expected verdicts, by running the kit's own bridge against this
       # checkout. Together they are the full differential in automation —
-      # the warrant scan.cjs prints claims exactly this mechanism. The token
-      # is REQUIRED, not optional: a silently-skipped leg is precisely the
-      # never-fires pattern this step exists to kill.
-      - name: Require kit checkout access for the scan differential
-        env:
-          SEAL_CI_READ_TOKEN: ${{ secrets.SEAL_CI_READ_TOKEN }}
-        run: |
-          test -n "$SEAL_CI_READ_TOKEN" || {
-            echo "::error::SEAL_CI_READ_TOKEN is required; the scan differential was not run."
-            exit 1
-          }
+      # the warrant scan.cjs prints claims exactly this mechanism. The kit is
+      # public, so the checkout deliberately requires no private credential.
       - name: Check out seal-assurance-kit
         uses: actions/checkout@v6.0.3
         with:
           repository: velvetmonkey/seal-assurance-kit
-          token: ${{ secrets.SEAL_CI_READ_TOKEN }}
           path: seal-assurance-kit
       - uses: actions/setup-node@v4
         with:
