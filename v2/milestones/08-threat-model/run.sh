@@ -28,7 +28,7 @@ if grep -E 'depends on axioms' "$DIR/axioms.txt" | grep -vqE '\[propext, Classic
   echo "FATAL: axiom footprint drift" >&2; exit 1; fi
 
 # 4. Byte-diff the CANONICAL CLAIM STRING (fixed-string match) across the doc artifacts.
-CLAIM='complete mediation modulo A1-A4, with A2 minimised by construction; A6 (durability) stated, not hidden.'
+CLAIM='Allow/forward origin-soundness within the modeled route; A1-A4, A2 minimised by construction, and A6 (durability) stated, not hidden.'
 for f in "$DIR/THREAT-MODEL.md" "$DIR/NOTES.md" v2/STATUS.md; do
   grep -Fq "$CLAIM" "$f" || { echo "FATAL: canonical claim string missing or altered in $f" >&2; exit 1; }
 done
