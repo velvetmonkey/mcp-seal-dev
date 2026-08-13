@@ -1,7 +1,7 @@
 # Threat Model
 
-Scope of `seal`: a verified reference monitor for AI-agent tool use at the MCP
-boundary. This document states what `seal` defends, against whom, and what it
+Scope of `seal`: a Lean-verified decision core for AI-agent `tools/call` inputs at the MCP
+boundary, with channel exclusivity as an architectural assumption. This document states what `seal` defends, against whom, and what it
 explicitly does **not** defend. Honesty about the boundary is part of the
 product.
 

@@ -41,11 +41,11 @@ decision. Reproduce all of it with `bash v2/milestones/04-decide/run.sh`.
 
 ## Claim discipline
 
-`non_bypass` is **seal-internal complete mediation**: within seal, `Allow` is reachable
+`non_bypass` is **seal-internal Allow/forward origin-soundness**: within seal, `Allow` is reachable
 only through the single validated canonical path. This is NOT the A2 parser-differential
 (target-server parse equivalence), which remains a per-server obligation, minimised by
 construction (one canonical serializer, fail-closed strict parser), never eliminated.
 
-Honest claim: **complete mediation modulo A1–A3, with A2 minimised by construction.**
+Honest claim: **Allow/forward origin-soundness within the modeled route; A1–A3 stated, with A2 minimised by construction.**
 A1 = channel exclusivity, A2 = server-parse equivalence, A3 = TCB. Signed-approval
 verification (M2 stub today, real Ed25519 at M5) proves ORIGIN, not INTENT.

@@ -42,7 +42,7 @@ Now allowed: **"origin authenticated via Ed25519 over the canonical
 on the channel (the signature) and on A3 (trusted C primitive). The PROOF guarantees
 ordering/canonicality and seal-internal mediation; the CHANNEL guarantees origin.
 
-Never "eliminated". `non_bypass` remains seal-internal complete mediation; A2
+Never "eliminated". `non_bypass` remains seal-internal Allow/forward origin-soundness; A2
 (target-server parse equivalence) stays a per-server obligation, minimised by
 construction, not eliminated. Authenticating origin is not authorizing intent — the
 M5 corpus shows a VALID signature on an EXPIRED approval is still Blocked.

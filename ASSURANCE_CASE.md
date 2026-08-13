@@ -11,7 +11,7 @@ machine-checked theorem, a test, or a stated trust assumption.
 > verified decision path; an `Allow` is emitted only via `parse -> validate ->
 > serialize`; all other requests are denied by default.
 
-This is **structural non-bypass + complete mediation**, scoped to the MCP
+This is **structural non-bypass + modeled-route origin-soundness**, scoped to the MCP
 `tools/call` boundary. It is explicitly **not** semantic safety, prompt-injection
 prevention, or end-to-end runtime verification.
 
@@ -29,7 +29,7 @@ file:line locations are indexed in
 
 | # | Property | Evidence | Status |
 |---|---|---|---|
-| 1 | **Complete mediation**: every guarded invocation passes the monitor | MITM transport: only `tools/call` inspected, all else relayed unchanged; `decide` is the single entry to Allow | **Architectural** (see note) |
+| 1 | **Modeled-route origin-soundness**: an `Allow` originates at the monitor decision path | MITM transport: only `tools/call` inspected, all else relayed unchanged; `decide` is the single entry to Allow | **Architectural condition plus theorem scope** (see note) |
 | 2 | **Non-bypass**: `Allow` only via parse -> validate -> serialize | `non_bypass`, `decide_emit_unique` | Proven |
 | 3 | **Default deny**: malformed / unmatched / expired / unsigned / replayed / non-canonical block | `default_deny`; M1 strict parser total + fail-closed (`parse raw = some ast -> IsCanonical ast`) | Proven |
 | 4 | **Target binding**: approval for A cannot authorize B | `approval_binds_to_target` (v1 core); v2 `ValidApproval` witness binds exact target | Proven |
@@ -46,9 +46,8 @@ fail-closed**, not a Lean theorem: its no-replay-after-consume lifecycle
 invariant (A5, state monotonicity) is on the sprint plan, and the host replay
 store is part of the trusted base.
 Property 1 is different in kind, and we say so rather than let a reviewer catch
-it: complete mediation is an **architectural** guarantee, not a Lean theorem. It
-holds because `seal` is the stdio man-in-the-middle, every guarded `tools/call`
-on that path traverses `decide`, and `decide` is the single source of `Allow`.
+it: channel completeness is an **architectural condition**, not a Lean theorem or
+an enforced guarantee. On the modeled stdio route, `decide` is the single source of `Allow`.
 
 What this guarantee is **conditional on**, and therefore in the trusted base:
 the agent has no effective path to the tools that bypasses the monitored stdio
