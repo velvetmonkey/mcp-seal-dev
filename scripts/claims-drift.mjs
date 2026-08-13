@@ -26,6 +26,21 @@ const BLOCKS = [
     canonical: "docs/TRUTH-BOX.md", mirrors: ["README.md"] },
 ];
 
+// Repair manifest: every G0-edited claim surface is named here.  These are
+// exact corrected claims, not a discovery grep: an absent file is an error and
+// a restored overclaim makes this guard fail.
+const CLAIM_MANIFEST = [
+  ["ASSURANCE_CASE.md", "channel completeness is an **architectural condition**, not a Lean theorem or"],
+  ["README.md", "guarded calls require a matching approval, while explicit `mode:allow` calls carry policy authorization."],
+  ["THREAT_MODEL.md", "with channel exclusivity as an architectural assumption."],
+  ["v2/STATUS.md", "Allow/forward origin-soundness within the modeled route; A1-A4, A2 minimised by construction, and A6 (durability) stated, not hidden."],
+  ["v2/milestones/04-decide/NOTES.md", "Honest claim: **Allow/forward origin-soundness within the modeled route; A1–A3 stated, with A2 minimised by construction.**"],
+  ["v2/milestones/05-sign/NOTES.md", "`non_bypass` remains seal-internal Allow/forward origin-soundness; A2"],
+  ["v2/milestones/07-host/NOTES.md", "Claim discipline: **Allow/forward origin-soundness within the modeled route; A1–A4 and A6 (durability) stated**."],
+  ["v2/milestones/08-threat-model/NOTES.md", "> Allow/forward origin-soundness within the modeled route; A1-A4, A2 minimised by construction, and A6 (durability) stated, not hidden."],
+  ["v2/milestones/08-threat-model/THREAT-MODEL.md", "> **We do not prove the agent is safe; we prove only modeled-route authorization behavior.**"],
+];
+
 function extract(file, begin, end) {
   let text;
   try {
@@ -84,6 +99,14 @@ for (const blk of BLOCKS) {
       }
     }
   }
+}
+
+for (const [file, claim] of CLAIM_MANIFEST) {
+  let text;
+  try { text = readFileSync(resolve(ROOT, file), "utf8"); }
+  catch (e) { console.error(`ERROR  ${file}: ${e.message}`); process.exit(2); }
+  if (text.includes(claim)) console.log(`PASS  ${file} contains repaired claim`);
+  else { drift = true; console.error(`FAIL  ${file} missing repaired claim: ${claim}`); }
 }
 
 if (drift) {
