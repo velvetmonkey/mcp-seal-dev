@@ -144,3 +144,4 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/claims-drift.mjs
+      - run: node --test test/claims-drift.test.mjs
