@@ -47,7 +47,7 @@ def preimageParts : MetaValue → List String
 /-- Convert the stage-1 validated value without projection or reinterpretation. -/
 def ofStage1 : Seal.ValidatedMeta → MetaValue
   | .absent => .absent
-  | .present object => .present (Lean.Json.obj object).compress
+  | .present object => .present (Lean.Json.obj object).jcsRender
 
 /-- The V2 and stage-1 metadata preimages are definitionally identical. -/
 theorem ofStage1_preimageParts (metadata : Seal.ValidatedMeta) :
@@ -62,7 +62,7 @@ def fromAst? : Option AST → Option MetaValue
   | none => some .absent
   | some (.object fields) =>
       match Lean.Json.parse (serializeAstValue (.object fields)) with
-      | .ok (.obj object) => some (.present (Lean.Json.obj object).compress)
+      | .ok (.obj object) => some (.present (Lean.Json.obj object).jcsRender)
       | _ => none
   | some _ => none
 
@@ -84,7 +84,7 @@ def fromSignedAst? : AST → Option MetaValue
       ("canonicalObject", .string canonicalObject)] =>
       match Lean.Json.parse canonicalObject with
       | .ok (.obj object) =>
-          let normalized := (Lean.Json.obj object).compress
+          let normalized := (Lean.Json.obj object).jcsRender
           if normalized == canonicalObject then some (.present normalized) else none
       | _ => none
   | _ => none
@@ -94,7 +94,7 @@ end MetaValue
 /-! ## Multi-round-trip request identity
 
 The V2 layer stores the same complete JSON values as Stage A, normalized
-through `Lean.Json.compress` so object member order cannot make the two
+through `Lean.Json.jcsRender` so object member order cannot make the two
 layers disagree.  `requestState` remains one opaque value: no decoder,
 projection, or member lookup exists below. -/
 
@@ -115,7 +115,7 @@ def preimageParts : RequestState → List String
 
 def ofStage1 : Seal.RequestState → RequestState
   | .absent => .absent
-  | .present value => .present value.compress
+  | .present value => .present value.jcsRender
 
 theorem ofStage1_preimageParts (state : Seal.RequestState) :
     (ofStage1 state).preimageParts = state.preimageParts := by
@@ -133,7 +133,7 @@ def fromAst? : Option AST → Option RequestState
   | none => some .absent
   | some value =>
       match Lean.Json.parse (serializeAstValue value) with
-      | .ok parsed => some (.present parsed.compress)
+      | .ok parsed => some (.present parsed.jcsRender)
       | .error _ => none
 
 def signedAst : CanonicalBytes → AST :=
@@ -144,7 +144,7 @@ def fromSignedAst? : AST → Option RequestState
   | .object [("canonicalValue", .string canonicalValue)] =>
       match Lean.Json.parse canonicalValue with
       | .ok parsed =>
-          let normalized := parsed.compress
+          let normalized := parsed.jcsRender
           if normalized == canonicalValue then some (.present normalized) else none
       | .error _ => none
   | _ => none
@@ -173,7 +173,7 @@ def preimageParts : InputResponses → List String
 
 def ofStage1 : Seal.InputResponses → InputResponses
   | .absent => .absent
-  | .present value => .present value.compress
+  | .present value => .present value.jcsRender
 
 theorem ofStage1_preimageParts (responses : Seal.InputResponses) :
     (ofStage1 responses).preimageParts = responses.preimageParts := by
@@ -191,7 +191,7 @@ def fromAst? : Option AST → Option InputResponses
   | none => some .absent
   | some value =>
       match Lean.Json.parse (serializeAstValue value) with
-      | .ok parsed => some (.present parsed.compress)
+      | .ok parsed => some (.present parsed.jcsRender)
       | .error _ => none
 
 def signedAst : CanonicalBytes → AST :=
@@ -202,7 +202,7 @@ def fromSignedAst? : AST → Option InputResponses
   | .object [("canonicalValue", .string canonicalValue)] =>
       match Lean.Json.parse canonicalValue with
       | .ok parsed =>
-          let normalized := parsed.compress
+          let normalized := parsed.jcsRender
           if normalized == canonicalValue then some (.present normalized) else none
       | .error _ => none
   | _ => none

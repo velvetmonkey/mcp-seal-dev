@@ -99,7 +99,7 @@ def guardTarget (policy : Policy) (toolName : String)
     proved guard target in the named collision-free model. -/
 theorem guard_target_separates_requestState
     (hcr : AssumptionCR) (henc : AssumptionEncInjective)
-    (hcompress : AssumptionCompressInjective)
+    (hjcs : AssumptionJcsRenderInjective)
     (policy : Policy) (toolName : String) (resolvedParts : List String)
     (metadata : ValidatedMeta) (inputResponses : InputResponses)
     (left right : RequestState) (hne : left ≠ right) :
@@ -121,13 +121,13 @@ theorem guard_target_separates_requestState
   have hwithoutResponses := List.append_cancel_right hparts
   have hstateParts : left.preimageParts = right.preimageParts :=
     List.append_cancel_left hwithoutResponses
-  exact hne (RequestState.preimageParts_injective hcompress hstateParts)
+  exact hne (RequestState.preimageParts_injective hjcs hstateParts)
 
 /-- Equal arguments and all equal context except `inputResponses` cannot share
     a proved guard target in the named collision-free model. -/
 theorem guard_target_separates_inputResponses
     (hcr : AssumptionCR) (henc : AssumptionEncInjective)
-    (hcompress : AssumptionCompressInjective)
+    (hjcs : AssumptionJcsRenderInjective)
     (policy : Policy) (toolName : String) (resolvedParts : List String)
     (metadata : ValidatedMeta) (requestState : RequestState)
     (left right : InputResponses) (hne : left ≠ right) :
@@ -149,13 +149,13 @@ theorem guard_target_separates_inputResponses
   have hresponsesParts : left.preimageParts = right.preimageParts :=
     List.append_cancel_left hparts
   exact hne
-    (InputResponses.preimageParts_injective hcompress hresponsesParts)
+    (InputResponses.preimageParts_injective hjcs hresponsesParts)
 
 /-- Structural absence is distinct from every present request-state value,
     including `{}` and JSON `null`; no sentinel can collapse them. -/
 theorem guard_target_requestState_absent_ne_present
     (hcr : AssumptionCR) (henc : AssumptionEncInjective)
-    (hcompress : AssumptionCompressInjective)
+    (hjcs : AssumptionJcsRenderInjective)
     (policy : Policy) (toolName : String) (resolvedParts : List String)
     (metadata : ValidatedMeta) (inputResponses : InputResponses)
     (value : Json) :
@@ -163,7 +163,7 @@ theorem guard_target_requestState_absent_ne_present
         inputResponses ≠
       guardTargetWithContext policy toolName resolvedParts metadata
         (.present value) inputResponses :=
-  guard_target_separates_requestState hcr henc hcompress policy toolName
+  guard_target_separates_requestState hcr henc hjcs policy toolName
     resolvedParts metadata inputResponses .absent (.present value) (by
       intro h
       cases h)
@@ -172,14 +172,14 @@ theorem guard_target_requestState_absent_ne_present
     including `{}` and JSON `null`; no sentinel can collapse them. -/
 theorem guard_target_inputResponses_absent_ne_present
     (hcr : AssumptionCR) (henc : AssumptionEncInjective)
-    (hcompress : AssumptionCompressInjective)
+    (hjcs : AssumptionJcsRenderInjective)
     (policy : Policy) (toolName : String) (resolvedParts : List String)
     (metadata : ValidatedMeta) (requestState : RequestState) (value : Json) :
     guardTargetWithContext policy toolName resolvedParts metadata requestState
         .absent ≠
       guardTargetWithContext policy toolName resolvedParts metadata requestState
         (.present value) :=
-  guard_target_separates_inputResponses hcr henc hcompress policy toolName
+  guard_target_separates_inputResponses hcr henc hjcs policy toolName
     resolvedParts metadata requestState .absent (.present value) (by
       intro h
       cases h)

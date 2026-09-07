@@ -10,7 +10,7 @@ Seal's deployed target commitment is SHA-256 over the injective `encodeParts` ne
 
 **What the real-world guarantee is.** In deployment the guarantee is a **trust assumption**: that no SHA-256 collision is known or findable for the inputs Seal actually hashes. Lean does not and cannot prove this. This is the same epistemic posture as any system that relies on SHA-256 in practice — but it is trust, not theorem.
 
-**What the structure honestly buys.** The theorem chain is still useful: it isolates the cryptographic trust to this single named leaf hypothesis. Everything else on the path — encoding injectivity (A-ENC, since proved in-repo), canonical serialization (A-COMPRESS) — is either proven or separately named. If SHA-256 is ever broken for the relevant input class, A-CR is the one place the damage enters.
+**What the structure honestly buys.** The theorem chain is still useful: it isolates the cryptographic trust to this single named leaf hypothesis. Everything else on the path — encoding injectivity (A-ENC, since proved in-repo), argument serialization (A-COMPRESS), and the RFC-8785-string rendering used for metadata and MRTR values (A-JCS-RENDER) — is either proven or separately named. Parse stability is likewise split between A-PARSE and A-JCS-PARSE. If SHA-256 is ever broken for the relevant input class, A-CR is the one place the damage enters.
 
 ## Approval issuance
 

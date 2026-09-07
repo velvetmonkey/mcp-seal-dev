@@ -2,6 +2,7 @@
 
 import Lean.Data.Json
 import Seal.Hash
+import Seal.JcsRender
 
 /-!
 # The effect commitment — pinned preimage, injectivity under named assumptions
@@ -16,7 +17,7 @@ Stage A of the effect-commitment plan. The current stage-1 proposal:
                         → lowercase hex, 64 chars
 
 The metadata suffix is exactly `["meta.absent", ""]` or
-`["meta.present", compress(object)]`.  The explicit presence discriminator
+`["meta.present", jcsRender(object)]`.  The explicit presence discriminator
 makes absence distinct from a present empty object.
 
 The MRTR suffixes use the same explicit-presence construction. A present
@@ -82,9 +83,15 @@ axiom gate stays `propext`/`Classical.choice`/`Quot.sound`):
   this is not provable in-kernel; it is exactly what the host
   re-derivation theorem (`commitment_rederivation_stable`) buys with it —
   nothing else below uses it.
+* `A-JCS-RENDER` (`AssumptionJcsRenderInjective`) and `A-JCS-PARSE`
+  (`AssumptionJcsParse`) are the corresponding named premises for metadata,
+  request state, and input responses, whose canonical bytes use
+  `Lean.Json.jcsRender`. The renderer deliberately retains `compress`'s
+  ordering and number behavior while correcting only RFC 8785 string escapes.
 
 BINDER DISCIPLINE: no theorem here hypothesises `enc a ≠ enc b`,
-`compress a ≠ compress b`, or `sha256 _ ≠ sha256 _` about the two objects
+`compress a ≠ compress b`, `jcsRender a ≠ jcsRender b`, or
+`sha256 _ ≠ sha256 _` about the two objects
 under discussion. The assumptions are global injectivity statements; the
 theorems bind the semantic `Effect`.
 -/
@@ -125,7 +132,7 @@ def toJson? : ValidatedMeta → Option Json
     empty for absence; the first part is the collision-proof discriminator. -/
 def preimageParts : ValidatedMeta → List String
   | .absent => ["meta.absent", ""]
-  | .present object => ["meta.present", (Json.obj object).compress]
+  | .present object => ["meta.present", (Json.obj object).jcsRender]
 
 @[simp] theorem preimageParts_length (metadata : ValidatedMeta) :
     metadata.preimageParts.length = 2 := by
@@ -137,7 +144,7 @@ def preimageParts : ValidatedMeta → List String
 def ReparsedFrom : ValidatedMeta → ValidatedMeta → Prop
   | .absent, .absent => True
   | .present source, .present reparsed =>
-      Json.parse (Json.obj source).compress = .ok (Json.obj reparsed)
+      Json.parse (Json.obj source).jcsRender = .ok (Json.obj reparsed)
   | _, _ => False
 
 end ValidatedMeta
@@ -165,7 +172,7 @@ def toJson? : RequestState → Option Json
     effect tag. -/
 def preimageParts : RequestState → List String
   | .absent => ["requestState.absent", ""]
-  | .present value => ["requestState.present", value.compress]
+  | .present value => ["requestState.present", value.jcsRender]
 
 @[simp] theorem preimageParts_length (state : RequestState) :
     state.preimageParts.length = 2 := by
@@ -176,7 +183,7 @@ def preimageParts : RequestState → List String
 def ReparsedFrom : RequestState → RequestState → Prop
   | .absent, .absent => True
   | .present source, .present reparsed =>
-      Json.parse source.compress = .ok reparsed
+      Json.parse source.jcsRender = .ok reparsed
   | _, _ => False
 
 end RequestState
@@ -199,7 +206,7 @@ def toJson? : InputResponses → Option Json
     v4 effect tag. -/
 def preimageParts : InputResponses → List String
   | .absent => ["inputResponses.absent", ""]
-  | .present value => ["inputResponses.present", value.compress]
+  | .present value => ["inputResponses.present", value.jcsRender]
 
 @[simp] theorem preimageParts_length (responses : InputResponses) :
     responses.preimageParts.length = 2 := by
@@ -210,7 +217,7 @@ def preimageParts : InputResponses → List String
 def ReparsedFrom : InputResponses → InputResponses → Prop
   | .absent, .absent => True
   | .present source, .present reparsed =>
-      Json.parse source.compress = .ok reparsed
+      Json.parse source.jcsRender = .ok reparsed
   | _, _ => False
 
 end InputResponses
@@ -265,7 +272,7 @@ theorem preimage_shape_present (server tool : String) (arguments : Json)
         { server, tool, arguments, metadata := .present object,
           requestState := .absent, inputResponses := .absent } =
       ["seal.effect/v4-proposed-meta-all", server, tool, arguments.compress,
-        "meta.present", (Json.obj object).compress, "requestState.absent", "",
+        "meta.present", (Json.obj object).jcsRender, "requestState.absent", "",
         "inputResponses.absent", ""] := rfl
 
 /-- The complete exact proposed shape when both MRTR values are present. -/
@@ -277,8 +284,8 @@ theorem preimage_shape_mrtr_present (server tool : String) (arguments : Json)
           inputResponses := .present inputResponses } =
       ["seal.effect/v4-proposed-meta-all", server, tool, arguments.compress] ++
         metadata.preimageParts ++
-        ["requestState.present", requestState.compress,
-         "inputResponses.present", inputResponses.compress] := by
+        ["requestState.present", requestState.jcsRender,
+         "inputResponses.present", inputResponses.jcsRender] := by
   simp [Effect.preimageParts, effectDomainTag, RequestState.preimageParts,
     InputResponses.preimageParts]
 
@@ -309,16 +316,26 @@ def AssumptionEncInjective : Prop :=
 def AssumptionCompressInjective : Prop :=
   ∀ a b : Json, a.compress = b.compress → a = b
 
+/-- A-JCS-RENDER: the RFC-8785-string renderer is injective on `Json`. -/
+def AssumptionJcsRenderInjective : Prop :=
+  ∀ a b : Json, a.jcsRender = b.jcsRender → a = b
+
 /-- A-PARSE: canonical bytes are a fixed point of parse-then-compress. What
     it buys (only): `commitment_rederivation_stable` — a host that re-parses
     the canonical argument bytes recovers the same commitment. -/
 def AssumptionParse : Prop :=
   ∀ (a a' : Json), Json.parse a.compress = .ok a' → a'.compress = a.compress
 
+/-- A-JCS-PARSE: JCS-string canonical bytes are a fixed point of
+    parse-then-render. -/
+def AssumptionJcsParse : Prop :=
+  ∀ (a a' : Json),
+    Json.parse a.jcsRender = .ok a' → a'.jcsRender = a.jcsRender
+
 /-! ## Theorems -/
 
 theorem ValidatedMeta.preimageParts_injective
-    (hcompress : AssumptionCompressInjective) :
+    (hjcs : AssumptionJcsRenderInjective) :
     Function.Injective ValidatedMeta.preimageParts := by
   intro a b h
   cases a with
@@ -330,14 +347,14 @@ theorem ValidatedMeta.preimageParts_injective
       cases b with
       | absent => simp [ValidatedMeta.preimageParts] at h
       | present right =>
-          have hc : (Json.obj left).compress = (Json.obj right).compress := by
+          have hc : (Json.obj left).jcsRender = (Json.obj right).jcsRender := by
             simpa [ValidatedMeta.preimageParts] using h
-          have hj : Json.obj left = Json.obj right := hcompress _ _ hc
+          have hj : Json.obj left = Json.obj right := hjcs _ _ hc
           cases Json.obj.inj hj
           rfl
 
 theorem RequestState.preimageParts_injective
-    (hcompress : AssumptionCompressInjective) :
+    (hjcs : AssumptionJcsRenderInjective) :
     Function.Injective RequestState.preimageParts := by
   intro a b h
   cases a with
@@ -349,13 +366,13 @@ theorem RequestState.preimageParts_injective
       cases b with
       | absent => simp [RequestState.preimageParts] at h
       | present right =>
-          have hc : left.compress = right.compress := by
+          have hc : left.jcsRender = right.jcsRender := by
             simpa [RequestState.preimageParts] using h
-          cases hcompress _ _ hc
+          cases hjcs _ _ hc
           rfl
 
 theorem InputResponses.preimageParts_injective
-    (hcompress : AssumptionCompressInjective) :
+    (hjcs : AssumptionJcsRenderInjective) :
     Function.Injective InputResponses.preimageParts := by
   intro a b h
   cases a with
@@ -367,18 +384,19 @@ theorem InputResponses.preimageParts_injective
       cases b with
       | absent => simp [InputResponses.preimageParts] at h
       | present right =>
-          have hc : left.compress = right.compress := by
+          have hc : left.jcsRender = right.jcsRender := by
             simpa [InputResponses.preimageParts] using h
-          cases hcompress _ _ hc
+          cases hjcs _ _ hc
           rfl
 
 /-- **Injectivity of the effect commitment**, bound at the semantic
-    `Effect`, conditional on A-CR + A-ENC + A-COMPRESS. Equal commitments
+    `Effect`, conditional on A-CR + A-ENC + A-COMPRESS + A-JCS-RENDER. Equal commitments
     force equality of the complete semantic target, including metadata and
     both MRTR presence/value fields. -/
 theorem effect_commitment_injective
     (hcr : AssumptionCR) (henc : AssumptionEncInjective)
     (hcompress : AssumptionCompressInjective)
+    (hjcs : AssumptionJcsRenderInjective)
     (e₁ e₂ : Effect) (h : e₁.commitment = e₂.commitment) : e₁ = e₂ := by
   have hstr : encodeParts e₁.preimageParts = encodeParts e₂.preimageParts :=
     hcr _ _ h
@@ -411,11 +429,11 @@ theorem effect_commitment_injective
     exact List.append_cancel_left htail
   have ha : e₁.arguments = e₂.arguments := hcompress _ _ hc
   have hm : e₁.metadata = e₂.metadata :=
-    ValidatedMeta.preimageParts_injective hcompress hmParts
+    ValidatedMeta.preimageParts_injective hjcs hmParts
   have hrs : e₁.requestState = e₂.requestState :=
-    RequestState.preimageParts_injective hcompress hrsParts
+    RequestState.preimageParts_injective hjcs hrsParts
   have hir : e₁.inputResponses = e₂.inputResponses :=
-    InputResponses.preimageParts_injective hcompress hirParts
+    InputResponses.preimageParts_injective hjcs hirParts
   cases e₁
   cases e₂
   simp_all
@@ -425,13 +443,14 @@ theorem effect_commitment_injective
 theorem commitment_check_iff
     (hcr : AssumptionCR) (henc : AssumptionEncInjective)
     (hcompress : AssumptionCompressInjective)
+    (hjcs : AssumptionJcsRenderInjective)
     (kernel host : Effect) :
     kernel.commitment = host.commitment ↔ kernel = host :=
-  ⟨effect_commitment_injective hcr henc hcompress kernel host,
+  ⟨effect_commitment_injective hcr henc hcompress hjcs kernel host,
    fun h => h ▸ rfl⟩
 
 theorem ValidatedMeta.preimageParts_eq_of_reparsed
-    (hparse : AssumptionParse) {source reparsed : ValidatedMeta}
+    (hparse : AssumptionJcsParse) {source reparsed : ValidatedMeta}
     (h : ValidatedMeta.ReparsedFrom source reparsed) :
     reparsed.preimageParts = source.preimageParts := by
   cases source <;> cases reparsed <;>
@@ -439,7 +458,7 @@ theorem ValidatedMeta.preimageParts_eq_of_reparsed
   exact hparse _ _ h
 
 theorem RequestState.preimageParts_eq_of_reparsed
-    (hparse : AssumptionParse) {source reparsed : RequestState}
+    (hparse : AssumptionJcsParse) {source reparsed : RequestState}
     (h : RequestState.ReparsedFrom source reparsed) :
     reparsed.preimageParts = source.preimageParts := by
   cases source <;> cases reparsed <;>
@@ -447,7 +466,7 @@ theorem RequestState.preimageParts_eq_of_reparsed
   exact hparse _ _ h
 
 theorem InputResponses.preimageParts_eq_of_reparsed
-    (hparse : AssumptionParse) {source reparsed : InputResponses}
+    (hparse : AssumptionJcsParse) {source reparsed : InputResponses}
     (h : InputResponses.ReparsedFrom source reparsed) :
     reparsed.preimageParts = source.preimageParts := by
   cases source <;> cases reparsed <;>
@@ -458,7 +477,8 @@ theorem InputResponses.preimageParts_eq_of_reparsed
     holds and re-parses every canonical JSON part gets the same commitment.
     For request state this is byte preservation only, never interpretation. -/
 theorem commitment_rederivation_stable
-    (hparse : AssumptionParse) (e : Effect) (args' : Json)
+    (hparse : AssumptionParse) (hjcsParse : AssumptionJcsParse)
+    (e : Effect) (args' : Json)
     (metadata' : ValidatedMeta) (requestState' : RequestState)
     (inputResponses' : InputResponses)
     (hargs : Json.parse e.arguments.compress = .ok args')
@@ -474,13 +494,13 @@ theorem commitment_rederivation_stable
   have hargsCompress : args'.compress = e.arguments.compress :=
     hparse _ _ hargs
   have hmetaParts : metadata'.preimageParts = e.metadata.preimageParts :=
-    ValidatedMeta.preimageParts_eq_of_reparsed hparse hmeta
+    ValidatedMeta.preimageParts_eq_of_reparsed hjcsParse hmeta
   have hrequestStateParts :
       requestState'.preimageParts = e.requestState.preimageParts :=
-    RequestState.preimageParts_eq_of_reparsed hparse hrequestState
+    RequestState.preimageParts_eq_of_reparsed hjcsParse hrequestState
   have hinputResponsesParts :
       inputResponses'.preimageParts = e.inputResponses.preimageParts :=
-    InputResponses.preimageParts_eq_of_reparsed hparse hinputResponses
+    InputResponses.preimageParts_eq_of_reparsed hjcsParse hinputResponses
   apply congrArg (fun parts => (stableHashParts parts).toHex)
   simp only [Effect.preimageParts, hargsCompress, hmetaParts,
     hrequestStateParts, hinputResponsesParts]

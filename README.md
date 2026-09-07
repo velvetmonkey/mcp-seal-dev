@@ -12,10 +12,10 @@ Public Lean workspace for the Seal mediation kernel: target commitments, approva
 
 <!-- truthbox:begin -->
 > **Runtime profile: `compatible`.** Strict `canonical-l0` is proved and modelled, not the deployed route yet.
-> **Claim:** policy-covered request-effects recognised by the compatible MCP boundary require a matching live human approval and an allowing Lean kernel verdict; seam failures block; every decision emits replayable evidence.
-> **Non-claim:** the deployed host is not proved end to end, and canonical parser rejection is not currently the runtime gate. Host `ApprovalRecord` tokens are a separate signed channel from the v2 canonical approval tuple.
+> **Claim:** policy-covered request-effects recognised by the compatible MCP boundary reach the downstream child MCP server only after every applicable Lean kernel returns Allow. Effects configured as guarded additionally require a matching live approval record. Seam failures block; every mediated decision emits replayable evidence.
+> **Non-claim:** the deployed host is not proved end to end, and canonical parser rejection is not currently the runtime gate. Host `ApprovalRecord` tokens are a separate signed channel from the v2 kernel-defined approval tuple. “Canonical” in Seal names the pinned kernel byte rule, not RFC 8785/JCS. Seal verifies the configured authorization evidence. Whether that evidence represents the intended human, device or service is an identity and key-custody assumption, not a proved property.
 <!-- truthbox:end -->
-> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in private repos; the links resolve only for authorised evaluators. Scope: the box describes the family runtime (the deployed `seal-host` boundary); this repo is the proof layer it cites — the kernel verdict and the v2 canonical approval tuple — not the deployment itself, and the demo sidecar here is demo-only.
+> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in public repos; the links resolve for everyone. Scope: the box describes the family runtime (the deployed `seal-host` boundary); this repo is the proof layer it cites — the kernel verdict and the v2 canonical approval tuple — not the deployment itself, and the demo sidecar here is demo-only.
 
 <!-- TODO(asset, shot #7, AI-generatable): diagram — one 'Lean kernel (proven)' box feeding
      identical decision logic into Rust / wasm / JS bodies, each labelled 'conformance-tested,
@@ -50,7 +50,7 @@ Mandatory non-claims (canonical copy: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
 - Seal does NOT prevent compromise of hosts, browsers, build systems, keys, operators, or downstream tools.
 - Seal's audit chain is tamper-EVIDENT, not tamper-IMPOSSIBLE.
 - Seal does NOT make the AI smarter or prevent hallucinations; it stops an unapproved effect.
-- For kernel logical soundness of regular declarations, the module gate assigns 24 kernel modules to `{propext, Classical.choice, Quot.sound}`. Separately, the unsafe compiled-code root `Ffi` is assigned to `{propext, Classical.choice, Quot.sound, lcProof}`; this characterization says nothing about runtime, memory-safety, or observational purity of its six unsafe wrappers.
+- For kernel logical soundness of regular declarations, the module gate assigns 26 kernel modules to `{propext, Classical.choice, Quot.sound}`. Separately, the unsafe compiled-code root `Ffi` is assigned to `{propext, Classical.choice, Quot.sound, lcProof}`; this characterization says nothing about runtime, memory-safety, or observational purity of its six unsafe wrappers.
 <!-- claims:end -->
 
 ## Verify in five minutes
@@ -60,7 +60,7 @@ bash c/build.sh
 lake build
 lake exe automaton_tests    # v1 automaton behaviour
 lake exe axiom_check        # v1 safety theorems: axiom footprint
-lake exe module_axiom_check # 24 kernel modules + the separate Ffi compiled-code footprint
+lake exe module_axiom_check # 26 kernel modules + the separate Ffi compiled-code footprint
 lake exe v2_parse_tests && lake exe v2_validate_tests && lake exe v2_serialize_tests && lake exe v2_lifecycle_tests
 lake exe v2_m4_axiom_check  # v2 core: non_bypass, default_deny, decide_emit_unique, canonical_roundtrip, signed_parse_canonical
 lake exe v2_m6_axiom_check  # v2 approval lifecycle: replay_denied, consume/TTL theorems
@@ -69,7 +69,7 @@ lake exe v2_m6_axiom_check  # v2 approval lifecycle: replay_denied, consume/TTL 
 PASS looks like: the theorem-specific `axiom_check` executables print only
 `{propext, Classical.choice, Quot.sound}` for each regular theorem, while
 `module_axiom_check` separately reports that same three-name kernel baseline
-for its 24 explicitly assigned kernel modules and the four-name unsafe
+for its 26 explicitly assigned kernel modules and the four-name unsafe
 compiled-code-root baseline `{propext, Classical.choice, Quot.sound, lcProof}`
 for `Ffi` alone. There is no uniform three-name module baseline. Anything else
 — an extra axiom, a `sorry`, or module-inventory drift — is a finding.

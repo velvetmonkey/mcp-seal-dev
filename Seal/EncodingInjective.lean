@@ -266,11 +266,13 @@ theorem assumptionEncInjective_holds : Seal.AssumptionEncInjective :=
 /-- Stage-A commitment injectivity with A-ENC discharged: only A-CR (the
     idealised perfect-injectivity hash assumption — strictly stronger than
     collision resistance, not satisfied by real SHA-256; see
-    `Seal/EffectCommitment.lean`) and A-COMPRESS remain as hypotheses. -/
+    `Seal/EffectCommitment.lean`), A-COMPRESS, and A-JCS-RENDER remain as
+    hypotheses. The historical theorem name is retained for API continuity. -/
 theorem effect_commitment_injective_of_cr_compress
     (hcr : Seal.AssumptionCR) (hcompress : Seal.AssumptionCompressInjective)
+    (hjcs : Seal.AssumptionJcsRenderInjective)
     (e₁ e₂ : Seal.Effect) (h : e₁.commitment = e₂.commitment) : e₁ = e₂ :=
-  Seal.effect_commitment_injective hcr assumptionEncInjective_holds hcompress e₁ e₂ h
+  Seal.effect_commitment_injective hcr assumptionEncInjective_holds hcompress hjcs e₁ e₂ h
 
 /-! ## The cross-scheme hazard, witnessed
 

@@ -43,6 +43,7 @@ private def kernelBaselineModuleNames : Array Name := #[
   `Seal.Classify,
   `Seal.Hash,
   `Seal.JsonUtil,
+  `Seal.JcsRender,
   `Seal.Main,
   `Seal.Policy,
   `Seal.PolicyLegacy,
@@ -69,8 +70,8 @@ private def unsafeCompiledCodeRootModuleNames : Array Name := #[
   `Ffi
 ]
 
-private def expectedProductionModuleCount : Nat := 50
-private def expectedKernelBaselineModuleCount : Nat := 24
+private def expectedProductionModuleCount : Nat := 52
+private def expectedKernelBaselineModuleCount : Nat := 26
 private def expectedUnsafeCompiledCodeRootModuleCount : Nat := 1
 
 private def productionModuleCount : IO Nat := do

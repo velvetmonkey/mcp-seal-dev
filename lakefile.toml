@@ -2,6 +2,7 @@ name = "mcp-seal"
 version = "0.1.0"
 defaultTargets = [
   "seal",
+  "jcs_render_tests",
   "v2_m4_axiom_check",
   "k5_framing_show",
   "classify_enum",
@@ -51,6 +52,10 @@ globs = ["Test.+"]
 [[lean_exe]]
 name = "seal"
 root = "Seal.Main"
+
+[[lean_exe]]
+name = "jcs_render_tests"
+root = "Test.JcsRender"
 
 [[lean_exe]]
 name = "automaton_tests"
