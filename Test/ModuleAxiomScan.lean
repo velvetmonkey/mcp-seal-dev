@@ -4,6 +4,17 @@ import Lean.Environment
 import Lean.Util.CollectAxioms
 import Lean.Util.Path
 import Seal
+import Seal.EffectCommitment
+import Seal.EncodingInjective
+import Seal.GoldenPath
+import Seal.GuardTheorems
+import Seal.NumberGuardTheorems
+import Seal.PolicyBundle
+import Seal.PolicyEquiv
+import Seal.PolicyScan
+import Seal.PolicyV2Theorems
+import Seal.Scaffold
+import Seal.SignedPolicy
 import SealCore
 import SealV2.Crypto
 import SealV2.McpVersionGate
@@ -41,12 +52,23 @@ private def kernelBaselineModuleNames : Array Name := #[
   `Seal.Block,
   `Seal.Channel,
   `Seal.Classify,
+  `Seal.EffectCommitment,
+  `Seal.EncodingInjective,
+  `Seal.GoldenPath,
+  `Seal.GuardTheorems,
   `Seal.Hash,
   `Seal.JsonUtil,
   `Seal.Main,
+  `Seal.NumberGuardTheorems,
   `Seal.Policy,
+  `Seal.PolicyBundle,
+  `Seal.PolicyEquiv,
   `Seal.PolicyLegacy,
+  `Seal.PolicyScan,
+  `Seal.PolicyV2Theorems,
   `Seal.PolicyWire,
+  `Seal.Scaffold,
+  `Seal.SignedPolicy,
   `SealCore.Automaton,
   `SealCore.Event,
   `SealCore.Safety,
@@ -139,16 +161,28 @@ independent and are named separately below.
 kernel assignment omitted `SealCore.Safety` and thirteen proof-bearing
 `SealV2` modules. An unlisted `sorry` theorem in Safety passed both axiom gates.
 All fourteen omitted proof-bearing modules are now assigned to the three-name
-kernel baseline; the current assignment is 36 dotted modules plus three roots
-= 39, and the on-disk/assigned gap is 51 versus 39. The other previously
-omitted SealCore and SealV2 modules have no proofs, so they remain outside
-this declaration-by-declaration proof gate. Ffi retains its
-separate four-name baseline. No allowed axiom set or declaration allowlist
+kernel baseline; the assignment at that review was 36 dotted modules plus
+three roots = 39, and the on-disk/kernel-assigned gap was 51 versus 39. Ffi
+retains its separate four-name baseline. No allowed axiom set or declaration allowlist
 changes. The module scan itself checks every declaration owned by an assigned
 module, including private and generated declarations, against that baseline.
+
+2026-09-25 Seal scope review: the remaining eleven unassigned production
+modules are all under `Seal/` and contain proof declarations: EffectCommitment
+(18), EncodingInjective (19), GoldenPath (9), GuardTheorems (20),
+NumberGuardTheorems (1), PolicyBundle (7), PolicyEquiv (28), PolicyScan (2),
+PolicyV2Theorems (15), Scaffold (12), and SignedPolicy (3). All eleven are
+ordinary kernel modules and use the existing three-name baseline. The kernel
+assignment therefore grows from 39 to 50; with Ffi on its separate baseline,
+all 51 production modules are assigned. `Seal.PolicyEquiv` and
+`Seal.PolicyV2Theorems` need isolated imports because generated declaration
+names collide with policy dependencies in the shared environment; the
+declaration equality and axiom-footprint checks remain the same. A new Seal
+module must receive a baseline assignment, an import that makes its object
+file available, and a measured count update before this gate passes.
 -/
 private def expectedProductionModuleCount : Nat := 51
-private def expectedKernelBaselineModuleCount : Nat := 39
+private def expectedKernelBaselineModuleCount : Nat := 50
 private def expectedUnsafeCompiledCodeRootModuleCount : Nat := 1
 
 private def productionModuleCount : IO Nat := do
@@ -236,7 +270,7 @@ def scanModule
   let moduleDataDeclarations := moduleData.constNames.qsort Name.lt
   unless declarations == moduleDataDeclarations do
     throw <| IO.userError
-      s!"module scan: Environment.constants and ModuleData.constNames disagree for {moduleName}"
+      s!"module scan: Environment.constants and ModuleData.constNames disagree for {moduleName}: environment-only {(declarations.filter fun n => !moduleDataDeclarations.contains n).toList}; module-only {(moduleDataDeclarations.filter fun n => !declarations.contains n).toList}"
   let privateCount := declarations.filter isPrivateName |>.size
   let internalCount := declarations.filter Name.isInternalDetail |>.size
   let irNamesWithConstantInfo :=
@@ -289,11 +323,15 @@ def scanAll : IO Unit := do
   initSearchPath (← findSysroot)
   let kernelStart ← IO.monoMsNow
   -- The two serialization-lemma modules both define
-  -- `SealV2.skipWs_cons_of_not_ws`, so scan `SerializationLemmas` in an
-  -- isolated environment to keep module provenance unambiguous.
+  -- `SealV2.skipWs_cons_of_not_ws`. Seal.PolicyEquiv also generates six
+  -- constants with names shared by its policy dependencies;
+  -- Seal.PolicyV2Theorems does likewise for `Seal.firstBlocking?`. Scan
+  -- these modules in isolated environments to keep provenance unambiguous.
   let sharedKernelModuleNames :=
     kernelBaselineModuleNames.filter fun moduleName =>
-      moduleName != `SealV2.SerializationLemmas
+      moduleName != `SealV2.SerializationLemmas &&
+      moduleName != `Seal.PolicyEquiv &&
+      moduleName != `Seal.PolicyV2Theorems
   let imports : Array Import :=
     sharedKernelModuleNames.map fun moduleName => { module := moduleName }
   let env ← importModules imports {} (level := .private)
@@ -308,6 +346,18 @@ def scanAll : IO Unit := do
       "KERNEL" kernelBaseline
   kernelDeclarationTotal :=
     kernelDeclarationTotal + serializationResult.declarations
+  let policyEquivEnv ←
+    importModules #[{ module := `Seal.PolicyEquiv }] {} (level := .private)
+  let policyEquivResult ←
+    scanModule policyEquivEnv `Seal.PolicyEquiv "KERNEL" kernelBaseline
+  kernelDeclarationTotal :=
+    kernelDeclarationTotal + policyEquivResult.declarations
+  let policyV2TheoremsEnv ←
+    importModules #[{ module := `Seal.PolicyV2Theorems }] {} (level := .private)
+  let policyV2TheoremsResult ←
+    scanModule policyV2TheoremsEnv `Seal.PolicyV2Theorems "KERNEL" kernelBaseline
+  kernelDeclarationTotal :=
+    kernelDeclarationTotal + policyV2TheoremsResult.declarations
   let kernelElapsedMs := (← IO.monoMsNow) - kernelStart
   IO.println
     s!"BASELINE_COMPLETE\tKERNEL\tMODULES={kernelBaselineModuleNames.size}\tDECLARATIONS={kernelDeclarationTotal}\tWALL_CLOCK_MS={kernelElapsedMs}"
