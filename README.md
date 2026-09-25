@@ -83,7 +83,7 @@ For the target commitment itself, inspect `Seal/Hash.lean` and `SealCore/Sha256.
 
 ## The Seal family
 
-_The Seal fleet repositories are public; these links resolve for everyone. `witness-check` remains proprietary._
+_The Seal fleet repositories are public; these links resolve for everyone._
 
 - [seal](https://github.com/velvetmonkey/seal): the public umbrella story, product map, and evaluator path.
 - [mcp-seal-dev](https://github.com/velvetmonkey/mcp-seal-dev): The rulebook, proven.
@@ -91,7 +91,7 @@ _The Seal fleet repositories are public; these links resolve for everyone. `witn
 - [seal-check](https://github.com/velvetmonkey/seal-check): Don't trust. Verify.
 - [seal-live-demo](https://github.com/velvetmonkey/seal-live-demo): Archived, read-only demo history.
 - [seal-assurance-kit](https://github.com/velvetmonkey/seal-assurance-kit): Check your own boundary.
-- [witness-check](https://github.com/velvetmonkey/witness-check): The sufficiency analyzer. (private/proprietary)
+- [collision-check](https://github.com/velvetmonkey/collision-check): The sufficiency analyzer (formerly `witness-check`).
 - [seal-verify-action](https://github.com/velvetmonkey/seal-verify-action): Archived, read-only CI gate history.
 
 ## Documentation
