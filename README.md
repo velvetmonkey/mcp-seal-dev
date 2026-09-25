@@ -87,12 +87,12 @@ _The Seal fleet repositories are public; these links resolve for everyone. `witn
 
 - [seal](https://github.com/velvetmonkey/seal): the public umbrella story, product map, and evaluator path.
 - [mcp-seal-dev](https://github.com/velvetmonkey/mcp-seal-dev): The rulebook, proven.
-- [seal-host](https://github.com/velvetmonkey/seal-host): The guard at the door.
+- [seal-host](https://github.com/velvetmonkey/seal-host): Archived, read-only history of the host guard.
 - [seal-check](https://github.com/velvetmonkey/seal-check): Don't trust. Verify.
-- [seal-live-demo](https://github.com/velvetmonkey/seal-live-demo): Watch it work.
+- [seal-live-demo](https://github.com/velvetmonkey/seal-live-demo): Archived, read-only demo history.
 - [seal-assurance-kit](https://github.com/velvetmonkey/seal-assurance-kit): Check your own boundary.
 - [witness-check](https://github.com/velvetmonkey/witness-check): The sufficiency analyzer. (private/proprietary)
-- [seal-verify-action](https://github.com/velvetmonkey/seal-verify-action): Gate receipts in CI.
+- [seal-verify-action](https://github.com/velvetmonkey/seal-verify-action): Archived, read-only CI gate history.
 
 ## Documentation
 
