@@ -49,17 +49,31 @@ private def kernelBaselineModuleNames : Array Name := #[
   `Seal.PolicyWire,
   `SealCore.Automaton,
   `SealCore.Event,
+  `SealCore.Safety,
   `SealCore.Sha256,
   `SealV2.Canonical,
+  `SealV2.ClassifyTransport,
   `SealV2.Crypto,
   `SealV2.Decide,
+  `SealV2.DecideTheorems,
+  `SealV2.EffectEnvelope,
   `SealV2.EnvelopeCompleteness,
   `SealV2.Escape,
+  `SealV2.LifecycleTheorems,
   `SealV2.McpVersionGate,
+  `SealV2.NonceLedger,
   `SealV2.Parser,
+  `SealV2.ParserTheorems,
+  `SealV2.PrincipalNonInfluence,
+  `SealV2.ResponseNI,
+  `SealV2.ResponseTransport,
   `SealV2.Serialization,
   `SealV2.SerializationContainerLemmas,
   `SealV2.SerializationLemmas,
+  `SealV2.SerializationTheorems,
+  `SealV2.TamperTheorems,
+  `SealV2.Validation,
+  `SealV2.ValidationTheorems,
   `SealCore,
   `Seal,
   `SealV2
@@ -102,8 +116,8 @@ independent and are named separately below.
   measures — `.lean` files under `Seal/`, `SealCore/`, `SealV2/` plus the four
   root files that exist: 20 + 4 + 23 + 4 = 51, measured on disk at `fa499b5`.
   `expectedKernelBaselineModuleCount` is the length of
-  `kernelBaselineModuleNames` above: 22 dotted modules plus the three roots
-  `Seal`, `SealCore`, `SealV2` = 25.
+  `kernelBaselineModuleNames` at that commit: 22 dotted modules plus the three
+  roots `Seal`, `SealCore`, `SealV2` = 25.
 * SHOW: `lake exe module_axiom_check` — exit 0 and `MODULE_DRIFT_GUARD PASS`
   only when both numbers match what is measured. Creating or deleting any
   production `.lean` file moves the first; adding or removing an entry from
@@ -115,14 +129,26 @@ independent and are named separately below.
   human-facing tripwire on the whole tree, not a mirror of the scanned set. It
   goes red on any new production module, and that red is the prompt to decide
   whether the module also needs a baseline assignment above. The two constants
-  are independent, and the gap between them is real: 51 modules are on disk
-  while 25 are named for per-module axiom scanning. A future module that moves
-  only the first number is a legitimate end state ONLY if a warrant here records
+  are independent, and the gap at that count bless was real: 51 modules were on
+  disk while 25 were named for per-module axiom scanning. A future module that
+  moves only the first number is a legitimate end state ONLY if a warrant here records
   why it is out of scan scope. Bumping either number without recording that
   decision reproduces exactly the defect this block documents.
+
+2026-09-25 scan-scope review: the disk count remains 51. The former 25-module
+kernel assignment omitted `SealCore.Safety` and thirteen proof-bearing
+`SealV2` modules. An unlisted `sorry` theorem in Safety passed both axiom gates.
+All fourteen omitted proof-bearing modules are now assigned to the three-name
+kernel baseline; the current assignment is 36 dotted modules plus three roots
+= 39, and the on-disk/assigned gap is 51 versus 39. The other previously
+omitted SealCore and SealV2 modules have no proofs, so they remain outside
+this declaration-by-declaration proof gate. Ffi retains its
+separate four-name baseline. No allowed axiom set or declaration allowlist
+changes. The module scan itself checks every declaration owned by an assigned
+module, including private and generated declarations, against that baseline.
 -/
 private def expectedProductionModuleCount : Nat := 51
-private def expectedKernelBaselineModuleCount : Nat := 25
+private def expectedKernelBaselineModuleCount : Nat := 39
 private def expectedUnsafeCompiledCodeRootModuleCount : Nat := 1
 
 private def productionModuleCount : IO Nat := do
