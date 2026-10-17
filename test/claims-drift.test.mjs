@@ -44,3 +44,30 @@ test("fatal manifest read first still reports later drift", () => {
     rmSync(UNREADABLE, { recursive: true, force: true });
   }
 });
+
+test("reader kernel module counts match the module axiom gate", () => {
+  const gate = readFileSync(resolve(ROOT, "Test/ModuleAxiomScan.lean"), "utf8");
+  const gateCount = gate.match(/^private def expectedKernelBaselineModuleCount : Nat := (\d+)$/m);
+  assert.ok(gateCount, "Test/ModuleAxiomScan.lean: expected kernel baseline module count is absent");
+  const expected = Number(gateCount[1]);
+  const errors = [];
+
+  for (const [file, minimum] of [["README.md", 3], ["docs/LIMITATIONS.md", 1]]) {
+    const lines = readFileSync(resolve(ROOT, file), "utf8").split("\n");
+    let matches = 0;
+    for (const [index, line] of lines.entries()) {
+      for (const match of line.matchAll(/\b(\d+) (?:explicitly assigned )?kernel modules\b/g)) {
+        matches++;
+        const found = Number(match[1]);
+        if (found !== expected) {
+          errors.push(`${file}:${index + 1}: found ${found} kernel modules; expected ${expected}`);
+        }
+      }
+    }
+    if (matches < minimum) {
+      errors.push(`${file}: found ${matches} kernel module counts; expected at least ${minimum}`);
+    }
+  }
+
+  assert.deepEqual(errors, [], errors.join("\n"));
+});
